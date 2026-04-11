@@ -39,6 +39,11 @@ class FileStabilityTracker:
     Stable files are enqueued for processing by the main thread.
     """
 
+    @staticmethod
+    def _is_hidden_file(file_path: str) -> bool:
+        """Check if a file is hidden (basename starts with a dot)."""
+        return os.path.basename(file_path).startswith(".")
+
     def __init__(self, stability_duration: float = 2.0, check_interval: float = 0.5):
         """
         Initialize the stability tracker.
@@ -125,6 +130,10 @@ class FileStabilityTracker:
             FileStabilityError: If file cannot be accessed
         """
         try:
+            # Skip hidden files entirely
+            if self._is_hidden_file(file_path):
+                return False
+
             if not os.path.exists(file_path):
                 # File was deleted, remove from tracking
                 with self._lock:
@@ -332,6 +341,10 @@ class FileMonitorRepository(FileSystemEventHandler):
             else event.src_path.decode("utf-8")
         )
 
+        # Skip hidden files and folders entirely
+        if FileStabilityTracker._is_hidden_file(src_path):
+            return
+
         if event.is_directory:
             self._schedule_folder_processing(src_path)
         else:
@@ -354,6 +367,11 @@ class FileMonitorRepository(FileSystemEventHandler):
                 if isinstance(event.src_path, str)
                 else event.src_path.decode("utf-8")
             )
+
+            # Skip hidden files entirely
+            if FileStabilityTracker._is_hidden_file(src_path):
+                return
+
             self._schedule_file_processing(src_path)
 
     def _schedule_file_processing(self, file_path: str) -> None:

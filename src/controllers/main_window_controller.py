@@ -484,6 +484,124 @@ class MainWindowController:
             )
 
     # --------------------------------------------------------------
+    #  CREATE FOLDER
+    # --------------------------------------------------------------
+    def create_folder(self, folder_path: str) -> None:
+        """
+        Create a new folder.
+
+        Args:
+            folder_path: Full path to the new folder to create
+        """
+        is_remote = folder_path.startswith(self.settings.remote_base_dir)
+
+        try:
+            if is_remote:
+                if not self.connection_manager.sftp_client:
+                    raise RuntimeError("No SFTP connection")
+                self.connection_manager.sftp_client.mkdir(folder_path)
+                self.view.pi_explorer.refresh()
+            else:
+                os.makedirs(folder_path, exist_ok=True)
+                self.view.watch_explorer.refresh()
+
+            logger.success(f"Created folder: {folder_path}")
+        except FileExistsError:
+            logger.warn(f"Folder already exists: {folder_path}")
+            QMessageBox.warning(
+                self.view,
+                "Folder Exists",
+                f"A folder with this name already exists.",
+                QMessageBox.StandardButton.Ok,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create folder: {e}")
+            QMessageBox.critical(
+                self.view,
+                "Creation Failed",
+                f"Failed to create folder:\n{str(e)}",
+                QMessageBox.StandardButton.Ok,
+            )
+
+    # --------------------------------------------------------------
+    #  MOVE ITEM
+    # --------------------------------------------------------------
+    def move_item(self, src_path: str, dest_path: str) -> None:
+        """
+        Move a file or folder to a new location.
+
+        Args:
+            src_path: Current path of item to move
+            dest_path: Destination path for the item
+        """
+        is_remote = src_path.startswith(self.settings.remote_base_dir)
+
+        # Validate that source and destination are in the same filesystem
+        if is_remote != dest_path.startswith(self.settings.remote_base_dir):
+            logger.error("Cannot move between local and remote filesystems")
+            QMessageBox.critical(
+                self.view,
+                "Move Failed",
+                "Cannot move between local and remote filesystems.",
+                QMessageBox.StandardButton.Ok,
+            )
+            return
+
+        # Prevent moving into itself or its subdirectories
+        if dest_path.startswith(src_path + os.sep) or src_path == dest_path:
+            logger.error("Cannot move item into itself")
+            QMessageBox.critical(
+                self.view,
+                "Move Failed",
+                "Cannot move an item into itself or its subdirectories.",
+                QMessageBox.StandardButton.Ok,
+            )
+            return
+
+        basename = os.path.basename(src_path)
+        confirm = QMessageBox.question(
+            self.view,
+            "Move Item",
+            f"Move '{basename}' to:\n{dest_path}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            if is_remote:
+                if not self.connection_manager.sftp_client:
+                    raise RuntimeError("No SFTP connection")
+                self.connection_manager.sftp_client.rename(src_path, dest_path)
+                self.view.pi_explorer.refresh()
+            else:
+                # Create destination directory if it doesn't exist
+                dest_dir = os.path.dirname(dest_path)
+                if not os.path.exists(dest_dir):
+                    os.makedirs(dest_dir, exist_ok=True)
+                shutil.move(src_path, dest_path)
+                self.view.watch_explorer.refresh()
+
+            logger.success(f"Moved: {src_path} → {dest_path}")
+        except FileExistsError:
+            logger.warn(f"Destination already exists: {dest_path}")
+            QMessageBox.warning(
+                self.view,
+                "Move Failed",
+                f"An item with that name already exists at the destination.",
+                QMessageBox.StandardButton.Ok,
+            )
+        except Exception as e:
+            logger.error(f"Move failed: {e}")
+            QMessageBox.critical(
+                self.view,
+                "Move Failed",
+                f"Failed to move item:\n{str(e)}",
+                QMessageBox.StandardButton.Ok,
+            )
+
+    # --------------------------------------------------------------
     #  MONITORING
     # --------------------------------------------------------------
     def start_monitor(self) -> None:

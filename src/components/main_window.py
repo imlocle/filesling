@@ -281,6 +281,10 @@ class MainWindow(QWidget):
         # Watch explorer
         self.watch_explorer.file_delete_requested.connect(self.controller.delete_item)
         self.watch_explorer.file_rename_requested.connect(self.controller.rename_item)
+        self.watch_explorer.folder_create_requested.connect(
+            self.controller.create_folder
+        )
+        self.watch_explorer.item_move_requested.connect(self.controller.move_item)
         self.watch_explorer.item_selected.connect(
             self.controller.handle_selection_changed
         )
@@ -289,6 +293,8 @@ class MainWindow(QWidget):
         # Pi explorer
         self.pi_explorer.file_delete_requested.connect(self.controller.delete_item)
         self.pi_explorer.file_rename_requested.connect(self.controller.rename_item)
+        self.pi_explorer.folder_create_requested.connect(self.controller.create_folder)
+        self.pi_explorer.item_move_requested.connect(self.controller.move_item)
         self.pi_explorer.item_selected.connect(self.controller.handle_selection_changed)
         self.pi_explorer.file_opened.connect(self.controller.handle_file_open)
         self.pi_explorer.files_dropped.connect(self._handle_pi_drop)
