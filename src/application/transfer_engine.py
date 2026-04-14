@@ -154,7 +154,7 @@ class TransferEngine:
                         file_path=str(source_path),
                         details=f"Source: {source_size}, Dest: {dest_size}"
                     )
-                logger.info(f"Transfer: Verified: {source_path.name}")
+                logger.info(f"Transfer: {source_path.name}: Verified")
             
             return True
             

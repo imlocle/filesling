@@ -69,16 +69,14 @@ class FileStabilityTracker:
         """
         # Guard against multiple polling threads
         if self._polling_thread and self._polling_thread.is_alive():
-            logger.warn(
-                "Monitor: Polling thread already running, stopping existing thread first"
-            )
+            logger.warn("Monitor: Stability: Already running")
             self.stop_polling()
 
         self._stable_files_queue = stable_files_queue
         self._stop_event.clear()
         self._polling_thread = Thread(target=self._poll_files, daemon=True)
         self._polling_thread.start()
-        logger.info("Monitor: Started stability polling thread")
+        logger.info("Monitor: Stability: Started")
 
     def stop_polling(self) -> None:
         """Stop the background polling thread."""
@@ -87,11 +85,9 @@ class FileStabilityTracker:
             self._polling_thread.join(timeout=2.0)
             # Check if thread is still alive after timeout
             if self._polling_thread.is_alive():
-                logger.warn(
-                    "Monitor: Polling thread did not stop within timeout; may continue briefly"
-                )
+                logger.warn("Monitor: Stability: Failed to stop (timeout)")
             self._polling_thread = None
-        logger.info("Monitor: Stopped stability polling thread")
+        logger.info("Monitor: Stability: Stopped")
 
     def _poll_files(self) -> None:
         """Background thread that continuously checks tracked files for stability."""
@@ -106,11 +102,11 @@ class FileStabilityTracker:
                         if self._stable_files_queue:
                             self._stable_files_queue.put(file_path)
                             logger.info(
-                                f"Monitor: Enqueued stable file: {os.path.basename(file_path)}"
+                                f"Monitor: {os.path.basename(file_path)}: Enqueued"
                             )
                 except Exception as e:
                     logger.error(
-                        f"Monitor: Error checking stability for {file_path}: {e}"
+                        f"Monitor: {os.path.basename(file_path)}: Stability check failed"
                     )
 
             # Sleep for check_interval or until stop event
@@ -148,7 +144,7 @@ class FileStabilityTracker:
                     # First time seeing this file, record its size
                     self._file_info[file_path] = (current_time, current_size)
                     logger.info(
-                        f"Monitor: Tracking file stability: {os.path.basename(file_path)}"
+                        f"Monitor: {os.path.basename(file_path)}: Tracking stability"
                     )
                     return False
 
@@ -158,8 +154,7 @@ class FileStabilityTracker:
                     # Size changed, file still being written
                     self._file_info[file_path] = (current_time, current_size)
                     logger.info(
-                        f"Monitor: File still growing: {os.path.basename(file_path)} "
-                        f"({last_size} -> {current_size} bytes)"
+                        f"Monitor: {os.path.basename(file_path)}: Still growing"
                     )
                     return False
 
@@ -168,19 +163,15 @@ class FileStabilityTracker:
                 if elapsed >= self.stability_duration:
                     # File is stable, remove from tracking
                     self._file_info.pop(file_path, None)
-                    logger.success(
-                        f"Monitor: File stable: {os.path.basename(file_path)} "
-                        f"({current_size} bytes)"
-                    )
+                    logger.success(f"Monitor: {os.path.basename(file_path)}: Stable")
                     logger.progress_signal.emit(100)  # Complete
                     return True
 
                 # Not enough time has passed yet
                 progress = int((elapsed / self.stability_duration) * 100)
-                logger.info(
-                    f"Monitor: Waiting for stability: {os.path.basename(file_path)} "
-                    f"({elapsed:.1f}/{self.stability_duration}s)"
-                )
+                # logger.info(
+                #     f"Monitor: {os.path.basename(file_path)}: Waiting for stability"
+                # )
                 logger.progress_signal.emit(progress)  # Show progress
                 return False
 
@@ -277,9 +268,10 @@ class FileMonitorRepository(FileSystemEventHandler):
         for directory in [self.watch_dir, movies_dir, tv_dir]:
             try:
                 os.makedirs(directory, exist_ok=True)
-                logger.info(f"Monitor: Directory ready: {directory}")
             except Exception as e:
-                logger.error(f"Monitor: Failed to create directory {directory}: {e}")
+                logger.error(
+                    f"Monitor: {os.path.basename(directory)}: Failed to create directory"
+                )
                 raise FileMonitorError(
                     f"Failed to create watch directory", path=directory, details=str(e)
                 )
@@ -294,7 +286,7 @@ class FileMonitorRepository(FileSystemEventHandler):
         try:
             # Guard against multiple starts
             if self.observer.is_alive():
-                logger.warn("Monitor: Observer already running, skipping start")
+                logger.warn("Monitor: Monitoring: Already running")
                 return
 
             # Start the stability polling thread with queue
@@ -303,7 +295,7 @@ class FileMonitorRepository(FileSystemEventHandler):
             # Start the file system observer
             self.observer.schedule(self, self.watch_dir, recursive=True)
             self.observer.start()
-            logger.start(f"Monitor: Started watching: {self.watch_dir}")
+            logger.start("Monitor: Monitoring: Started")
         except Exception as e:
             raise FileMonitorError(
                 f"Failed to start file monitoring", path=self.watch_dir, details=str(e)
@@ -323,9 +315,9 @@ class FileMonitorRepository(FileSystemEventHandler):
             self.observer.stop()
             self.observer.join()
             self.stability_tracker.clear_all()
-            logger.stop("Monitor: Stopped")
+            logger.stop("Monitor: Monitoring: Stopped")
         except Exception as e:
-            logger.error(f"Monitor: Error stopping: {e}")
+            logger.error("Monitor: Monitoring: Failed to stop")
 
     def on_created(self, event: FileSystemEvent) -> None:
         """
@@ -395,11 +387,9 @@ class FileMonitorRepository(FileSystemEventHandler):
             # If file is already stable, enqueue immediately
             if is_stable:
                 self.stable_files_queue.put(file_path)
-                logger.info(
-                    f"Monitor: File already stable, enqueuing: {os.path.basename(file_path)}"
-                )
+                logger.info(f"Monitor: {os.path.basename(file_path)}: Enqueued")
         except FileStabilityError as e:
-            logger.error(f"Monitor: Stability check failed: {e}")
+            logger.error("Monitor: Monitoring: Stability check failed")
 
     def _schedule_folder_processing(self, folder_path: str) -> None:
         """
@@ -417,7 +407,7 @@ class FileMonitorRepository(FileSystemEventHandler):
 
         # Enqueue folder for main thread processing
         self.stable_files_queue.put(folder_path)
-        logger.info(f"Monitor: Enqueued folder: {os.path.basename(folder_path)}")
+        logger.info(f"Monitor: {os.path.basename(folder_path)}: Enqueued")
 
     def _mark_as_processed(self, path: str) -> None:
         """
@@ -428,6 +418,28 @@ class FileMonitorRepository(FileSystemEventHandler):
         """
         with self._processed_lock:
             self._processed_items.add(path)
+
+    def _mark_folder_contents_processed(self, folder_path: str) -> None:
+        """
+        Mark all files inside a folder as processed and clear them from stability tracking.
+
+        This prevents duplicate processing when both a folder event and individual
+        file stability events are triggered for the same content (e.g., when a folder
+        is dropped into the watch directory).
+
+        Args:
+            folder_path: Path to folder whose contents should be marked processed
+        """
+        if not os.path.exists(folder_path):
+            return
+
+        with self._processed_lock:
+            for root, dirs, files in os.walk(folder_path):
+                self._processed_items.add(root)
+                for f in files:
+                    file_path = os.path.join(root, f)
+                    self._processed_items.add(file_path)
+                    self.stability_tracker.clear_tracking(file_path)
 
     def handle_file(self, file_path: str) -> None:
         """
@@ -446,39 +458,39 @@ class FileMonitorRepository(FileSystemEventHandler):
         with self._processed_lock:
             if file_path in self._processed_items:
                 logger.info(
-                    f"Monitor: File already processed, skipping: {os.path.basename(file_path)}"
+                    f"Monitor: {os.path.basename(file_path)}: Already processed"
                 )
                 return
 
         # Validate file exists
         if not os.path.exists(file_path):
-            logger.warn(f"Monitor: File no longer exists: {file_path}")
+            logger.warn(f"Monitor: {os.path.basename(file_path)}: File not found")
             self.stability_tracker.clear_tracking(file_path)
             return
 
         # Ignore hidden/system files
         name = os.path.basename(file_path)
         if name.startswith(".") or name.startswith("._"):
-            logger.info(f"Monitor: Skipping hidden file: {name}")
+            logger.info(f"Monitor: {name}: Skipping (hidden file)")
             return
 
         # Check file extension
         ext = os.path.splitext(file_path)[1].lower()
         if ext not in self.file_exts:
-            logger.info(f"Monitor: Skipping unsupported file type: {name} ({ext})")
+            logger.info(f"Monitor: {name}: Skipping (unsupported type: {ext})")
             return
 
         # Determine destination type based on path structure
         path_parts = file_path.split(os.sep)
         if MOVIES_DIR in path_parts:
             dest_type = "movie"
-            logger.info(f"Monitor: Classified as movie (path-based): {name}")
+            logger.info(f"Monitor: {name}: Classified as movie")
         elif TV_SHOWS_DIR in path_parts:
             dest_type = "tv"
-            logger.info(f"Monitor: Classified as TV show (path-based): {name}")
+            logger.info(f"Monitor: {name}: Classified as TV show")
         else:
             # Files outside Movies/ or TV_shows/ are ignored
-            logger.warn(f"Monitor: Skipping file outside Movies/TV_shows: {name}")
+            logger.warn(f"Monitor: {name}: Skipping (outside Movies/TV_shows)")
             return
 
         try:
@@ -487,14 +499,15 @@ class FileMonitorRepository(FileSystemEventHandler):
             if dest_type == "movie":
                 # Transfer entire movie folder
                 logger.upload(
-                    f"Monitor: Transferring movie folder: {os.path.basename(folder)}"
+                    f"Monitor: {os.path.basename(folder)}: Transferring movie"
                 )
                 if self.movie_service.transfer_movie_folder(folder):
                     self._mark_as_processed(file_path)
                     self._mark_as_processed(folder)
+                    self._mark_folder_contents_processed(folder)
                     self.deletion_service.delete_folder(folder)
                     logger.success(
-                        f"Monitor: Movie transfer complete: {os.path.basename(folder)}"
+                        f"Monitor: {os.path.basename(folder)}: Movie transfer complete"
                     )
                     # Clear retry count on success
                     self._retry_counts.pop(file_path, None)
@@ -507,20 +520,19 @@ class FileMonitorRepository(FileSystemEventHandler):
                     if retry_count < self._max_retries:
                         self._retry_counts[file_path] = retry_count + 1
                         logger.error(
-                            f"Monitor: Movie transfer failed for: {folder} - "
-                            f"retry {retry_count + 1}/{self._max_retries}"
+                            f"Monitor: {os.path.basename(folder)}: Movie transfer failed (retry {retry_count + 1}/{self._max_retries})"
                         )
                         self.stable_files_queue.put(file_path)
                     else:
                         logger.error(
-                            f"Monitor: Movie transfer failed permanently after {self._max_retries} attempts: {folder}"
+                            f"Monitor: {os.path.basename(folder)}: Movie transfer failed permanently"
                         )
                         self._retry_counts.pop(file_path, None)
 
             elif dest_type == "tv":
                 # Transfer TV show folder (preserves structure)
                 logger.upload(
-                    f"Monitor: Transferring TV show folder: {os.path.basename(folder)}"
+                    f"Monitor: {os.path.basename(folder)}: Transferring TV show"
                 )
                 transfer_result = self.tv_service.transfer_tv_folder(folder)
                 if transfer_result:
@@ -528,7 +540,7 @@ class FileMonitorRepository(FileSystemEventHandler):
                     # Only delete media files, keep folder structure
                     if ext in self.file_exts:
                         self.deletion_service.delete_file(file_path)
-                    logger.success(f"Monitor: TV show transfer complete: {name}")
+                    logger.success(f"Monitor: {name}: TV show transfer complete")
                     # Clear retry count on success
                     self._retry_counts.pop(file_path, None)
                     # Notify callback
@@ -540,29 +552,28 @@ class FileMonitorRepository(FileSystemEventHandler):
                     if retry_count < self._max_retries:
                         self._retry_counts[file_path] = retry_count + 1
                         logger.error(
-                            f"Monitor: TV show transfer failed for: {folder} - "
-                            f"retry {retry_count + 1}/{self._max_retries}"
+                            f"Monitor: {os.path.basename(folder)}: TV show transfer failed (retry {retry_count + 1}/{self._max_retries})"
                         )
                         self.stable_files_queue.put(file_path)
                     else:
                         logger.error(
-                            f"Monitor: TV show transfer failed permanently after {self._max_retries} attempts: {folder}"
+                            f"Monitor: {os.path.basename(folder)}: TV show transfer failed permanently"
                         )
                         self._retry_counts.pop(file_path, None)
 
         except Exception as e:
-            logger.error(f"Monitor: Transfer error for {file_path}: {e}")
+            logger.error(f"Monitor: {os.path.basename(file_path)}: Transfer error")
             # Check retry count for exceptions too
             retry_count = self._retry_counts.get(file_path, 0)
             if retry_count < self._max_retries:
                 self._retry_counts[file_path] = retry_count + 1
                 logger.error(
-                    f"Monitor: Will retry - attempt {retry_count + 1}/{self._max_retries}"
+                    f"Monitor: {os.path.basename(file_path)}: Will retry (attempt {retry_count + 1}/{self._max_retries})"
                 )
                 self.stable_files_queue.put(file_path)
             else:
                 logger.error(
-                    f"Monitor: Transfer failed permanently after {self._max_retries} attempts"
+                    f"Monitor: {os.path.basename(file_path)}: Transfer failed permanently"
                 )
                 self._retry_counts.pop(file_path, None)
             # Clear from processed so it can be retried
@@ -586,42 +597,43 @@ class FileMonitorRepository(FileSystemEventHandler):
         with self._processed_lock:
             if folder_path in self._processed_items:
                 logger.info(
-                    f"Monitor: Folder already processed, skipping: {os.path.basename(folder_path)}"
+                    f"Monitor: {os.path.basename(folder_path)}: Already processed, skipping"
                 )
                 return
 
         # Validate folder exists
         if not os.path.exists(folder_path):
-            logger.warn(f"Monitor: Folder no longer exists: {folder_path}")
+            logger.warn(f"Monitor: {os.path.basename(folder_path)}: Folder not found")
             return
 
         # Ignore hidden folders and root directories
         name = os.path.basename(folder_path)
         if name.startswith(".") or name in [MOVIES_DIR, TV_SHOWS_DIR]:
-            logger.info(f"Monitor: Skipping system folder: {name}")
+            logger.info(f"Monitor: {name}: Skipping (system folder)")
             return
 
         # Classify folder based on path
         path_parts = folder_path.split(os.sep)
         if MOVIES_DIR in path_parts:
             dest_type = "movie"
-            logger.info(f"Monitor: Classified folder as movie (path-based): {name}")
+            logger.info(f"Monitor: {name}: Classified as movie")
         elif TV_SHOWS_DIR in path_parts:
             dest_type = "tv"
-            logger.info(f"Monitor: Classified folder as TV show (path-based): {name}")
+            logger.info(f"Monitor: {name}: Classified as TV show")
         else:
             # Folders outside Movies/ or TV_shows/ are ignored
-            logger.warn(f"Monitor: Skipping folder outside Movies/TV_shows: {name}")
+            logger.warn(f"Monitor: {name}: Skipping (outside Movies/TV_shows)")
             return
 
         try:
             if dest_type == "movie":
                 # Transfer entire movie folder
-                logger.upload(f"Monitor: Transferring movie folder: {name}")
+                logger.upload(f"Monitor: {name}: Transferring movie")
                 if self.movie_service.transfer_movie_folder(folder_path):
                     self._mark_as_processed(folder_path)
+                    self._mark_folder_contents_processed(folder_path)
                     self.deletion_service.delete_folder(folder_path)
-                    logger.success(f"Monitor: Movie folder transfer complete: {name}")
+                    logger.success(f"Monitor: {name}: Movie transfer complete")
                     # Clear retry count on success
                     self._retry_counts.pop(folder_path, None)
                     # Notify callback
@@ -633,21 +645,21 @@ class FileMonitorRepository(FileSystemEventHandler):
                     if retry_count < self._max_retries:
                         self._retry_counts[folder_path] = retry_count + 1
                         logger.error(
-                            f"Monitor: Movie folder transfer failed for: {folder_path} - "
-                            f"retry {retry_count + 1}/{self._max_retries}"
+                            f"Monitor: {name}: Movie transfer failed (retry {retry_count + 1}/{self._max_retries})"
                         )
                         self.stable_files_queue.put(folder_path)
                     else:
                         logger.error(
-                            f"Monitor: Movie folder transfer failed permanently after {self._max_retries} attempts: {folder_path}"
+                            f"Monitor: {name}: Movie transfer failed permanently"
                         )
                         self._retry_counts.pop(folder_path, None)
 
             elif dest_type == "tv":
                 # Transfer TV show folder (preserves structure)
-                logger.upload(f"Monitor: Transferring TV show folder: {name}")
+                logger.upload(f"Monitor: {name}: Transferring TV show")
                 if self.tv_service.transfer_tv_folder(folder_path):
                     self._mark_as_processed(folder_path)
+                    self._mark_folder_contents_processed(folder_path)
                     # Delete only video files in the folder, keep structure
                     for root, _, files in os.walk(folder_path):
                         for f in files:
@@ -659,8 +671,8 @@ class FileMonitorRepository(FileSystemEventHandler):
                                 try:
                                     self.deletion_service.delete_file(file_to_delete)
                                 except Exception as e:
-                                    logger.warn(f"Monitor: Could not delete {f}: {e}")
-                    logger.success(f"Monitor: TV show folder transfer complete: {name}")
+                                    logger.warn(f"Monitor: {f}: Could not delete")
+                    logger.success(f"Monitor: {name}: TV show transfer complete")
                     # Clear retry count on success
                     self._retry_counts.pop(folder_path, None)
                     # Notify callback
@@ -672,29 +684,28 @@ class FileMonitorRepository(FileSystemEventHandler):
                     if retry_count < self._max_retries:
                         self._retry_counts[folder_path] = retry_count + 1
                         logger.error(
-                            f"Monitor: TV show folder transfer failed for: {folder_path} - "
-                            f"retry {retry_count + 1}/{self._max_retries}"
+                            f"Monitor: {name}: TV show transfer failed (retry {retry_count + 1}/{self._max_retries})"
                         )
                         self.stable_files_queue.put(folder_path)
                     else:
                         logger.error(
-                            f"Monitor: TV show folder transfer failed permanently after {self._max_retries} attempts: {folder_path}"
+                            f"Monitor: {name}: TV show transfer failed permanently"
                         )
                         self._retry_counts.pop(folder_path, None)
 
         except Exception as e:
-            logger.error(f"Monitor: Transfer error for folder {folder_path}: {e}")
+            logger.error(f"Monitor: {os.path.basename(folder_path)}: Transfer error")
             # Check retry count for exceptions too
             retry_count = self._retry_counts.get(folder_path, 0)
             if retry_count < self._max_retries:
                 self._retry_counts[folder_path] = retry_count + 1
                 logger.error(
-                    f"Monitor: Will retry - attempt {retry_count + 1}/{self._max_retries}"
+                    f"Monitor: {os.path.basename(folder_path)}: Will retry (attempt {retry_count + 1}/{self._max_retries})"
                 )
                 self.stable_files_queue.put(folder_path)
             else:
                 logger.error(
-                    f"Monitor: Transfer failed permanently after {self._max_retries} attempts"
+                    f"Monitor: {os.path.basename(folder_path)}: Transfer failed permanently"
                 )
                 self._retry_counts.pop(folder_path, None)
             # Clear from processed so it can be retried

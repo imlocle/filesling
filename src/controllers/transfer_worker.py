@@ -44,7 +44,7 @@ class TransferWorker(QObject):
     def _ensure_remote_directory(self, remote_dir: str) -> None:
         """
         Ensure remote directory exists. Creates intermediate directories as needed.
-        
+
         Raises:
             RemoteDirectoryError: If directory creation fails
             ConnectionLostError: If connection is lost
@@ -66,28 +66,26 @@ class TransferWorker(QObject):
                     self.sftp.mkdir(cur)
                 except IOError as e:
                     raise RemoteDirectoryError(
-                        f"Failed to create remote directory: {cur}",
-                        details=str(e)
+                        f"Failed to create remote directory: {cur}", details=str(e)
                     )
                 except Exception as e:
                     if "Socket is closed" in str(e) or "not open" in str(e).lower():
                         raise ConnectionLostError(
-                            "Connection lost during directory creation",
-                            details=str(e)
+                            "Connection lost during directory creation", details=str(e)
                         )
                     raise
 
     def _verify_upload(self, local_path: str, remote_path: str) -> bool:
         """
         Verify file was uploaded successfully by comparing sizes.
-        
+
         Args:
             local_path: Local file path
             remote_path: Remote file path
-            
+
         Returns:
             True if verification succeeds
-            
+
         Raises:
             TransferVerificationError: If verification fails
         """
@@ -95,32 +93,30 @@ class TransferWorker(QObject):
             local_size = os.path.getsize(local_path)
             remote_stat = self.sftp.stat(remote_path)
             remote_size = remote_stat.st_size
-            
+
             if local_size != remote_size:
                 raise TransferVerificationError(
                     f"File size mismatch after upload",
                     file_path=local_path,
-                    details=f"Local: {local_size} bytes, Remote: {remote_size} bytes"
+                    details=f"Local: {local_size} bytes, Remote: {remote_size} bytes",
                 )
-            
+
             return True
         except TransferVerificationError:
             raise
         except Exception as e:
             raise TransferVerificationError(
-                f"Failed to verify upload",
-                file_path=local_path,
-                details=str(e)
+                f"Failed to verify upload", file_path=local_path, details=str(e)
             )
 
     def _upload_file(self, local_path: str, remote_dir: str) -> None:
         """
         Upload a single file with verification.
-        
+
         Args:
             local_path: Local file path
             remote_dir: Remote directory to upload to
-            
+
         Raises:
             FileUploadError: If upload fails
             RemoteDirectoryError: If directory creation fails
@@ -129,7 +125,7 @@ class TransferWorker(QObject):
         filename = os.path.basename(local_path)
         remote_file = os.path.join(remote_dir, filename).replace("\\", "/")
         remote_dir = os.path.dirname(remote_file)
-        
+
         try:
             self._ensure_remote_directory(remote_dir)
         except (RemoteDirectoryError, ConnectionLostError):
@@ -139,9 +135,7 @@ class TransferWorker(QObject):
             size_bytes = os.path.getsize(local_path)
         except OSError as e:
             raise FileUploadError(
-                f"Cannot access local file",
-                file_path=local_path,
-                details=str(e)
+                f"Cannot access local file", file_path=local_path, details=str(e)
             )
 
         # progress callback
@@ -152,56 +146,49 @@ class TransferWorker(QObject):
             if pct % 5 == 0:  # throttle logs a bit
                 logger.progress_signal.emit(pct)
 
-        logger.upload(f"Manual: Upload: {local_path} → {remote_file}")
+        logger.upload(f"Manual: {filename}: Start upload")
         logger.progress_signal.emit(0)
 
         try:
             self.sftp.put(local_path, remote_file, callback=progress_callback)
-            
+
             # Verify upload
             self._verify_upload(local_path, remote_file)
-            
-            logger.success(f"Manual: Uploaded: {filename} ({format_size(size_bytes)})")
+
+            logger.success(f"Manual: {filename}: Uploaded ({format_size(size_bytes)})")
             logger.progress_signal.emit(100)
-            
+
         except TransferVerificationError as e:
-            logger.error(f"Manual: Verification failed: {e}")
+            logger.error(f"Manual: {filename}: Verification failed")
             # Try to remove incomplete file
             try:
                 self.sftp.remove(remote_file)
             except Exception:
                 pass
             raise FileUploadError(
-                f"Upload verification failed",
-                file_path=local_path,
-                details=str(e)
+                f"Upload verification failed", file_path=local_path, details=str(e)
             )
         except IOError as e:
             if "Socket is closed" in str(e) or "not open" in str(e).lower():
                 raise ConnectionLostError(
-                    "Connection lost during upload",
-                    details=str(e)
+                    "Connection lost during upload", details=str(e)
                 )
             raise FileUploadError(
-                f"Failed to upload file",
-                file_path=local_path,
-                details=str(e)
+                f"Failed to upload file", file_path=local_path, details=str(e)
             )
         except Exception as e:
             raise FileUploadError(
-                f"Unexpected error during upload",
-                file_path=local_path,
-                details=str(e)
+                f"Unexpected error during upload", file_path=local_path, details=str(e)
             )
 
     def _upload_folder(self, local_folder: str, remote_root: str) -> None:
         """
         Upload folder recursively.
-        
+
         Args:
             local_folder: Local folder path
             remote_root: Remote root directory
-            
+
         Raises:
             FileUploadError: If upload fails
             RemoteDirectoryError: If directory creation fails
@@ -235,7 +222,7 @@ class TransferWorker(QObject):
                     self._upload_file(path, self.remote_root)
 
             self.finished.emit()
-            
+
         except ConnectionLostError as e:
             msg = f"Connection lost during transfer: {e.message}"
             if e.details:
@@ -243,7 +230,7 @@ class TransferWorker(QObject):
             logger.error(msg)
             self.error.emit(msg)
             self.finished.emit()
-            
+
         except (FileUploadError, RemoteDirectoryError, TransferVerificationError) as e:
             msg = f"{e.message}"
             if e.file_path:
@@ -253,7 +240,7 @@ class TransferWorker(QObject):
             logger.error(msg)
             self.error.emit(msg)
             self.finished.emit()
-            
+
         except Exception as e:
             msg = f"Manual transfer failed: {e}"
             logger.error(msg)

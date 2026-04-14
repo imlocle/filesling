@@ -85,11 +85,13 @@ class MainWindowController:
         """Handle manual transfer started."""
         logger.info(f"UI: Manual transfer started: {path}")
         self.view.upload_all_btn.setEnabled(False)
+        self._set_explorers_enabled(False)
 
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed."""
         logger.success(f"UI: Manual transfer completed: {path}")
         self.view.upload_all_btn.setEnabled(True)
+        self._set_explorers_enabled(True)
         self.refresh_explorers()
 
     def _on_auto_transfer_completed(self, path: str) -> None:
@@ -102,6 +104,7 @@ class MainWindowController:
         """Handle manual transfer failed."""
         logger.error(f"UI: Manual transfer failed: {path}: {error}")
         self.view.upload_all_btn.setEnabled(True)
+        self._set_explorers_enabled(True)
         QMessageBox.warning(
             self.view,
             "Transfer Failed",
@@ -266,6 +269,42 @@ class MainWindowController:
 
         logger.success("Explorers refreshed")
 
+    def _set_explorers_enabled(self, enabled: bool) -> None:
+        """
+        Enable or disable both explorers and apply visual feedback.
+
+        Args:
+            enabled: True to enable, False to disable
+        """
+        # Disable interaction
+        self.view.watch_explorer.setEnabled(enabled)
+        self.view.pi_explorer.setEnabled(enabled)
+
+        # Grey out visually (reduce opacity)
+        opacity = 1.0 if enabled else 0.5
+        style = (
+            f"""
+            QWidget {{
+                opacity: {opacity};
+            }}
+        """
+            if not enabled
+            else ""
+        )
+
+        if not enabled:
+            # Apply semi-transparent overlay effect
+            self.view.watch_explorer.setStyleSheet(
+                "QWidget { background-color: rgba(0, 0, 0, 30); }"
+            )
+            self.view.pi_explorer.setStyleSheet(
+                "QWidget { background-color: rgba(0, 0, 0, 30); }"
+            )
+        else:
+            # Restore original style
+            self.view.watch_explorer.setStyleSheet("")
+            self.view.pi_explorer.setStyleSheet("")
+
     def handle_file_open(self, path: str) -> None:
         """Handle file open event from explorer."""
         logger.info(f"📂 Opened file: {path}")
@@ -310,7 +349,7 @@ class MainWindowController:
                 self._delete_local(path)
                 self.view.watch_explorer.refresh()
 
-            logger.trash(f"Deleted: {path}")
+            logger.trash(f"Deletion: {os.path.basename(path)}: Deleted")
 
         except ConnectionLostError as e:
             logger.error(f"Delete failed: Connection lost: {e}")
@@ -473,7 +512,7 @@ class MainWindowController:
                 os.rename(old_path, new_path)
                 self.view.watch_explorer.refresh()
 
-            logger.success(f"Renamed: {old_path} → {new_path}")
+            logger.success(f"Renamed: {os.path.basename(old_path)}: → {new_name}")
         except Exception as e:
             logger.error(f"Rename failed: {e}")
             QMessageBox.critical(
@@ -505,7 +544,7 @@ class MainWindowController:
                 os.makedirs(folder_path, exist_ok=True)
                 self.view.watch_explorer.refresh()
 
-            logger.success(f"Created folder: {folder_path}")
+            logger.success(f"Folder: {os.path.basename(folder_path)}: Created")
         except FileExistsError:
             logger.warn(f"Folder already exists: {folder_path}")
             QMessageBox.warning(
@@ -583,7 +622,9 @@ class MainWindowController:
                 shutil.move(src_path, dest_path)
                 self.view.watch_explorer.refresh()
 
-            logger.success(f"Moved: {src_path} → {dest_path}")
+            logger.success(
+                f"Moved: {os.path.basename(src_path)}: To {os.path.basename(dest_path)}"
+            )
         except FileExistsError:
             logger.warn(f"Destination already exists: {dest_path}")
             QMessageBox.warning(

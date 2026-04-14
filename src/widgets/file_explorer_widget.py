@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMenu,
-    QMessageBox,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -627,7 +626,7 @@ class FileExplorerWidget(QWidget):
                                     f"Moved: {os.path.basename(src)} -> {os.path.basename(target_path)}/"
                                 )
                             except Exception as e:
-                                logger.error(f"Error moving {src}: {e}")
+                                logger.error(f"Moved: {os.path.basename(src)}: Failed")
                         self.refresh()
 
                 self.drag_over = False
@@ -669,7 +668,7 @@ class FileExplorerWidget(QWidget):
             dst = os.path.join(self.current_path, os.path.basename(src))
             try:
                 shutil.move(src, dst)
-                logger.info(f"Moved: {os.path.basename(src)} -> {self.current_path}")
+                logger.info(f"Moved: {os.path.basename(src)}: Into current directory")
             except Exception as e:
                 logger.error(f"Error moving {src}: {e}")
 
@@ -700,16 +699,16 @@ class FileExplorerWidget(QWidget):
                         continue
                     self.sftp.rename(src_path, dst_path)
                     logger.info(
-                        f"Moved (remote): {entry} → {os.path.basename(target_folder_path)}/"
+                        f"Moved: {entry}: Into {os.path.basename(target_folder_path)}"
                     )
                 else:
                     shutil.move(src_path, dst_path)
                     logger.info(
-                        f"Moved (local): {entry} → {os.path.basename(target_folder_path)}/"
+                        f"Moved: {entry}: Into {os.path.basename(target_folder_path)}"
                     )
                 moved_count += 1
             except Exception as e:
-                logger.error(f"Failed to move {entry}: {e}")
+                logger.error(f"Moved: {entry}: Failed")
 
         if moved_count > 0:
             self.refresh()
