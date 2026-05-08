@@ -31,6 +31,7 @@ class SettingsConfig(BaseModel):
     # Multi-server support
     servers: dict[str, dict] = Field(default_factory=dict)  # server_id -> server config
     current_server_id: str = ""  # Currently selected server
+    default_server_id: str = ""  # Server to auto-connect on launch
 
     # Connection Settings (for backward compatibility)
     pi_user: str = ""
@@ -471,9 +472,24 @@ class Settings:
             if self.config.current_server_id == server_id:
                 self.config.current_server_id = ""
 
+            # If this was the default server, clear it
+            if self.config.default_server_id == server_id:
+                self.config.default_server_id = ""
+
             # Save to disk
             config_data = self._config_to_dict()
             self.save_config(config_data)
+
+    def set_default_server(self, server_id: str) -> None:
+        """
+        Set a server as the default for auto-connect on launch.
+
+        Args:
+            server_id: Server identifier to set as default
+        """
+        self.config.default_server_id = server_id
+        config_data = self._config_to_dict()
+        self.save_config(config_data)
 
     def load_server(self, server_id: str) -> bool:
         """
@@ -515,6 +531,7 @@ class Settings:
         return {
             "servers": self.config.servers,
             "current_server_id": self.config.current_server_id,
+            "default_server_id": self.config.default_server_id,
             "pi_user": self.config.pi_user,
             "pi_ip": self.config.pi_ip,
             "ssh_key_path": self.config.ssh_key_path,

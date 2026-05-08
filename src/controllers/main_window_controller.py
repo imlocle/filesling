@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Optional
 from paramiko import SFTPClient
 from PySide6.QtWidgets import QDialog, QMessageBox
 
-from src.application.auto_sync_controller import AutoSyncController
 from src.application.manual_transfer_controller import ManualTransferController
 from src.components.settings_window import SettingsWindow
 from src.config.settings import Settings
@@ -29,15 +28,12 @@ class MainWindowController:
     """
     Controller for MainWindow.
 
-    This controller now delegates to specialized controllers:
-    - ManualTransferController: For user-initiated transfers
-    - AutoSyncController: For automatic monitoring
-
-    It focuses on:
+    Handles:
     - Connection management
+    - Manual transfers (via ManualTransferController)
     - UI coordination
     - Settings management
-    - File operations (delete, rename)
+    - File operations (delete, rename, move, create folder)
     """
 
     def __init__(
@@ -54,10 +50,6 @@ class MainWindowController:
             self.settings, self.connection_manager, parent=view
         )
 
-        self.auto_sync = AutoSyncController(
-            self.settings, self.connection_manager, parent=view
-        )
-
         # Connect controller signals to UI updates
         self._connect_controller_signals()
 
@@ -71,43 +63,21 @@ class MainWindowController:
             self._on_manual_transfer_completed
         )
         self.manual_transfer.transfer_failed.connect(self._on_manual_transfer_failed)
-
-        # Auto sync signals
-        self.auto_sync.monitoring_started.connect(self._on_monitoring_started)
-        self.auto_sync.monitoring_stopped.connect(self._on_monitoring_stopped)
-        self.auto_sync.scan_progress.connect(self._on_scan_progress)
-        self.auto_sync.file_transferred.connect(self._on_auto_transfer_completed)
+        self.manual_transfer.queue_changed.connect(self._on_queue_changed)
 
     # --------------------------------------------------------------
     #  SIGNAL HANDLERS
     # --------------------------------------------------------------
     def _on_manual_transfer_started(self, path: str) -> None:
         """Handle manual transfer started."""
-        logger.info(f"UI: Manual transfer started: {path}")
-        self.view.upload_all_btn.setEnabled(False)
-        self._set_explorers_enabled(False)
+        logger.info(f"Transfer started: {os.path.basename(path)}")
 
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed."""
-        logger.success(f"UI: Manual transfer completed: {path}")
-        self.view.upload_all_btn.setEnabled(True)
-        self._set_explorers_enabled(True)
         self.refresh_explorers()
-
-    def _on_auto_transfer_completed(self, path: str) -> None:
-        """Handle automatic transfer completed."""
-        # Refresh Pi explorer to show newly transferred files
-        if (
-            self.connection_manager.is_connected()
-            and self.connection_manager.sftp_client
-        ):
-            self.view.pi_explorer.refresh()
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed."""
-        logger.error(f"UI: Manual transfer failed: {path}: {error}")
-        self.view.upload_all_btn.setEnabled(True)
-        self._set_explorers_enabled(True)
         QMessageBox.warning(
             self.view,
             "Transfer Failed",
@@ -115,26 +85,15 @@ class MainWindowController:
             QMessageBox.StandardButton.Ok,
         )
 
-    def _on_monitoring_started(self) -> None:
-        """Handle monitoring started."""
-        self.view.status_label.setText("▶ Monitoring: Active")
-        self.view.status_label.setStyleSheet("color: #4ec9b0; font-weight: 500;")
-        self.view.start_btn.setEnabled(False)
-        self.view.stop_btn.setEnabled(True)
-        self.view.upload_all_btn.setEnabled(True)
-
-    def _on_monitoring_stopped(self) -> None:
-        """Handle monitoring stopped."""
-        self.view.status_label.setText("⏸ Monitoring: Idle")
-        self.view.status_label.setStyleSheet("color: #858585; font-weight: 500;")
-        self.view.start_btn.setEnabled(True)
-        self.view.stop_btn.setEnabled(False)
-        self.view.upload_all_btn.setEnabled(False)
-
-    def _on_scan_progress(self, item_name: str, current: int, total: int) -> None:
-        """Handle scan progress updates."""
-        self.view.status_label.setText(f"🔍 Scanning: {item_name} ({current}/{total})")
-        self.view.status_label.setStyleSheet("color: #007acc; font-weight: 500;")
+    def _on_queue_changed(self, total: int) -> None:
+        """Handle transfer queue size change."""
+        if total > 1:
+            self.view.progress_bar.setFormat(f"📤 {total} transfers in queue")
+        elif total == 1:
+            self.view.progress_bar.setFormat("📤 Transferring...")
+        else:
+            self.view.progress_bar.setFormat("")
+            self.view.progress_bar.setValue(0)
 
     # --------------------------------------------------------------
     #  CONNECTION MANAGEMENT
@@ -224,16 +183,6 @@ class MainWindowController:
             )
             self.view.handle_connection_failure()
 
-    def check_connection(self) -> None:
-        """Check connection and reconnect if needed."""
-        if not self.connection_manager.is_connected():
-            self.view.connection_status_label.setText("● Disconnected")
-            self.view.connection_status_label.setObjectName("connection_disconnected")
-            self.view.connection_status_label.setStyle(
-                self.view.connection_status_label.style()
-            )
-            self.connect()
-
     def handle_remote_explorer_failure(self, error_msg: str) -> None:
         """Handle remote explorer errors by attempting to reconnect."""
         logger.error(f"Explorer Error: {error_msg}")
@@ -269,25 +218,6 @@ class MainWindowController:
             )
 
         logger.success("Explorer refreshed")
-
-    def _set_explorers_enabled(self, enabled: bool) -> None:
-        """
-        Enable or disable the explorer and apply visual feedback.
-
-        Args:
-            enabled: True to enable, False to disable
-        """
-        # Disable interaction
-        self.view.pi_explorer.setEnabled(enabled)
-
-        if not enabled:
-            # Apply semi-transparent overlay effect
-            self.view.pi_explorer.setStyleSheet(
-                "QWidget { background-color: rgba(0, 0, 0, 30); }"
-            )
-        else:
-            # Restore original style
-            self.view.pi_explorer.setStyleSheet("")
 
     def handle_file_open(self, path: str) -> None:
         """Handle file open event from explorer."""
@@ -619,46 +549,6 @@ class MainWindowController:
             )
 
     # --------------------------------------------------------------
-    #  MONITORING
-    # --------------------------------------------------------------
-    def start_monitor(self) -> None:
-        """Start automatic monitoring via AutoSyncController."""
-        self.check_connection()
-        self.auto_sync.start_monitoring()
-
-    def stop_monitor(self) -> None:
-        """Stop automatic monitoring via AutoSyncController."""
-        self.auto_sync.stop_monitoring()
-
-    # --------------------------------------------------------------
-    #  UPLOAD
-    # --------------------------------------------------------------
-    def upload_all(self) -> None:
-        """Scan and transfer all existing files in watch directory."""
-        if not os.path.exists(self.settings.local_watch_dir):
-            logger.error("Watch directory missing.")
-            QMessageBox.warning(
-                self.view,
-                "Directory Not Found",
-                f"Watch directory does not exist:\n{self.settings.local_watch_dir}",
-                QMessageBox.StandardButton.Ok,
-            )
-            return
-
-        if not self.auto_sync.is_monitoring():
-            logger.warn("Monitoring not active. Start monitoring first.")
-            QMessageBox.information(
-                self.view,
-                "Monitoring Required",
-                "Please start monitoring before uploading all files.",
-                QMessageBox.StandardButton.Ok,
-            )
-            return
-
-        logger.search("Scanning for existing files...")
-        self.auto_sync.scan_and_transfer_existing()
-
-    # --------------------------------------------------------------
     #  SETTINGS
     # --------------------------------------------------------------
     def open_settings(self):
@@ -673,12 +563,7 @@ class MainWindowController:
     #  SHUTDOWN
     # --------------------------------------------------------------
     def shutdown(self) -> None:
-        """Clean shutdown of all controllers and connections."""
-        try:
-            self.auto_sync.stop_monitoring()
-        except Exception as e:
-            logger.error(f"Error stopping monitoring: {e}")
-
+        """Clean shutdown of connections."""
         try:
             self.connection_manager.disconnect()
         except Exception as e:

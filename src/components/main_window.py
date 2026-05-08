@@ -95,25 +95,16 @@ class MainWindow(QWidget):
         QTimer.singleShot(200, self._auto_connect_and_start)
 
     def _auto_connect_and_start(self):
-        """Automatically connect and start monitoring after window loads (if enabled in settings)."""
-        # Only auto-connect if auto_start_monitor is enabled
-        if not self.settings.auto_start_monitor:
-            logger.info("Auto-connect disabled in settings")
-            return
-
-        # Connect to the server
+        """Automatically connect after window loads."""
         self.controller.connect()
-
-        # Start monitoring after successful connection
-        if self.connection_manager_service.is_connected():
-            self.controller.start_monitor()
 
     def _should_show_server_selection(self) -> bool:
         """
         Check if we should show server selection dialog.
+        If a default server is set, skip the dialog and load it directly.
 
         Returns:
-            True if server selection should be shown
+            True if server was selected/loaded successfully
         """
         servers = self.settings.get_servers()
 
@@ -121,7 +112,13 @@ class MainWindow(QWidget):
         if not servers:
             return self._show_initial_setup()
 
-        # If servers exist, show selection dialog
+        # If a default server is set, try to load it directly (skip dialog)
+        default_id = self.settings.config.default_server_id
+        if default_id and default_id in servers:
+            if self.settings.load_server(default_id):
+                return True
+
+        # Otherwise show selection dialog
         return self._show_server_selection()
 
     def _show_initial_setup(self) -> bool:
@@ -211,7 +208,7 @@ class MainWindow(QWidget):
         return True
 
     def handle_connection_failure(self):
-        """Handle connection failure with retry logic."""
+        """Handle connection failure — show server selection dialog."""
         self.connection_attempts += 1
 
         if self.connection_attempts >= self.max_connection_attempts:
@@ -229,14 +226,11 @@ class MainWindow(QWidget):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                # Reset attempts and show server selection
                 self.connection_attempts = 0
                 if self._show_server_selection():
-                    # Reconnect with new server
+                    self.connection_manager_service = ConnectionManagerService(self.settings)
+                    self.controller.connection_manager = self.connection_manager_service
                     self.controller.connect()
-            else:
-                # User chose not to select different server
-                logger.info("User cancelled server selection")
         else:
             logger.warn(
                 f"Connection attempt {self.connection_attempts}/{self.max_connection_attempts} failed"
@@ -244,10 +238,6 @@ class MainWindow(QWidget):
 
     def change_server(self):
         """Allow user to change to a different server."""
-        # Stop monitoring if active
-        if self.controller.auto_sync.is_monitoring():
-            self.controller.stop_monitor()
-
         # Disconnect current connection
         self.connection_manager_service.disconnect()
 
@@ -269,9 +259,6 @@ class MainWindow(QWidget):
     def _setup_connections(self) -> None:
         """Wire UI signals to controller actions."""
         self.connect_btn.clicked.connect(self.controller.connect)
-        self.start_btn.clicked.connect(self.controller.start_monitor)
-        self.stop_btn.clicked.connect(self.controller.stop_monitor)
-        self.upload_all_btn.clicked.connect(self.controller.upload_all)
         self.change_server_btn.clicked.connect(self.change_server)
         self.refresh_btn.clicked.connect(self.controller.refresh_explorers)
         self.settings_btn.clicked.connect(self.controller.open_settings)
@@ -316,28 +303,8 @@ class MainWindow(QWidget):
         self.connect_btn.setMinimumHeight(36)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Start button
-        self.start_btn = QPushButton("▶  Start Monitoring")
-        self.start_btn.setMinimumHeight(36)
-        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        # Stop button
-        self.stop_btn = QPushButton("⏹  Stop Monitoring")
-        self.stop_btn.setMinimumHeight(36)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        # Upload all button
-        self.upload_all_btn = QPushButton("⬆  Upload All")
-        self.upload_all_btn.setMinimumHeight(36)
-        self.upload_all_btn.setEnabled(False)
-        self.upload_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
         # Spacer
         toolbar_layout.addWidget(self.connect_btn)
-        toolbar_layout.addWidget(self.start_btn)
-        toolbar_layout.addWidget(self.stop_btn)
-        toolbar_layout.addWidget(self.upload_all_btn)
         toolbar_layout.addStretch()
 
         # Right side buttons
@@ -399,12 +366,7 @@ class MainWindow(QWidget):
         self.connection_status_label = QLabel("● Disconnected")
         self.connection_status_label.setObjectName("connection_disconnected")
 
-        # Monitoring status
-        self.status_label = QLabel("⏸ Monitoring: Idle")
-        self.status_label.setStyleSheet("color: #858585; font-weight: 500;")
-
         status_layout.addWidget(self.connection_status_label)
-        status_layout.addWidget(self.status_label)
         status_layout.addStretch()
 
         layout.addWidget(status_bar)
