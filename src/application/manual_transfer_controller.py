@@ -71,6 +71,7 @@ class ManualTransferController(QObject):
         self._active_worker: Optional[TransferWorker] = None
         self._active_thread: Optional[QThread] = None
         self._current_transfer: Optional[QueuedTransfer] = None
+        self._transfer_errored = False
 
     def is_busy(self) -> bool:
         """Check if a transfer is currently in progress."""
@@ -192,6 +193,7 @@ class ManualTransferController(QObject):
             self._active_thread.finished.connect(self._cleanup_and_next)
 
             # Start
+            self._transfer_errored = False
             self._active_thread.start()
 
             logger.upload(f"Transfer: Started: {transfer.display_name}")
@@ -203,8 +205,12 @@ class ManualTransferController(QObject):
             QTimer.singleShot(100, self._process_next)
 
     def _on_transfer_finished(self) -> None:
-        """Handle successful transfer completion."""
+        """Handle transfer completion. Only delete files if no error occurred."""
         if not self._current_transfer:
+            return
+
+        # If error already handled this transfer, don't delete or emit success
+        if self._transfer_errored:
             return
 
         transfer = self._current_transfer
@@ -229,7 +235,9 @@ class ManualTransferController(QObject):
         self.transfer_completed.emit(transfer.local_paths[0])
 
     def _on_transfer_error(self, error_msg: str) -> None:
-        """Handle transfer error."""
+        """Handle transfer error. Marks transfer as errored to prevent deletion."""
+        self._transfer_errored = True
+
         if not self._current_transfer:
             return
 

@@ -863,56 +863,7 @@ class FileExplorerWidget(QWidget):
             self.update()
             return
 
-        # For both local and remote: check if dropping on a folder (external drop into folder)
-        if item_at_drop:
-            entry = item_at_drop.text(0)
-            target_path = os.path.join(self.current_path, entry)
-
-            # Check if target is a directory
-            is_target_folder = False
-            if self.is_remote:
-                is_target_folder = self._is_remote_directory(target_path)
-            else:
-                is_target_folder = os.path.isdir(target_path)
-
-            if is_target_folder:
-                # External drop into folder
-                if not event.mimeData().hasUrls():
-                    self.drag_over = False
-                    self.update()
-                    return
-
-                urls: List[QUrl] = event.mimeData().urls()
-                local_paths: List[str] = []
-                for url in urls:
-                    if not url.isLocalFile():
-                        continue
-                    p = url.toLocalFile()
-                    if p:
-                        local_paths.append(p)
-
-                if local_paths:
-                    if self.is_remote:
-                        self.files_dropped.emit(local_paths, target_path)
-                    else:
-                        for src in local_paths:
-                            if not os.path.exists(src):
-                                continue
-                            dst = os.path.join(target_path, os.path.basename(src))
-                            try:
-                                shutil.move(src, dst)
-                                logger.info(
-                                    f"Moved: {os.path.basename(src)} -> {os.path.basename(target_path)}/"
-                                )
-                            except Exception as e:
-                                logger.error(f"Moved: {os.path.basename(src)}: Failed")
-                        self.refresh()
-
-                self.drag_over = False
-                self.update()
-                return
-
-        # External drop (from external source like Finder)
+        # External drop (from Finder/desktop) — always drop into current directory
         if not event.mimeData().hasUrls():
             self.drag_over = False
             self.update()
@@ -932,15 +883,14 @@ class FileExplorerWidget(QWidget):
             self.update()
             return
 
-        # Remote explorer: emit for controller (upload in background)
+        # Remote explorer: upload to current directory
         if self.is_remote:
-            # IMPORTANT: do not attempt to upload here; just emit intent
             self.files_dropped.emit(local_paths, self.current_path)
             self.drag_over = False
             self.update()
             return
 
-        # Local explorer: move into current directory (not copy)
+        # Local explorer: move into current directory
         for src in local_paths:
             if not os.path.exists(src):
                 continue
