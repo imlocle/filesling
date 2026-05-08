@@ -54,6 +54,7 @@ class MainWindowController:
         self._connect_controller_signals()
 
         self.selected_item: Optional[str] = None
+        self._current_queue_index: int = -1
 
     def _connect_controller_signals(self) -> None:
         """Connect controller signals to UI updates."""
@@ -63,37 +64,55 @@ class MainWindowController:
             self._on_manual_transfer_completed
         )
         self.manual_transfer.transfer_failed.connect(self._on_manual_transfer_failed)
+        self.manual_transfer.transfer_progress.connect(self._on_transfer_progress)
         self.manual_transfer.queue_changed.connect(self._on_queue_changed)
+
+        # Queue widget signals
+        if hasattr(self.view, 'transfer_queue'):
+            self.view.transfer_queue.cancel_transfer.connect(self._on_cancel_transfer)
 
     # --------------------------------------------------------------
     #  SIGNAL HANDLERS
     # --------------------------------------------------------------
     def _on_manual_transfer_started(self, path: str) -> None:
-        """Handle manual transfer started."""
-        logger.info(f"Transfer started: {os.path.basename(path)}")
+        """Handle manual transfer started — mark current item as in-progress."""
+        name = os.path.basename(path)
+        logger.info(f"Transfer started: {name}")
+        # Mark the first pending item as in-progress
+        if hasattr(self.view, 'transfer_queue'):
+            queue = self.view.transfer_queue
+            for i, item in enumerate(queue._items):
+                if item.status.value == "pending":
+                    queue.set_in_progress(i)
+                    self._current_queue_index = i
+                    break
 
     def _on_manual_transfer_completed(self, path: str) -> None:
-        """Handle manual transfer completed."""
+        """Handle manual transfer completed — mark item as done."""
+        if hasattr(self.view, 'transfer_queue') and hasattr(self, '_current_queue_index'):
+            self.view.transfer_queue.set_completed(self._current_queue_index)
         self.refresh_explorers()
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
-        """Handle manual transfer failed."""
-        QMessageBox.warning(
-            self.view,
-            "Transfer Failed",
-            f"Failed to transfer {os.path.basename(path)}\n\n{error}",
-            QMessageBox.StandardButton.Ok,
-        )
+        """Handle manual transfer failed — mark item as failed."""
+        if hasattr(self.view, 'transfer_queue') and hasattr(self, '_current_queue_index'):
+            short_error = error.split('\n')[0][:80]
+            self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
+
+    def _on_transfer_progress(self, transferred: int, total: int) -> None:
+        """Handle transfer progress update."""
+        if hasattr(self.view, 'transfer_queue') and hasattr(self, '_current_queue_index'):
+            self.view.transfer_queue.update_progress(
+                self._current_queue_index, transferred, total
+            )
 
     def _on_queue_changed(self, total: int) -> None:
-        """Handle transfer queue size change."""
-        if total > 1:
-            self.view.progress_bar.setFormat(f"📤 {total} transfers in queue")
-        elif total == 1:
-            self.view.progress_bar.setFormat("📤 Transferring...")
-        else:
-            self.view.progress_bar.setFormat("")
-            self.view.progress_bar.setValue(0)
+        """Handle transfer queue size change — add items to visual queue."""
+        pass  # Queue widget is updated directly via add_transfer
+
+    def _on_cancel_transfer(self, pending_index: int) -> None:
+        """Handle cancel request from queue widget."""
+        self.manual_transfer.cancel_queued_item(pending_index)
 
     # --------------------------------------------------------------
     #  CONNECTION MANAGEMENT

@@ -48,6 +48,7 @@ class ManualTransferController(QObject):
     transfer_started = Signal(str)  # path
     transfer_completed = Signal(str)  # path
     transfer_failed = Signal(str, str)  # path, error
+    transfer_progress = Signal(int, int)  # transferred_bytes, total_bytes
     queue_changed = Signal(int)  # queue size (including current)
 
     def __init__(
@@ -188,6 +189,7 @@ class ManualTransferController(QObject):
             self._active_thread.started.connect(self._active_worker.run)
             self._active_worker.finished.connect(self._on_transfer_finished)
             self._active_worker.error.connect(self._on_transfer_error)
+            self._active_worker.progress.connect(self._on_transfer_progress)
             self._active_worker.finished.connect(self._active_thread.quit)
             self._active_worker.error.connect(self._active_thread.quit)
             self._active_thread.finished.connect(self._cleanup_and_next)
@@ -245,6 +247,10 @@ class ManualTransferController(QObject):
         logger.error(f"Transfer: Failed: {transfer.display_name}: {error_msg}")
         self.transfer_failed.emit(transfer.local_paths[0], error_msg)
 
+    def _on_transfer_progress(self, transferred: int, total: int) -> None:
+        """Forward progress from worker to UI."""
+        self.transfer_progress.emit(transferred, total)
+
     def _cleanup_and_next(self) -> None:
         """Clean up current transfer and process next in queue."""
         if self._active_worker:
@@ -270,3 +276,18 @@ class ManualTransferController(QObject):
         if count > 0:
             logger.info(f"Transfer: Cleared {count} queued item(s)")
         self.queue_changed.emit(1 if self._is_processing else 0)
+
+    def cancel_queued_item(self, queue_index: int) -> None:
+        """
+        Cancel a pending item by its position in the internal queue.
+
+        Args:
+            queue_index: Index relative to pending items (0 = next pending)
+        """
+        # The visual queue index includes completed/in-progress items,
+        # but the internal queue only has pending items.
+        # We need to map: count how many pending items precede this visual index.
+        if 0 <= queue_index < len(self._queue):
+            removed = self._queue.pop(queue_index)
+            logger.info(f"Transfer: Cancelled: {removed.display_name}")
+            self.queue_changed.emit(len(self._queue) + (1 if self._is_processing else 0))

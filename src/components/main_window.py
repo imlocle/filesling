@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
@@ -8,7 +10,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -421,20 +422,17 @@ class MainWindow(QWidget):
         layout.addWidget(log_container)
 
     def _setup_progress_bar(self, layout: QVBoxLayout) -> None:
-        """Create progress bar."""
-        progress_container = QWidget()
-        progress_layout = QVBoxLayout(progress_container)
-        progress_layout.setContentsMargins(12, 0, 12, 12)
+        """Create transfer queue panel."""
+        from src.widgets.transfer_queue_widget import TransferQueueWidget
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("")
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMinimumHeight(28)
+        queue_container = QWidget()
+        queue_layout = QVBoxLayout(queue_container)
+        queue_layout.setContentsMargins(12, 0, 12, 12)
 
-        progress_layout.addWidget(self.progress_bar)
-        layout.addWidget(progress_container)
+        self.transfer_queue = TransferQueueWidget()
+        queue_layout.addWidget(self.transfer_queue)
+
+        layout.addWidget(queue_container)
 
     # ------------------------------------------------------------------
     # Logging & Progress
@@ -447,14 +445,8 @@ class MainWindow(QWidget):
         scrollbar.setValue(scrollbar.maximum())
 
     def update_progress(self, value: int) -> None:
-        """Update progress bar."""
-        self.progress_bar.setValue(value)
-        if value < 100:
-            self.progress_bar.setFormat(f"Transferring... {value}%")
-        else:
-            self.progress_bar.setFormat("✓ Transfer Complete")
-            # Reset after 2 seconds
-            QTimer.singleShot(2000, lambda: self.progress_bar.setFormat(""))
+        """Update progress (legacy — now handled by queue widget)."""
+        pass
 
     # ------------------------------------------------------------------
     # Lifecycle Events
@@ -485,10 +477,37 @@ class MainWindow(QWidget):
 
     def _handle_remote_drop(self, local_paths: list[str], remote_dir: str) -> None:
         """
-        Called when user drags files/folders from Finder onto the Pi explorer.
+        Called when user drags files/folders from Finder onto the remote explorer.
 
-        Delegates to ManualTransferController for handling.
+        Adds to visual queue and delegates to ManualTransferController.
         """
+        # Calculate total size for the queue widget
+        total_bytes = 0
+        for p in local_paths:
+            if os.path.isdir(p):
+                for root, _, files in os.walk(p):
+                    for f in files:
+                        if not f.startswith("."):
+                            try:
+                                total_bytes += os.path.getsize(os.path.join(root, f))
+                            except OSError:
+                                pass
+            elif os.path.isfile(p):
+                try:
+                    total_bytes += os.path.getsize(p)
+                except OSError:
+                    pass
+
+        # Build display name
+        names = [os.path.basename(p) for p in local_paths]
+        display_name = ", ".join(names[:2])
+        if len(names) > 2:
+            display_name += f" (+{len(names) - 2})"
+
+        # Add to visual queue
+        self.transfer_queue.add_transfer(display_name, total_bytes)
+
+        # Start the transfer
         self.controller.manual_transfer.transfer_to_pi(
             local_paths=local_paths, remote_destination=remote_dir
         )

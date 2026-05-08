@@ -25,6 +25,7 @@ class TransferWorker(QObject):
 
     finished = Signal()
     error = Signal(str)
+    progress = Signal(int, int)  # transferred_bytes, total_bytes
 
     def __init__(
         self,
@@ -145,6 +146,7 @@ class TransferWorker(QObject):
             pct = int(transferred * 100 / total)
             if pct % 5 == 0:  # throttle logs a bit
                 logger.progress_signal.emit(pct)
+            self.progress.emit(transferred, total)
 
         logger.upload(f"Manual: {filename}: Start upload")
         logger.progress_signal.emit(0)
