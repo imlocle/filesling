@@ -130,7 +130,7 @@ class ConnectionManagerService:
                 retries += 1
                 logger.error(
                     f"Connection: Timeout: Retry {retries}/{max_retries}\n"
-                    f"Check if Pi is reachable at {self.settings.pi_ip}"
+                    f"Check if server is reachable at {self.settings.pi_ip}"
                 )
                 self.ssh_client = None
                 self.sftp_client = None
@@ -152,10 +152,10 @@ class ConnectionManagerService:
         error_msg = (
             f"Connection failed after {max_retries} attempts. "
             f"Please check:\n"
-            f"1. Pi is powered on and connected to network\n"
+            f"1. Server is powered on and connected to network\n"
             f"2. IP address is correct: {self.settings.pi_ip}\n"
-            f"3. SSH is enabled on Pi\n"
-            f"4. SSH key is authorized on Pi"
+            f"3. SSH is enabled on the server\n"
+            f"4. SSH key is authorized on the server"
         )
         logger.error(f"Connection: {error_msg}")
         
@@ -235,7 +235,7 @@ class ConnectionManagerService:
             logger.error(f"Test: Authentication failed: {e}")
             return False
         except TimeoutError:
-            logger.error(f"Test: Connection timeout - Pi not reachable at {self.settings.pi_ip}")
+            logger.error(f"Test: Connection timeout - server not reachable at {self.settings.pi_ip}")
             return False
         except Exception as e:
             logger.error(f"Test: Connection failed: {e}")

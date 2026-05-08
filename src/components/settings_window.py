@@ -654,7 +654,7 @@ class SettingsWindow(QDialog):
             )
 
     def test_connection(self):
-        """Test connection to Raspberry Pi."""
+        """Test connection to remote server."""
         self.connection_status_label.setText("● Testing connection...")
         self.connection_status_label.setStyleSheet("color: #ce9178; font-weight: 500;")
 

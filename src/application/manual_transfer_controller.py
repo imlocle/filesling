@@ -87,7 +87,7 @@ class ManualTransferController(QObject):
         delete_after: Optional[bool] = None,
     ) -> bool:
         """
-        Queue files for transfer to Raspberry Pi.
+        Queue files for transfer to remote server.
 
         Unlike the old implementation, this never rejects because "busy".
         It always queues and processes sequentially.

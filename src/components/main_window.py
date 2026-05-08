@@ -26,12 +26,12 @@ from src.widgets.file_explorer_widget import FileExplorerWidget
 
 class MainWindow(QWidget):
     """
-    Modern, clean main window for PiSync.
+    Main window for PiSync — a remote file manager.
 
     Features:
-    - Clean toolbar with icon + text buttons
-    - Status bar with connection and monitoring status
-    - Dual-pane file explorer
+    - Clean toolbar with connection controls
+    - Status bar with connection status
+    - Remote file explorer with drag-and-drop upload
     - Activity log with timestamps
     - Progress indicator
     """
@@ -131,7 +131,7 @@ class MainWindow(QWidget):
         QMessageBox.information(
             self,
             "Welcome to PiSync",
-            "Welcome! Let's set up your first Raspberry Pi server.",
+            "Welcome! Let's set up your first server connection.",
             QMessageBox.StandardButton.Ok,
         )
 
@@ -265,14 +265,14 @@ class MainWindow(QWidget):
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
 
         # Pi explorer
-        self.pi_explorer.file_delete_requested.connect(self.controller.delete_item)
-        self.pi_explorer.file_rename_requested.connect(self.controller.rename_item)
-        self.pi_explorer.folder_create_requested.connect(self.controller.create_folder)
-        self.pi_explorer.item_move_requested.connect(self.controller.move_item)
-        self.pi_explorer.item_selected.connect(self.controller.handle_selection_changed)
-        self.pi_explorer.file_opened.connect(self.controller.handle_file_open)
-        self.pi_explorer.files_dropped.connect(self._handle_pi_drop)
-        self.pi_explorer.remote_error.connect(
+        self.remote_explorer.file_delete_requested.connect(self.controller.delete_item)
+        self.remote_explorer.file_rename_requested.connect(self.controller.rename_item)
+        self.remote_explorer.folder_create_requested.connect(self.controller.create_folder)
+        self.remote_explorer.item_move_requested.connect(self.controller.move_item)
+        self.remote_explorer.item_selected.connect(self.controller.handle_selection_changed)
+        self.remote_explorer.file_opened.connect(self.controller.handle_file_open)
+        self.remote_explorer.files_dropped.connect(self._handle_remote_drop)
+        self.remote_explorer.remote_error.connect(
             self.controller.handle_remote_explorer_failure
         )
 
@@ -377,15 +377,15 @@ class MainWindow(QWidget):
         content_layout = QVBoxLayout(content_container)
         content_layout.setContentsMargins(12, 12, 12, 12)
 
-        self.pi_explorer = FileExplorerWidget(
+        self.remote_explorer = FileExplorerWidget(
             settings=self.settings,
             root_path=self.settings.remote_base_dir,
-            title="🥧 Raspberry Pi",
+            title="🖥 Remote Server",
             is_remote=True,
             sftp=None,
         )
 
-        content_layout.addWidget(self.pi_explorer)
+        content_layout.addWidget(self.remote_explorer)
         layout.addWidget(content_container, stretch=1)
 
     def _setup_activity_log(self, layout: QVBoxLayout) -> None:
@@ -483,7 +483,7 @@ class MainWindow(QWidget):
         else:
             event.ignore()
 
-    def _handle_pi_drop(self, local_paths: list[str], remote_dir: str) -> None:
+    def _handle_remote_drop(self, local_paths: list[str], remote_dir: str) -> None:
         """
         Called when user drags files/folders from Finder onto the Pi explorer.
 

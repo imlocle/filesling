@@ -99,7 +99,7 @@ class MainWindowController:
     #  CONNECTION MANAGEMENT
     # --------------------------------------------------------------
     def connect(self) -> None:
-        """Establish connection to Raspberry Pi with error handling."""
+        """Establish connection to remote server with error handling."""
         try:
             if not self.connection_manager.connect():
                 self.view.connection_status_label.setText("● Disconnected")
@@ -125,9 +125,9 @@ class MainWindowController:
 
             # bind sftp to remote explorer
             if self.connection_manager.sftp_client:
-                self.view.pi_explorer.set_sftp(self.connection_manager.sftp_client)
-                self.view.pi_explorer.refresh()
-                logger.success("Connected to Raspberry Pi")
+                self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
+                self.view.remote_explorer.refresh()
+                logger.success("Connected to server")
 
         except AuthenticationError as e:
             self.view.connection_status_label.setText("● Authentication Failed")
@@ -188,8 +188,8 @@ class MainWindowController:
         logger.error(f"Explorer Error: {error_msg}")
         ok = self.connection_manager.connect()
         if ok and self.connection_manager.sftp_client:
-            self.view.pi_explorer.set_sftp(self.connection_manager.sftp_client)
-            self.view.pi_explorer.refresh(self.settings.remote_base_dir)
+            self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
+            self.view.remote_explorer.refresh(self.settings.remote_base_dir)
         else:
             self.view.connection_status_label.setText("● Disconnected")
             self.view.connection_status_label.setObjectName("connection_disconnected")
@@ -207,8 +207,8 @@ class MainWindowController:
             self.connection_manager.is_connected()
             and self.connection_manager.sftp_client
         ):
-            self.view.pi_explorer.set_sftp(self.connection_manager.sftp_client)
-            self.view.pi_explorer.refresh()
+            self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
+            self.view.remote_explorer.refresh()
         else:
             # Don't spam errors; just reflect disconnected state
             self.view.connection_status_label.setText("● Disconnected")
@@ -258,7 +258,7 @@ class MainWindowController:
         try:
             if is_remote:
                 self._delete_remote(path)
-                self.view.pi_explorer.refresh()
+                self.view.remote_explorer.refresh()
             else:
                 self._delete_local(path)
 
@@ -404,7 +404,7 @@ class MainWindowController:
         Args:
             old_path: Current path of item to rename
         """
-        explorer = self.view.pi_explorer
+        explorer = self.view.remote_explorer
         new_name = explorer.prompt_rename(old_path)
         if not new_name:
             return
@@ -416,7 +416,7 @@ class MainWindowController:
                 if not self.connection_manager.sftp_client:
                     raise RuntimeError("No SFTP connection")
                 self.connection_manager.sftp_client.rename(old_path, new_path)
-                self.view.pi_explorer.refresh()
+                self.view.remote_explorer.refresh()
             else:
                 os.rename(old_path, new_path)
 
@@ -447,7 +447,7 @@ class MainWindowController:
                 if not self.connection_manager.sftp_client:
                     raise RuntimeError("No SFTP connection")
                 self.connection_manager.sftp_client.mkdir(folder_path)
-                self.view.pi_explorer.refresh()
+                self.view.remote_explorer.refresh()
             else:
                 os.makedirs(folder_path, exist_ok=True)
 
@@ -520,7 +520,7 @@ class MainWindowController:
                 if not self.connection_manager.sftp_client:
                     raise RuntimeError("No SFTP connection")
                 self.connection_manager.sftp_client.rename(src_path, dest_path)
-                self.view.pi_explorer.refresh()
+                self.view.remote_explorer.refresh()
             else:
                 # Create destination directory if it doesn't exist
                 dest_dir = os.path.dirname(dest_path)

@@ -1,5 +1,5 @@
 """
-Server selection dialog for choosing which Raspberry Pi to connect to.
+Server selection dialog for choosing which server to connect to.
 
 Shows a list of saved servers with their connection details.
 Allows adding new servers or editing existing ones.
@@ -81,7 +81,7 @@ class ServerSelectionDialog(QDialog):
         header_layout = QVBoxLayout(header)
         header_layout.setSpacing(8)
 
-        title = QLabel("Select Raspberry Pi Server")
+        title = QLabel("Select Server")
         title.setStyleSheet("font-size: 18px; font-weight: 600; color: #ffffff;")
         header_layout.addWidget(title)
 
