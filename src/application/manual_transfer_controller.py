@@ -4,6 +4,7 @@ Manual transfer controller.
 Handles user-initiated transfers (drag-and-drop, manual selection).
 """
 
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -63,6 +64,8 @@ class ManualTransferController(QObject):
         self._active_worker: Optional[TransferWorker] = None
         self._active_thread: Optional[QThread] = None
         self._is_busy = False
+        self._delete_after = False
+        self._transfer_paths: List[str] = []
     
     def is_busy(self) -> bool:
         """Check if a transfer is currently in progress."""
@@ -72,7 +75,7 @@ class ManualTransferController(QObject):
         self,
         local_paths: List[str],
         remote_destination: Optional[str] = None,
-        delete_after: bool = False
+        delete_after: Optional[bool] = None
     ) -> bool:
         """
         Transfer files/folders to Raspberry Pi.
@@ -83,7 +86,8 @@ class ManualTransferController(QObject):
             local_paths: List of local file/folder paths to transfer
             remote_destination: Optional specific remote destination
                                If None, uses PathMapper to determine destination
-            delete_after: Whether to delete local files after transfer
+            delete_after: Whether to delete local files after transfer.
+                         If None, uses settings.delete_after_transfer.
             
         Returns:
             True if transfer started successfully, False if busy or error
@@ -115,6 +119,12 @@ class ManualTransferController(QObject):
             if not self.connection_manager.connect():
                 logger.error("Manual Transfer: Connection failed")
                 return False
+        
+        # Store delete_after preference for use after transfer completes
+        if delete_after is None:
+            self._delete_after = self.settings.delete_after_transfer
+        else:
+            self._delete_after = delete_after
         
         # Determine remote destination
         if remote_destination:
@@ -154,6 +164,9 @@ class ManualTransferController(QObject):
             # Move worker to thread
             self._active_worker.moveToThread(self._active_thread)
             
+            # Store local paths separately so we can access them after worker is deleted
+            self._transfer_paths = list(local_paths)
+            
             # Connect signals
             self._active_thread.started.connect(self._active_worker.run)
             self._active_worker.finished.connect(self._on_transfer_finished)
@@ -162,9 +175,7 @@ class ManualTransferController(QObject):
             # Cleanup when done
             self._active_worker.finished.connect(self._active_thread.quit)
             self._active_worker.error.connect(self._active_thread.quit)
-            self._active_worker.finished.connect(self._active_worker.deleteLater)
-            self._active_worker.error.connect(self._active_worker.deleteLater)
-            self._active_thread.finished.connect(self._active_thread.deleteLater)
+            self._active_thread.finished.connect(self._cleanup_transfer)
             
             # Start transfer
             self._is_busy = True
@@ -196,27 +207,47 @@ class ManualTransferController(QObject):
         return False
     
     def _on_transfer_finished(self) -> None:
-        """Handle transfer completion."""
+        """Handle transfer completion. Delete local files if configured."""
+        # Guard: if error already handled this transfer, skip
+        if not self._is_busy:
+            return
+        
         self._is_busy = False
         logger.success("Manual Transfer: Completed")
         
-        if self._active_worker and self._active_worker.local_paths:
-            # Get the first path for signal
-            self.transfer_completed.emit(self._active_worker.local_paths[0])
+        # Delete local files after successful transfer
+        if self._delete_after and self._transfer_paths:
+            from src.services.file_deletion_service import FileDeletionService
+            deletion_service = FileDeletionService()
+            for path in self._transfer_paths:
+                try:
+                    if os.path.isdir(path):
+                        deletion_service.delete_folder(path)
+                    elif os.path.isfile(path):
+                        deletion_service.delete_file(path)
+                except Exception as e:
+                    logger.warn(f"Manual Transfer: {os.path.basename(path)}: Could not delete - {e}")
         
-        self._active_worker = None
-        self._active_thread = None
+        if self._transfer_paths:
+            self.transfer_completed.emit(self._transfer_paths[0])
     
     def _on_transfer_error(self, error_msg: str) -> None:
         """Handle transfer error."""
         self._is_busy = False
         logger.error(f"Manual Transfer: Error: {error_msg}")
         
-        if self._active_worker and self._active_worker.local_paths:
-            self.transfer_failed.emit(self._active_worker.local_paths[0], error_msg)
-        
-        self._active_worker = None
-        self._active_thread = None
+        if self._transfer_paths:
+            self.transfer_failed.emit(self._transfer_paths[0], error_msg)
+
+    def _cleanup_transfer(self) -> None:
+        """Clean up worker and thread after thread finishes."""
+        if self._active_worker:
+            self._active_worker.deleteLater()
+            self._active_worker = None
+        if self._active_thread:
+            self._active_thread.deleteLater()
+            self._active_thread = None
+        self._transfer_paths = []
     
     def get_transfer_preview(self, local_paths: List[str]) -> dict:
         """

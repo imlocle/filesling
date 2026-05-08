@@ -218,3 +218,6 @@ __marimo__/
 
 .DS_Store
 config.json
+
+# Application logs
+logs/

@@ -6,7 +6,7 @@ from stat import S_ISDIR
 from typing import List, Optional
 
 from paramiko import SFTPClient
-from PySide6.QtCore import QPoint, Qt, QUrl, Signal, QMimeData
+from PySide6.QtCore import QPoint, QRectF, Qt, QUrl, Signal, QMimeData, QTimer, QThread, QObject
 from PySide6.QtGui import (
     QColor,
     QDragEnterEvent,
@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QFont,
     QIcon,
     QPainter,
+    QPen,
     QMouseEvent,
     QDrag,
 )
@@ -85,6 +86,180 @@ class DragDropTreeWidget(QTreeWidget):
         self._drag_start_items = []
 
 
+class SortableTreeWidgetItem(QTreeWidgetItem):
+    """QTreeWidgetItem that sorts the Size column numerically using stored byte values."""
+
+    def __lt__(self, other: QTreeWidgetItem) -> bool:
+        column = self.treeWidget().sortColumn() if self.treeWidget() else 0
+        if column == 1:
+            # Sort by raw byte value stored in UserRole
+            self_bytes = self.data(1, Qt.ItemDataRole.UserRole) or -1
+            other_bytes = other.data(1, Qt.ItemDataRole.UserRole) or -1
+            return self_bytes < other_bytes
+        # Default: case-insensitive alphabetical sort for Name column
+        return self.text(column).lower() < other.text(column).lower()
+
+
+class LoadingSpinner(QWidget):
+    """A modern spinning arc loading indicator, centered over the parent widget."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setVisible(False)
+
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._rotate)
+
+        # Spinner appearance
+        self._arc_length = 270  # degrees
+        self._line_width = 3
+        self._spinner_size = 32
+        self._color = QColor(0, 120, 215)  # Blue accent
+
+    def start(self):
+        """Show spinner and start animation."""
+        self._angle = 0
+        self.setVisible(True)
+        self._timer.start(16)  # ~60fps
+        self.raise_()
+
+    def stop(self):
+        """Hide spinner and stop animation."""
+        self._timer.stop()
+        self.setVisible(False)
+
+    def _rotate(self):
+        self._angle = (self._angle + 6) % 360
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.isVisible():
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Center the spinner
+        cx = self.width() // 2
+        cy = self.height() // 2
+        half = self._spinner_size // 2
+
+        rect = QRectF(cx - half, cy - half, self._spinner_size, self._spinner_size)
+
+        # Draw spinning arc
+        pen = QPen(self._color, self._line_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        # Qt uses 1/16th of a degree for arc angles
+        start_angle = self._angle * 16
+        span_angle = self._arc_length * 16
+        painter.drawArc(rect, start_angle, span_angle)
+
+        painter.end()
+
+
+class DirectoryLoader(QObject):
+    """Background worker that loads directory entries via SFTP or local filesystem."""
+
+    finished = Signal(list)  # list of (entry, icon_hint, size_str, size_bytes)
+    error = Signal(str)
+
+    def __init__(self, path: str, is_remote: bool, sftp: Optional[SFTPClient],
+                 settings: Settings, parent=None):
+        super().__init__(parent)
+        self.path = path
+        self.is_remote = is_remote
+        self.sftp = sftp
+        self.settings = settings
+
+    def run(self):
+        """Load directory entries."""
+        try:
+            if self.is_remote:
+                if not self.sftp:
+                    self.error.emit("SFTP connection not available")
+                    return
+                entries = self.sftp.listdir(self.path)
+            else:
+                entries = os.listdir(self.path)
+
+            filtered = [
+                e for e in entries
+                if not (e.startswith(".") or e.startswith("._") or e in self.settings.skip_files)
+            ]
+            filtered.sort(key=lambda s: s.lower())
+
+            results = []
+            for entry in filtered:
+                full_path = os.path.join(self.path, entry)
+                is_dir = self._check_is_dir(full_path)
+                size_bytes = self._get_size_bytes(full_path, is_dir)
+                size_str = self._format_size(size_bytes) if size_bytes >= 0 else "—"
+                results.append((entry, is_dir, size_str, size_bytes))
+
+            self.finished.emit(results)
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def _check_is_dir(self, path: str) -> bool:
+        try:
+            if self.is_remote:
+                if not self.sftp:
+                    return False
+                st = self.sftp.stat(path)
+                if st.st_mode is None:
+                    return False
+                return S_ISDIR(st.st_mode)
+            return os.path.isdir(path)
+        except Exception:
+            return False
+
+    def _get_size_bytes(self, path: str, is_dir: bool) -> int:
+        try:
+            if self.is_remote:
+                if is_dir:
+                    return -1
+                if not self.sftp:
+                    return -1
+                st = self.sftp.stat(path)
+                return st.st_size if st.st_size is not None else -1
+            else:
+                if is_dir:
+                    return self._get_local_dir_size(path)
+                return os.path.getsize(path)
+        except Exception:
+            return -1
+
+    def _get_local_dir_size(self, path: str) -> int:
+        total = 0
+        try:
+            for dirpath, _, filenames in os.walk(path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total += os.path.getsize(filepath)
+        except Exception:
+            pass
+        return total
+
+    def _format_size(self, size_bytes: int) -> str:
+        if size_bytes < 0:
+            return "—"
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
 class FileExplorerWidget(QWidget):
     """
     A reusable file explorer widget for both local and remote (SFTP) directories.
@@ -137,6 +312,10 @@ class FileExplorerWidget(QWidget):
         self.current_path: str = root_path
         self.drag_over: bool = False
 
+        # Background loading state
+        self._loader_thread: Optional[QThread] = None
+        self._loader_worker: Optional[DirectoryLoader] = None
+
         # ------------------------------------------------------------------
         # Layout / Header
         # ------------------------------------------------------------------
@@ -163,7 +342,14 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.setColumnWidth(1, 100)  # Size column width
         self.tree_widget.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         self.tree_widget.setRootIsDecorated(False)  # No expand arrows
+        self.tree_widget.setSortingEnabled(True)
+        self.tree_widget.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         layout.addWidget(self.tree_widget)
+
+        # ------------------------------------------------------------------
+        # Loading spinner (overlays the tree widget)
+        # ------------------------------------------------------------------
+        self._spinner = LoadingSpinner(self.tree_widget)
 
         self.back_btn.clicked.connect(self.go_back)
         self.tree_widget.itemSelectionChanged.connect(self._on_item_selected)
@@ -270,23 +456,99 @@ class FileExplorerWidget(QWidget):
 
         # Update title with disk usage for remote explorer
         title_text = f"{self.title} ({self.current_path})"
+        self.title_label.setText(title_text)
+
+        if self.is_remote:
+            # Load asynchronously for remote (SFTP is slow)
+            self._start_async_load()
+        else:
+            # Load synchronously for local (fast)
+            self._load_local()
+
+    def _start_async_load(self) -> None:
+        """Start loading remote directory in background thread."""
+        # Don't attempt async load without SFTP connection
+        if not self.sftp:
+            return
+
+        # Wait for any existing load to finish before starting a new one
+        if self._loader_thread is not None:
+            if self._loader_thread.isRunning():
+                self._loader_thread.quit()
+                self._loader_thread.wait(3000)
+            # Clean up the old thread safely (it's finished now)
+            self._loader_thread.deleteLater()
+            self._loader_thread = None
+        if self._loader_worker is not None:
+            self._loader_worker.deleteLater()
+            self._loader_worker = None
+
+        # Show spinner
+        self._spinner.resize(self.tree_widget.size())
+        self._spinner.start()
+
+        # Create worker and thread
+        self._loader_thread = QThread(self)  # Parent to prevent GC
+        self._loader_worker = DirectoryLoader(
+            path=self.current_path,
+            is_remote=self.is_remote,
+            sftp=self.sftp,
+            settings=self.settings,
+        )
+        self._loader_worker.moveToThread(self._loader_thread)
+
+        # Connect signals
+        self._loader_thread.started.connect(self._loader_worker.run)
+        self._loader_worker.finished.connect(self._on_load_finished)
+        self._loader_worker.error.connect(self._on_load_error)
+        self._loader_worker.finished.connect(self._loader_thread.quit)
+        self._loader_worker.error.connect(self._loader_thread.quit)
+
+        self._loader_thread.start()
+
+    def _on_load_finished(self, results: list) -> None:
+        """Handle background load completion."""
+        self._spinner.stop()
+        self.tree_widget.clear()
+
+        # Update title with disk usage
+        title_text = f"{self.title} ({self.current_path})"
         if self.is_remote and self.sftp:
             try:
                 disk_usage = self._get_disk_usage()
                 if disk_usage:
                     title_text = f"{self.title} ({self.current_path}) - {disk_usage}"
             except Exception:
-                pass  # Silently fail, just show path
-
+                pass
         self.title_label.setText(title_text)
 
+        for entry, is_dir, size_str, size_bytes in results:
+            icon = (
+                QIcon.fromTheme("folder")
+                if is_dir
+                else QIcon.fromTheme("text-x-generic")
+            )
+
+            item = SortableTreeWidgetItem([entry, size_str])
+            item.setIcon(0, icon)
+            item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
+            self.tree_widget.addTopLevelItem(item)
+
+    def _on_load_error(self, error_msg: str) -> None:
+        """Handle background load error."""
+        self._spinner.stop()
+        self.tree_widget.clear()
+
+        error_item = QTreeWidgetItem([f"⚠️ Error loading directory: {error_msg}", ""])
+        self.tree_widget.addTopLevelItem(error_item)
+
+        if self.is_remote:
+            self._reset_remote_state_after_failure(error_msg)
+
+    def _load_local(self) -> None:
+        """Load local directory synchronously (fast)."""
         try:
-            if self.is_remote:
-                if not self.sftp:
-                    raise RuntimeError("SFTP connection not available")
-                entries: List[str] = self.sftp.listdir(self.current_path)
-            else:
-                entries = os.listdir(self.current_path)
+            entries = os.listdir(self.current_path)
 
             filtered_entries = [
                 e
@@ -303,19 +565,16 @@ class FileExplorerWidget(QWidget):
                 full_path = os.path.join(self.current_path, entry)
                 icon = self._get_icon(full_path)
                 size_str = self._get_size_string(full_path)
+                size_bytes = self._get_size_bytes(full_path)
 
-                item = QTreeWidgetItem([entry, size_str])
+                item = SortableTreeWidgetItem([entry, size_str])
                 item.setIcon(0, icon)
+                item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
                 self.tree_widget.addTopLevelItem(item)
 
         except Exception as e:
-            # Friendly UI message
             error_item = QTreeWidgetItem([f"⚠️ Error loading directory: {e}", ""])
             self.tree_widget.addTopLevelItem(error_item)
-
-            # Remote recovery: reset view state so UI doesn't get "stuck"
-            if self.is_remote:
-                self._reset_remote_state_after_failure(str(e))
 
     def _reset_remote_state_after_failure(self, error_msg: str) -> None:
         """
@@ -437,6 +696,26 @@ class FileExplorerWidget(QWidget):
                 return self._format_size(size_bytes)
         except Exception:
             return "—"
+
+    def _get_size_bytes(self, path: str) -> int:
+        """
+        Get raw size in bytes for sorting purposes.
+        Returns -1 for directories on remote (unknown size) or on error.
+        """
+        try:
+            if self.is_remote:
+                if not self.sftp:
+                    return -1
+                if self._is_remote_directory(path):
+                    return -1
+                st = self.sftp.stat(path)
+                return st.st_size if st.st_size is not None else -1
+            else:
+                if os.path.isdir(path):
+                    return self._get_local_dir_size(path)
+                return os.path.getsize(path)
+        except Exception:
+            return -1
 
     def _format_size(self, size_bytes: int) -> str:
         """Format bytes into human-readable string."""
@@ -737,3 +1016,8 @@ class FileExplorerWidget(QWidget):
                 Qt.AlignmentFlag.AlignCenter,
                 "📂 Drop files/folders here",
             )
+
+    def resizeEvent(self, event) -> None:
+        """Keep loading spinner sized to tree widget."""
+        super().resizeEvent(event)
+        self._spinner.resize(self.tree_widget.size())

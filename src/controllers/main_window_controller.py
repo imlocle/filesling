@@ -96,9 +96,12 @@ class MainWindowController:
 
     def _on_auto_transfer_completed(self, path: str) -> None:
         """Handle automatic transfer completed."""
-        # Refresh local explorer to show updated file list
-        if hasattr(self.view, "watch_explorer"):
-            self.view.watch_explorer.refresh()
+        # Refresh Pi explorer to show newly transferred files
+        if (
+            self.connection_manager.is_connected()
+            and self.connection_manager.sftp_client
+        ):
+            self.view.pi_explorer.refresh()
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed."""
@@ -250,9 +253,7 @@ class MainWindowController:
     #  EXPLORER OPS
     # --------------------------------------------------------------
     def refresh_explorers(self) -> None:
-        """Refresh both local and remote file explorers."""
-        self.view.watch_explorer.refresh()
-
+        """Refresh the remote file explorer."""
         if (
             self.connection_manager.is_connected()
             and self.connection_manager.sftp_client
@@ -267,42 +268,25 @@ class MainWindowController:
                 self.view.connection_status_label.style()
             )
 
-        logger.success("Explorers refreshed")
+        logger.success("Explorer refreshed")
 
     def _set_explorers_enabled(self, enabled: bool) -> None:
         """
-        Enable or disable both explorers and apply visual feedback.
+        Enable or disable the explorer and apply visual feedback.
 
         Args:
             enabled: True to enable, False to disable
         """
         # Disable interaction
-        self.view.watch_explorer.setEnabled(enabled)
         self.view.pi_explorer.setEnabled(enabled)
-
-        # Grey out visually (reduce opacity)
-        opacity = 1.0 if enabled else 0.5
-        style = (
-            f"""
-            QWidget {{
-                opacity: {opacity};
-            }}
-        """
-            if not enabled
-            else ""
-        )
 
         if not enabled:
             # Apply semi-transparent overlay effect
-            self.view.watch_explorer.setStyleSheet(
-                "QWidget { background-color: rgba(0, 0, 0, 30); }"
-            )
             self.view.pi_explorer.setStyleSheet(
                 "QWidget { background-color: rgba(0, 0, 0, 30); }"
             )
         else:
             # Restore original style
-            self.view.watch_explorer.setStyleSheet("")
             self.view.pi_explorer.setStyleSheet("")
 
     def handle_file_open(self, path: str) -> None:
@@ -347,7 +331,6 @@ class MainWindowController:
                 self.view.pi_explorer.refresh()
             else:
                 self._delete_local(path)
-                self.view.watch_explorer.refresh()
 
             logger.trash(f"Deletion: {os.path.basename(path)}: Deleted")
 
@@ -491,11 +474,7 @@ class MainWindowController:
         Args:
             old_path: Current path of item to rename
         """
-        explorer = (
-            self.view.pi_explorer
-            if old_path.startswith(self.settings.remote_base_dir)
-            else self.view.watch_explorer
-        )
+        explorer = self.view.pi_explorer
         new_name = explorer.prompt_rename(old_path)
         if not new_name:
             return
@@ -510,7 +489,6 @@ class MainWindowController:
                 self.view.pi_explorer.refresh()
             else:
                 os.rename(old_path, new_path)
-                self.view.watch_explorer.refresh()
 
             logger.success(f"Renamed: {os.path.basename(old_path)}: → {new_name}")
         except Exception as e:
@@ -542,7 +520,6 @@ class MainWindowController:
                 self.view.pi_explorer.refresh()
             else:
                 os.makedirs(folder_path, exist_ok=True)
-                self.view.watch_explorer.refresh()
 
             logger.success(f"Folder: {os.path.basename(folder_path)}: Created")
         except FileExistsError:
@@ -620,7 +597,6 @@ class MainWindowController:
                 if not os.path.exists(dest_dir):
                     os.makedirs(dest_dir, exist_ok=True)
                 shutil.move(src_path, dest_path)
-                self.view.watch_explorer.refresh()
 
             logger.success(
                 f"Moved: {os.path.basename(src_path)}: To {os.path.basename(dest_path)}"
@@ -688,6 +664,9 @@ class MainWindowController:
     def open_settings(self):
         settings_window = SettingsWindow(self.settings)
         if settings_window.exec() == QDialog.DialogCode.Accepted:
+            # Reload settings since the singleton was reset during save
+            self.settings = Settings()
+            self.view.settings = self.settings
             self.refresh_explorers()
 
     # --------------------------------------------------------------

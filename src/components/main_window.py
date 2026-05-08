@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -42,7 +41,7 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(SOFTWARE_NAME)
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(700, 700)
 
         # Connection retry tracking
         self.connection_attempts = 0
@@ -278,18 +277,6 @@ class MainWindow(QWidget):
         self.settings_btn.clicked.connect(self.controller.open_settings)
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
 
-        # Watch explorer
-        self.watch_explorer.file_delete_requested.connect(self.controller.delete_item)
-        self.watch_explorer.file_rename_requested.connect(self.controller.rename_item)
-        self.watch_explorer.folder_create_requested.connect(
-            self.controller.create_folder
-        )
-        self.watch_explorer.item_move_requested.connect(self.controller.move_item)
-        self.watch_explorer.item_selected.connect(
-            self.controller.handle_selection_changed
-        )
-        self.watch_explorer.file_opened.connect(self.controller.handle_file_open)
-
         # Pi explorer
         self.pi_explorer.file_delete_requested.connect(self.controller.delete_item)
         self.pi_explorer.file_rename_requested.connect(self.controller.rename_item)
@@ -423,19 +410,10 @@ class MainWindow(QWidget):
         layout.addWidget(status_bar)
 
     def _setup_content_area(self, layout: QVBoxLayout) -> None:
-        """Create main content area with file explorers."""
+        """Create main content area with Pi file explorer."""
         content_container = QWidget()
         content_layout = QVBoxLayout(content_container)
         content_layout.setContentsMargins(12, 12, 12, 12)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(2)
-
-        self.watch_explorer = FileExplorerWidget(
-            settings=self.settings,
-            root_path=self.settings.local_watch_dir,
-            title="📁 Local Files",
-        )
 
         self.pi_explorer = FileExplorerWidget(
             settings=self.settings,
@@ -445,12 +423,7 @@ class MainWindow(QWidget):
             sftp=None,
         )
 
-        splitter.addWidget(self.watch_explorer)
-        splitter.addWidget(self.pi_explorer)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-
-        content_layout.addWidget(splitter)
+        content_layout.addWidget(self.pi_explorer)
         layout.addWidget(content_container, stretch=1)
 
     def _setup_activity_log(self, layout: QVBoxLayout) -> None:
