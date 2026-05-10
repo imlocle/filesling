@@ -22,29 +22,28 @@ class SettingsConfig(BaseModel):
     """
     Application configuration model.
 
-    Simplified structure with three main sections:
-    1. Connection settings (SSH/SFTP)
-    2. Path settings (local and remote directories)
-    3. Sync behavior settings
+    Sections:
+    1. Multi-server support
+    2. Connection settings (SSH/SFTP)
+    3. Remote path settings
+    4. Transfer behavior
     """
 
     # Multi-server support
-    servers: dict[str, dict] = Field(default_factory=dict)  # server_id -> server config
-    current_server_id: str = ""  # Currently selected server
-    default_server_id: str = ""  # Server to auto-connect on launch
+    servers: dict[str, dict] = Field(default_factory=dict)
+    current_server_id: str = ""
+    default_server_id: str = ""
 
-    # Connection Settings (for backward compatibility)
+    # Connection Settings
     pi_user: str = ""
     pi_ip: str = ""
     ssh_key_path: str = os.path.expanduser("~/.ssh/id_rsa")
     ssh_port: int = 22
 
-    # Path Settings (simplified - just mirror structure)
-    local_watch_dir: str = os.path.expanduser("~/Transfers")
+    # Remote Path
     remote_base_dir: str = "/mnt/external"
 
-    # Sync Behavior Settings
-    auto_start_monitor: bool = False  # Changed default to False - don't auto-connect
+    # Transfer Behavior
     delete_after_transfer: bool = True
     file_extensions: set[str] = Field(
         default_factory=lambda: {
@@ -61,18 +60,20 @@ class SettingsConfig(BaseModel):
     skip_patterns: set[str] = Field(
         default_factory=lambda: {".DS_Store", "Thumbs.db", ".Trashes", "._*"}
     )
-    stability_duration: float = 2.0  # seconds to wait for file stability
 
     # Metadata
     last_modified: str = ""
 
-    # Legacy fields for backward compatibility (will be migrated)
-    pi_root_dir: str = ""  # Deprecated: use remote_base_dir
-    pi_movies: str = ""  # Deprecated: no longer needed
-    pi_tv: str = ""  # Deprecated: no longer needed
-    watch_dir: str = ""  # Deprecated: use local_watch_dir
-    file_exts: set[str] = set()  # Deprecated: use file_extensions
-    skip_files: set[str] = set()  # Deprecated: use skip_patterns
+    # Legacy fields (kept for backward compat with old config files, ignored otherwise)
+    local_watch_dir: str = ""
+    stability_duration: float = 2.0
+    auto_start_monitor: bool = False
+    pi_root_dir: str = ""
+    pi_movies: str = ""
+    pi_tv: str = ""
+    watch_dir: str = ""
+    file_exts: set[str] = set()
+    skip_files: set[str] = set()
 
     @field_validator("pi_ip")
     @classmethod
@@ -101,21 +102,6 @@ class SettingsConfig(BaseModel):
                 raise SSHKeyValidationError(
                     f"SSH key path is not a file: {expanded_path}",
                     details="Please provide a path to a valid SSH private key file",
-                )
-        return v
-
-    @field_validator("local_watch_dir")
-    @classmethod
-    def validate_watch_dir(cls, v: str) -> str:
-        """Validate watch directory path."""
-        if v and v.strip():
-            expanded_path = os.path.expanduser(v.strip())
-            # Create directory if it doesn't exist
-            try:
-                os.makedirs(expanded_path, exist_ok=True)
-            except Exception as e:
-                raise PathValidationError(
-                    f"Cannot create watch directory: {expanded_path}", details=str(e)
                 )
         return v
 
@@ -267,43 +253,27 @@ class Settings:
             # Return empty dict for non-critical errors
             return {}
 
-    # New simplified properties
-    @property
-    def local_watch_dir(self):
-        """Local watch directory (replaces watch_dir)"""
-        return self.config.local_watch_dir
-
+    # Properties
     @property
     def remote_base_dir(self):
-        """Remote base directory (replaces pi_root_dir)"""
         return self.config.remote_base_dir
 
     @property
     def file_extensions(self):
-        """Allowed file extensions (replaces file_exts)"""
         return self.config.file_extensions
 
     @property
     def skip_patterns(self):
-        """Skip patterns (replaces skip_files)"""
         return self.config.skip_patterns
 
     @property
     def delete_after_transfer(self):
-        """Whether to delete local files after transfer"""
         return self.config.delete_after_transfer
 
     @property
-    def stability_duration(self):
-        """File stability duration in seconds"""
-        return self.config.stability_duration
-
-    @property
     def ssh_port(self):
-        """SSH port number"""
         return self.config.ssh_port
 
-    # Legacy properties for backward compatibility
     @property
     def pi_user(self):
         return self.config.pi_user
@@ -313,42 +283,18 @@ class Settings:
         return self.config.pi_ip
 
     @property
-    def pi_root_dir(self):
-        """Deprecated: use remote_base_dir"""
-        return self.config.remote_base_dir or self.config.pi_root_dir
-
-    @property
-    def pi_movies(self):
-        """Deprecated: no longer needed with simplified path mapping"""
-        return self.config.pi_movies
-
-    @property
-    def pi_tv(self):
-        """Deprecated: no longer needed with simplified path mapping"""
-        return self.config.pi_tv
-
-    @property
-    def auto_start_monitor(self):
-        return self.config.auto_start_monitor
-
-    @property
-    def file_exts(self):
-        """Deprecated: use file_extensions"""
-        return self.config.file_extensions or self.config.file_exts
-
-    @property
-    def skip_files(self):
-        """Deprecated: use skip_patterns"""
-        return self.config.skip_patterns or self.config.skip_files
-
-    @property
     def ssh_key_path(self):
         return self.config.ssh_key_path
 
     @property
-    def watch_dir(self):
-        """Deprecated: use local_watch_dir"""
-        return self.config.local_watch_dir or self.config.watch_dir
+    def skip_files(self):
+        """Used by file explorer for filtering."""
+        return self.config.skip_patterns or self.config.skip_files
+
+    @property
+    def local_watch_dir(self):
+        """Legacy — kept for settings_window compat."""
+        return self.config.local_watch_dir
 
     @property
     def last_modified(self):
@@ -419,7 +365,6 @@ class Settings:
                 self.pi_user.strip(),
                 self.pi_ip.strip(),
                 self.remote_base_dir.strip(),
-                self.local_watch_dir.strip(),
             ]
         )
 
@@ -536,11 +481,8 @@ class Settings:
             "pi_ip": self.config.pi_ip,
             "ssh_key_path": self.config.ssh_key_path,
             "ssh_port": self.config.ssh_port,
-            "local_watch_dir": self.config.local_watch_dir,
             "remote_base_dir": self.config.remote_base_dir,
-            "auto_start_monitor": self.config.auto_start_monitor,
             "delete_after_transfer": self.config.delete_after_transfer,
-            "stability_duration": self.config.stability_duration,
             "file_extensions": list(self.config.file_extensions),
             "skip_patterns": list(self.config.skip_patterns),
             "last_modified": self.config.last_modified,

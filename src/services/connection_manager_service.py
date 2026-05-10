@@ -43,8 +43,6 @@ class ConnectionManagerService:
         if self.ssh_client and self.sftp_client:
             return True
 
-        logger.search(f"Connection: Checking: {self.settings.pi_ip}...")
-        
         # Validate SSH key exists before attempting connection
         if not os.path.exists(self.settings.ssh_key_path):
             error_msg = f"SSH key not found: {self.settings.ssh_key_path}"
@@ -76,8 +74,6 @@ class ConnectionManagerService:
                 self.ssh_client = SSHClient()
                 self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
                 
-                logger.info(f"Connection: Attempt {retries + 1}/{max_retries}")
-                
                 self.ssh_client.connect(
                     hostname=self.settings.pi_ip,
                     username=self.settings.pi_user,
@@ -98,7 +94,7 @@ class ConnectionManagerService:
                         details=str(e)
                     )
                 
-                logger.start(f"Connection: Start: {self.settings.pi_ip}")
+                logger.success(f"Connected: {self.settings.pi_ip}")
                 return True
                 
             except AuthenticationException as e:

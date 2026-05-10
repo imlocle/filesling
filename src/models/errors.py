@@ -1,15 +1,12 @@
 """
 Custom exception hierarchy for PiSync application.
-
-This module defines all custom exceptions used throughout the application,
-providing clear error types for different failure scenarios.
 """
 
 from typing import Optional
 
 
 # ============================================================================
-# Base Exceptions
+# Base Exception
 # ============================================================================
 
 
@@ -47,11 +44,6 @@ class SFTPConnectionError(ConnectionError):
     pass
 
 
-class ConnectionTimeoutError(ConnectionError):
-    """Connection attempt timed out."""
-    pass
-
-
 class ConnectionLostError(ConnectionError):
     """Active connection was lost unexpectedly."""
     pass
@@ -59,11 +51,6 @@ class ConnectionLostError(ConnectionError):
 
 class AuthenticationError(ConnectionError):
     """SSH authentication failed."""
-    pass
-
-
-class HostKeyError(ConnectionError):
-    """SSH host key verification failed."""
     pass
 
 
@@ -101,33 +88,8 @@ class FileUploadError(TransferError):
     pass
 
 
-class FileDownloadError(TransferError):
-    """Failed to download file from remote server."""
-    pass
-
-
 class TransferVerificationError(TransferError):
     """File transfer completed but verification failed."""
-    pass
-
-
-class InsufficientSpaceError(TransferError):
-    """Insufficient disk space on target."""
-
-    def __init__(
-        self,
-        message: str,
-        required_bytes: Optional[int] = None,
-        available_bytes: Optional[int] = None,
-        details: Optional[str] = None,
-    ):
-        self.required_bytes = required_bytes
-        self.available_bytes = available_bytes
-        super().__init__(message, details=details)
-
-
-class TransferCancelledError(TransferError):
-    """Transfer was cancelled by user."""
     pass
 
 
@@ -148,12 +110,6 @@ class InvalidConfigurationError(ConfigurationError):
         self.field = field
         super().__init__(message, details)
 
-    def __str__(self) -> str:
-        base = super().__str__()
-        if self.field:
-            return f"{base}\nField: {self.field}"
-        return base
-
 
 class ConfigurationLoadError(ConfigurationError):
     """Failed to load configuration file."""
@@ -162,11 +118,6 @@ class ConfigurationLoadError(ConfigurationError):
 
 class ConfigurationSaveError(ConfigurationError):
     """Failed to save configuration file."""
-    pass
-
-
-class MissingConfigurationError(ConfigurationError):
-    """Required configuration is missing."""
     pass
 
 
@@ -189,11 +140,6 @@ class FileSystemError(PiSyncError):
         return base
 
 
-class FileNotFoundError(FileSystemError):
-    """File or directory not found."""
-    pass
-
-
 class FileAccessError(FileSystemError):
     """Permission denied or file access error."""
     pass
@@ -201,36 +147,6 @@ class FileAccessError(FileSystemError):
 
 class FileDeletionError(FileSystemError):
     """Failed to delete file or directory."""
-    pass
-
-
-class FileMonitorError(FileSystemError):
-    """File monitoring/watchdog error."""
-    pass
-
-
-class FileStabilityError(FileSystemError):
-    """File is still being written or modified."""
-    pass
-
-
-# ============================================================================
-# Classification Errors
-# ============================================================================
-
-
-class ClassificationError(PiSyncError):
-    """Base exception for file classification errors."""
-    pass
-
-
-class UnknownFileTypeError(ClassificationError):
-    """Unable to determine file type (movie/TV)."""
-    pass
-
-
-class InvalidFileExtensionError(ClassificationError):
-    """File extension not in allowed list."""
     pass
 
 
@@ -256,29 +172,4 @@ class PathValidationError(ValidationError):
 
 class SSHKeyValidationError(ValidationError):
     """SSH key file invalid or inaccessible."""
-    pass
-
-
-# ============================================================================
-# Operation Errors
-# ============================================================================
-
-
-class OperationError(PiSyncError):
-    """Base exception for general operation errors."""
-    pass
-
-
-class OperationInProgressError(OperationError):
-    """Cannot start operation while another is in progress."""
-    pass
-
-
-class OperationCancelledError(OperationError):
-    """Operation was cancelled by user."""
-    pass
-
-
-class OperationTimeoutError(OperationError):
-    """Operation exceeded timeout limit."""
     pass

@@ -76,8 +76,6 @@ class MainWindowController:
     # --------------------------------------------------------------
     def _on_manual_transfer_started(self, path: str) -> None:
         """Handle manual transfer started — mark current item as in-progress."""
-        name = os.path.basename(path)
-        logger.info(f"Transfer started: {name}")
         # Mark the first pending item as in-progress
         if hasattr(self.view, 'transfer_queue'):
             queue = self.view.transfer_queue
@@ -89,19 +87,21 @@ class MainWindowController:
 
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed — mark item as done."""
-        if hasattr(self.view, 'transfer_queue') and hasattr(self, '_current_queue_index'):
+        if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
             self.view.transfer_queue.set_completed(self._current_queue_index)
+            self._current_queue_index = -1
         self.refresh_explorers()
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed — mark item as failed."""
-        if hasattr(self.view, 'transfer_queue') and hasattr(self, '_current_queue_index'):
+        if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
             short_error = error.split('\n')[0][:80]
             self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
+            self._current_queue_index = -1
 
     def _on_transfer_progress(self, transferred: int, total: int) -> None:
         """Handle transfer progress update."""
-        if hasattr(self.view, 'transfer_queue') and hasattr(self, '_current_queue_index'):
+        if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
             self.view.transfer_queue.update_progress(
                 self._current_queue_index, transferred, total
             )
@@ -146,7 +146,6 @@ class MainWindowController:
             if self.connection_manager.sftp_client:
                 self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
                 self.view.remote_explorer.refresh()
-                logger.success("Connected to server")
 
         except AuthenticationError as e:
             self.view.connection_status_label.setText("● Authentication Failed")
@@ -236,8 +235,6 @@ class MainWindowController:
                 self.view.connection_status_label.style()
             )
 
-        logger.success("Explorer refreshed")
-
     def handle_file_open(self, path: str) -> None:
         """Handle file open event from explorer."""
         logger.info(f"📂 Opened file: {path}")
@@ -251,8 +248,42 @@ class MainWindowController:
     #  DELETE
     # --------------------------------------------------------------
     def delete_selected_item(self) -> None:
-        if self.selected_item:
-            self.delete_item(self.selected_item)
+        """Delete all selected items in the explorer."""
+        items = self.view.remote_explorer.tree_widget.selectedItems()
+        if not items:
+            return
+
+        paths = [
+            os.path.join(self.view.remote_explorer.current_path, item.text(0))
+            for item in items
+        ]
+
+        if len(paths) == 1:
+            self.delete_item(paths[0])
+        else:
+            # Multi-delete confirmation
+            reply = QMessageBox.question(
+                self.view,
+                "Delete",
+                f"Are you sure you want to delete {len(paths)} items?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            for path in paths:
+                try:
+                    is_remote = path.startswith(self.settings.remote_base_dir)
+                    if is_remote:
+                        self._delete_remote(path)
+                    else:
+                        self._delete_local(path)
+                    logger.trash(f"Deleted: {os.path.basename(path)}")
+                except Exception as e:
+                    logger.error(f"Delete failed: {os.path.basename(path)}: {e}")
+
+            self.view.remote_explorer.refresh()
 
     def delete_item(self, path: str) -> None:
         """
@@ -288,7 +319,7 @@ class MainWindowController:
             QMessageBox.warning(
                 self.view,
                 "Connection Lost",
-                f"Connection to Pi was lost during deletion.\n\n{e.details if e.details else ''}",
+                f"Connection was lost during deletion.\n\n{e.details if e.details else ''}",
                 QMessageBox.StandardButton.Ok,
             )
             # Try to reconnect

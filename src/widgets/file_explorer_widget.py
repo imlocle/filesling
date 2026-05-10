@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMenu,
+    QProgressBar,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -36,19 +37,54 @@ from src.utils.logging_signal import logger
 
 
 class DragDropTreeWidget(QTreeWidget):
-    """Custom QTreeWidget that supports drag-drop while maintaining multi-select."""
+    """Custom QTreeWidget that supports drag-drop, multi-select, and slow-click rename."""
+
+    # Emitted when user slow-clicks to rename: (item, column)
+    slow_click_rename = Signal(QTreeWidgetItem, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._drag_start_pos = None
         self._drag_start_items = []
 
+        # Slow-click rename state
+        self._last_clicked_item: Optional[QTreeWidgetItem] = None
+        self._rename_timer = QTimer(self)
+        self._rename_timer.setSingleShot(True)
+        self._rename_timer.timeout.connect(self._trigger_rename)
+        self._rename_pending_item: Optional[QTreeWidgetItem] = None
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Track mouse press for potential drag operation."""
+        """Track mouse press for potential drag or slow-click rename."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_pos = event.pos()
             self._drag_start_items = [item.text(0) for item in self.selectedItems()]
+
+            # Slow-click rename detection
+            item = self.itemAt(event.pos())
+            if (
+                item
+                and item == self._last_clicked_item
+                and len(self.selectedItems()) == 1
+                and not self._rename_timer.isActive()
+            ):
+                # Second click on same item — start rename timer
+                self._rename_pending_item = item
+                self._rename_timer.start(500)
+            else:
+                # Different item or first click — cancel any pending rename
+                self._rename_timer.stop()
+                self._rename_pending_item = None
+
+            self._last_clicked_item = item
+
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """Double-click cancels rename timer and navigates."""
+        self._rename_timer.stop()
+        self._rename_pending_item = None
+        super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Initiate drag when mouse moves far enough from press point."""
@@ -64,6 +100,10 @@ class DragDropTreeWidget(QTreeWidget):
         if distance < 4:
             super().mouseMoveEvent(event)
             return
+
+        # Cancel rename if dragging
+        self._rename_timer.stop()
+        self._rename_pending_item = None
 
         # Get selected items
         selected_items = self.selectedItems()
@@ -84,6 +124,12 @@ class DragDropTreeWidget(QTreeWidget):
 
         self._drag_start_pos = None
         self._drag_start_items = []
+
+    def _trigger_rename(self) -> None:
+        """Trigger inline rename after slow-click delay."""
+        if self._rename_pending_item:
+            self.slow_click_rename.emit(self._rename_pending_item, 0)
+            self._rename_pending_item = None
 
 
 class SortableTreeWidgetItem(QTreeWidgetItem):
@@ -312,6 +358,12 @@ class FileExplorerWidget(QWidget):
         self.current_path: str = root_path
         self.drag_over: bool = False
 
+        # Inline rename state
+        self._renaming_item: Optional[QTreeWidgetItem] = None
+        self._renaming_old_name: str = ""
+        self._rename_in_progress: bool = False
+        self._rename_editor = None
+
         # Background loading state
         self._loader_thread: Optional[QThread] = None
         self._loader_worker: Optional[DirectoryLoader] = None
@@ -351,9 +403,45 @@ class FileExplorerWidget(QWidget):
         # ------------------------------------------------------------------
         self._spinner = LoadingSpinner(self.tree_widget)
 
+        # ------------------------------------------------------------------
+        # Disk space bar (remote only)
+        # ------------------------------------------------------------------
+        self._disk_bar_container = QWidget()
+        disk_bar_layout = QHBoxLayout(self._disk_bar_container)
+        disk_bar_layout.setContentsMargins(0, 4, 0, 0)
+        disk_bar_layout.setSpacing(8)
+
+        self._disk_bar = QProgressBar()
+        self._disk_bar.setRange(0, 100)
+        self._disk_bar.setValue(0)
+        self._disk_bar.setMaximumHeight(16)
+        self._disk_bar.setTextVisible(False)
+        self._disk_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #1e1e1e;
+                border: 1px solid #3e3e42;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background-color: #0078d4;
+                border-radius: 3px;
+            }
+        """)
+
+        self._disk_label = QLabel("")
+        self._disk_label.setStyleSheet("color: #858585; font-size: 11px;")
+        self._disk_label.setMinimumWidth(140)
+
+        disk_bar_layout.addWidget(self._disk_bar, stretch=1)
+        disk_bar_layout.addWidget(self._disk_label)
+
+        self._disk_bar_container.setVisible(False)
+        layout.addWidget(self._disk_bar_container)
+
         self.back_btn.clicked.connect(self.go_back)
         self.tree_widget.itemSelectionChanged.connect(self._on_item_selected)
         self.tree_widget.itemDoubleClicked.connect(self.navigate)
+        self.tree_widget.slow_click_rename.connect(self._start_inline_rename)
 
         # Context menu
         self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -428,22 +516,118 @@ class FileExplorerWidget(QWidget):
             self.folder_create_requested.emit(new_folder_path)
 
     def _handle_move_item(self, src_path: str) -> None:
-        """Handle moving an item to a new location."""
+        """Handle moving an item — show a folder picker dialog."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTreeWidget, QTreeWidgetItem
+
         basename = os.path.basename(src_path)
-        dest_path, ok = QInputDialog.getText(
-            self,
-            "Move Item",
-            f"Move '{basename}' to (full path):",
-            text=self.current_path,
+
+        # Build folder picker dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Move '{basename}' to...")
+        dialog.setMinimumSize(400, 400)
+        dialog_layout = QVBoxLayout(dialog)
+
+        label = QLabel(f"Select destination folder for '{basename}':")
+        label.setStyleSheet("color: #cccccc; padding: 4px;")
+        dialog_layout.addWidget(label)
+
+        # Folder tree
+        tree = QTreeWidget()
+        tree.setHeaderHidden(True)
+        tree.setRootIsDecorated(True)
+        tree.setStyleSheet("""
+            QTreeWidget {
+                background-color: #1e1e1e;
+                border: 1px solid #3e3e42;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QTreeWidget::item {
+                padding: 4px;
+            }
+            QTreeWidget::item:selected {
+                background-color: #094771;
+            }
+        """)
+        dialog_layout.addWidget(tree)
+
+        # Populate tree with remote folders
+        def _load_folder(parent_item, path):
+            """Load subfolders into tree item."""
+            try:
+                if self.is_remote and self.sftp:
+                    entries = self.sftp.listdir(path)
+                else:
+                    entries = os.listdir(path)
+
+                folders = sorted([
+                    e for e in entries
+                    if not e.startswith(".")
+                    and (
+                        (self.is_remote and self._is_remote_directory(os.path.join(path, e)))
+                        or (not self.is_remote and os.path.isdir(os.path.join(path, e)))
+                    )
+                ], key=str.lower)
+
+                for folder in folders:
+                    child = QTreeWidgetItem([folder])
+                    child.setData(0, Qt.ItemDataRole.UserRole, os.path.join(path, folder))
+                    parent_item.addChild(child)
+            except Exception:
+                pass
+
+        def _on_item_expanded(item):
+            """Lazy-load subfolders when expanded."""
+            # Only load if children haven't been loaded yet
+            if item.childCount() == 1 and item.child(0).text(0) == "":
+                item.removeChild(item.child(0))
+                folder_path = item.data(0, Qt.ItemDataRole.UserRole)
+                _load_folder(item, folder_path)
+                # Add placeholder children for lazy loading
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    placeholder = QTreeWidgetItem([""])
+                    child.addChild(placeholder)
+
+        tree.itemExpanded.connect(_on_item_expanded)
+
+        # Add root
+        root_item = QTreeWidgetItem([os.path.basename(self.root_path) or "/"])
+        root_item.setData(0, Qt.ItemDataRole.UserRole, self.root_path)
+        tree.addTopLevelItem(root_item)
+        _load_folder(root_item, self.root_path)
+
+        # Add placeholders for lazy loading
+        for i in range(root_item.childCount()):
+            child = root_item.child(i)
+            placeholder = QTreeWidgetItem([""])
+            child.addChild(placeholder)
+
+        root_item.setExpanded(True)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        if ok and dest_path.strip():
-            dest_path = dest_path.strip()
-            # If user provided just a directory path, append the basename
-            if os.path.basename(dest_path) == "" or dest_path == os.path.dirname(
-                dest_path
-            ):
-                dest_path = os.path.join(dest_path, basename)
-            self.item_move_requested.emit(src_path, dest_path)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(buttons)
+
+        # Show dialog
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # Get selected folder
+        selected = tree.currentItem()
+        if not selected:
+            return
+
+        dest_dir = selected.data(0, Qt.ItemDataRole.UserRole)
+        if not dest_dir:
+            return
+
+        dest_path = os.path.join(dest_dir, basename)
+        self.item_move_requested.emit(src_path, dest_path)
 
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation
@@ -511,16 +695,16 @@ class FileExplorerWidget(QWidget):
         self._spinner.stop()
         self.tree_widget.clear()
 
-        # Update title with disk usage
+        # Update title
         title_text = f"{self.title} ({self.current_path})"
+        self.title_label.setText(title_text)
+
+        # Update disk space bar
         if self.is_remote and self.sftp:
             try:
-                disk_usage = self._get_disk_usage()
-                if disk_usage:
-                    title_text = f"{self.title} ({self.current_path}) - {disk_usage}"
+                self._get_disk_usage()
             except Exception:
                 pass
-        self.title_label.setText(title_text)
 
         for entry, is_dir, size_str, size_bytes in results:
             icon = (
@@ -637,6 +821,92 @@ class FileExplorerWidget(QWidget):
         entry = items[0].text(0)  # Get name from first column
         full_path = os.path.join(self.current_path, entry)
         self.item_selected.emit(full_path)
+
+    def _start_inline_rename(self, item: QTreeWidgetItem, column: int) -> None:
+        """Start inline editing using a QLineEdit overlay."""
+        self._renaming_item = item
+        self._renaming_old_name = item.text(0)
+        self._rename_in_progress = True
+
+        # Get the item's visual rect for column 0
+        rect = self.tree_widget.visualItemRect(item)
+        # Adjust for header height
+        header_height = self.tree_widget.header().height()
+
+        # Create a QLineEdit overlay
+        from PySide6.QtWidgets import QLineEdit
+
+        self._rename_editor = QLineEdit(self.tree_widget)
+        self._rename_editor.setText(item.text(0))
+        self._rename_editor.selectAll()
+        self._rename_editor.setGeometry(
+            rect.x() + 24,  # offset for icon
+            rect.y() + header_height,
+            rect.width() - 24,
+            rect.height(),
+        )
+        self._rename_editor.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                border: 1px solid #0078d4;
+                border-radius: 2px;
+                padding: 2px 4px;
+                font-size: 12px;
+            }
+        """)
+        self._rename_editor.show()
+        self._rename_editor.setFocus()
+
+        # Connect signals
+        self._rename_editor.returnPressed.connect(self._commit_rename)
+        self._rename_editor.editingFinished.connect(self._commit_rename)
+
+    def _commit_rename(self) -> None:
+        """Commit the inline rename."""
+        if not self._rename_in_progress:
+            return
+        self._rename_in_progress = False
+
+        editor = self._rename_editor
+        item = self._renaming_item
+        old_name = self._renaming_old_name
+
+        new_name = editor.text().strip() if editor else ""
+
+        # Clean up editor
+        if editor:
+            editor.hide()
+            editor.deleteLater()
+            self._rename_editor = None
+        self._renaming_item = None
+
+        # If name didn't change or is empty, do nothing
+        if not new_name or new_name == old_name:
+            return
+
+        # Do the rename
+        old_path = os.path.join(self.current_path, old_name)
+        new_path = os.path.join(self.current_path, new_name)
+
+        try:
+            if self.is_remote:
+                if self.sftp:
+                    self.sftp.rename(old_path, new_path)
+            else:
+                os.rename(old_path, new_path)
+
+            # Update the item text directly
+            self.tree_widget.blockSignals(True)
+            item.setText(0, new_name)
+            self.tree_widget.blockSignals(False)
+            logger.success(f"Renamed: {old_name} → {new_name}")
+        except Exception as e:
+            logger.error(f"Rename failed: {e}")
+
+    def _on_item_renamed(self, item: QTreeWidgetItem, column: int) -> None:
+        """No-op — rename is handled by _commit_rename."""
+        pass
 
     # ------------------------------------------------------------------
     # Helpers
@@ -781,6 +1051,34 @@ class FileExplorerWidget(QWidget):
             # parts[1] = total size, parts[2] = used size
             total_bytes = int(parts[1])
             used_bytes = int(parts[2])
+
+            # Update disk bar
+            if total_bytes > 0:
+                percent = int(used_bytes * 100 / total_bytes)
+                self._disk_bar.setValue(percent)
+                self._disk_label.setText(
+                    f"{self._format_size(used_bytes)} / {self._format_size(total_bytes)}"
+                )
+                self._disk_bar_container.setVisible(True)
+
+                # Color the bar based on usage
+                if percent >= 90:
+                    color = "#f48771"  # Red
+                elif percent >= 75:
+                    color = "#ce9178"  # Orange
+                else:
+                    color = "#0078d4"  # Blue
+                self._disk_bar.setStyleSheet(f"""
+                    QProgressBar {{
+                        background-color: #1e1e1e;
+                        border: 1px solid #3e3e42;
+                        border-radius: 4px;
+                    }}
+                    QProgressBar::chunk {{
+                        background-color: {color};
+                        border-radius: 3px;
+                    }}
+                """)
 
             used_str = self._format_size(used_bytes)
             total_str = self._format_size(total_bytes)

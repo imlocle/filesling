@@ -7,13 +7,11 @@ files while uploads run in the background.
 """
 
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import List, Optional
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
-from src.application.path_mapper import PathMapper
 from src.config.settings import Settings
 from src.controllers.transfer_worker import TransferWorker
 from src.services.connection_manager_service import ConnectionManagerService
@@ -60,9 +58,6 @@ class ManualTransferController(QObject):
         super().__init__(parent)
         self.settings = settings
         self.connection_manager = connection_manager
-        self.path_mapper = PathMapper(
-            settings.local_watch_dir, settings.remote_base_dir
-        )
 
         # Queue state
         self._queue: List[QueuedTransfer] = []
@@ -114,16 +109,8 @@ class ManualTransferController(QObject):
         if remote_destination:
             remote_dir = remote_destination
         else:
-            try:
-                first_path = Path(local_paths[0])
-                if self.path_mapper.is_under_local_base(first_path):
-                    remote_path = self.path_mapper.map_to_remote(first_path)
-                    remote_dir = str(remote_path.parent)
-                else:
-                    remote_dir = self.settings.remote_base_dir
-            except Exception as e:
-                logger.error(f"Transfer: Path mapping failed: {e}")
-                return False
+            # No destination specified — use remote base dir
+            remote_dir = self.settings.remote_base_dir
 
         # Add to queue
         transfer = QueuedTransfer(
@@ -134,8 +121,6 @@ class ManualTransferController(QObject):
         self._queue.append(transfer)
         total = len(self._queue) + (1 if self._is_processing else 0)
         self.queue_changed.emit(total)
-
-        logger.info(f"Transfer: Queued: {transfer.display_name} → {os.path.basename(remote_dir)}/")
 
         # Start processing if not already running
         if not self._is_processing:
@@ -198,7 +183,9 @@ class ManualTransferController(QObject):
             self._transfer_errored = False
             self._active_thread.start()
 
-            logger.upload(f"Transfer: Started: {transfer.display_name}")
+            # Log: transfer start with name and destination
+            logger.upload(f"Transfer: {transfer.display_name}")
+            logger.info(f"Destination: {transfer.remote_destination}")
             self.transfer_started.emit(transfer.local_paths[0])
 
         except Exception as e:
@@ -217,7 +204,6 @@ class ManualTransferController(QObject):
 
         transfer = self._current_transfer
         logger.success(f"Transfer: Complete: {transfer.display_name}")
-
         # Delete local files if configured
         if transfer.delete_after:
             from src.services.file_deletion_service import FileDeletionService

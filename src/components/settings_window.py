@@ -438,7 +438,6 @@ class SettingsWindow(QDialog):
             # Validate the configuration
             temp_config = {
                 **server_config,
-                "local_watch_dir": self.settings.local_watch_dir,
                 "file_extensions": list(self.settings.file_extensions),
                 "skip_patterns": list(self.settings.skip_patterns),
             }
@@ -625,7 +624,6 @@ class SettingsWindow(QDialog):
                 "ssh_port": int(self.ssh_port_input.text().strip() or "22"),
                 "remote_base_dir": self.remote_base_dir_input.text().strip()
                 or "/mnt/external",
-                "local_watch_dir": self.settings.local_watch_dir,
             }
             try:
                 temp_config = SettingsConfig.from_json(temp_config_data)

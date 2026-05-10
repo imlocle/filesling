@@ -239,20 +239,30 @@ class MainWindow(QWidget):
 
     def change_server(self):
         """Allow user to change to a different server."""
+        from src.components.server_selection_dialog import ServerSelectionDialog
+
+        selection_dialog = ServerSelectionDialog(self)
+        if selection_dialog.exec() != QDialog.DialogCode.Accepted:
+            # User cancelled — reconnect to current server
+            return
+
+        server_id = selection_dialog.get_selected_server_id()
+        if not server_id:
+            return
+
+        if not self.settings.load_server(server_id):
+            return
+
         # Disconnect current connection
         self.connection_manager_service.disconnect()
-
-        # Reset connection attempts
         self.connection_attempts = 0
 
-        # Show server selection
-        if self._show_server_selection():
-            # Update connection manager with new settings
-            self.connection_manager_service = ConnectionManagerService(self.settings)
-            self.controller.connection_manager = self.connection_manager_service
+        # Update connection manager with new settings
+        self.connection_manager_service = ConnectionManagerService(self.settings)
+        self.controller.connection_manager = self.connection_manager_service
 
-            # Connect to new server
-            self.controller.connect()
+        # Connect to new server
+        self.controller.connect()
 
     # ------------------------------------------------------------------
     # Signal Wiring
@@ -281,7 +291,7 @@ class MainWindow(QWidget):
     # UI Setup
     # ------------------------------------------------------------------
     def _setup_toolbar(self, layout: QVBoxLayout) -> None:
-        """Create modern toolbar with icon + text buttons."""
+        """Create modern toolbar with icon buttons."""
         toolbar = QFrame()
         toolbar.setObjectName("toolbar")
         toolbar.setStyleSheet(
@@ -298,25 +308,27 @@ class MainWindow(QWidget):
         toolbar_layout.setContentsMargins(12, 8, 12, 8)
         toolbar_layout.setSpacing(8)
 
-        # Connect button
-        self.connect_btn = QPushButton("🔌 Connect")
-        self.connect_btn.setObjectName("primary_btn")
+        # Left side buttons
+        self.connect_btn = QPushButton("🔌")
+        self.connect_btn.setObjectName("icon_btn")
+        self.connect_btn.setToolTip("Connect")
         self.connect_btn.setMinimumHeight(36)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Spacer
+        self.change_server_btn = QPushButton("🔄")
+        self.change_server_btn.setObjectName("icon_btn")
+        self.change_server_btn.setMinimumHeight(36)
+        self.change_server_btn.setToolTip("Change Server")
+        self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
         toolbar_layout.addWidget(self.connect_btn)
+        toolbar_layout.addWidget(self.change_server_btn)
         toolbar_layout.addStretch()
 
         # Right side buttons
-        self.change_server_btn = QPushButton("🔄 Change Server")
-        self.change_server_btn.setMinimumHeight(36)
-        self.change_server_btn.setToolTip("Select a different server")
-        self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setObjectName("icon_btn")
-        self.refresh_btn.setToolTip("Refresh Explorers")
+        self.refresh_btn.setToolTip("Refresh")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.delete_btn = QPushButton("🗑")
@@ -330,7 +342,6 @@ class MainWindow(QWidget):
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        toolbar_layout.addWidget(self.change_server_btn)
         toolbar_layout.addWidget(self.refresh_btn)
         toolbar_layout.addWidget(self.delete_btn)
         toolbar_layout.addWidget(self.settings_btn)
