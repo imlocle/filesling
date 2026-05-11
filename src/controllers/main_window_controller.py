@@ -99,12 +99,15 @@ class MainWindowController:
             self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
             self._current_queue_index = -1
 
-    def _on_transfer_progress(self, transferred: int, total: int) -> None:
+    def _on_transfer_progress(self, percentage: int) -> None:
         """Handle transfer progress update."""
         if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
-            self.view.transfer_queue.update_progress(
-                self._current_queue_index, transferred, total
-            )
+            # Convert percentage back to bytes for the queue widget
+            queue = self.view.transfer_queue
+            if self._current_queue_index < len(queue._items):
+                item = queue._items[self._current_queue_index]
+                transferred = int(item.total_bytes * percentage / 100)
+                queue.update_progress(self._current_queue_index, transferred, 0)
 
     def _on_queue_changed(self, total: int) -> None:
         """Handle transfer queue size change — add items to visual queue."""

@@ -24,6 +24,7 @@ class QueuedTransfer:
     local_paths: List[str]
     remote_destination: str
     delete_after: bool
+    total_bytes: int = 0
     display_name: str = ""
 
     def __post_init__(self):
@@ -32,6 +33,22 @@ class QueuedTransfer:
             self.display_name = ", ".join(names[:3])
             if len(names) > 3:
                 self.display_name += f" (+{len(names) - 3} more)"
+        # Calculate total bytes if not provided
+        if self.total_bytes == 0:
+            for p in self.local_paths:
+                if os.path.isdir(p):
+                    for root, _, files in os.walk(p):
+                        for f in files:
+                            if not f.startswith("."):
+                                try:
+                                    self.total_bytes += os.path.getsize(os.path.join(root, f))
+                                except OSError:
+                                    pass
+                elif os.path.isfile(p):
+                    try:
+                        self.total_bytes += os.path.getsize(p)
+                    except OSError:
+                        pass
 
 
 class ManualTransferController(QObject):
@@ -46,7 +63,7 @@ class ManualTransferController(QObject):
     transfer_started = Signal(str)  # path
     transfer_completed = Signal(str)  # path
     transfer_failed = Signal(str, str)  # path, error
-    transfer_progress = Signal(int, int)  # transferred_bytes, total_bytes
+    transfer_progress = Signal(int)  # percentage 0-100
     queue_changed = Signal(int)  # queue size (including current)
 
     def __init__(
@@ -167,6 +184,7 @@ class ManualTransferController(QObject):
                 sftp=sftp,
                 local_paths=transfer.local_paths,
                 remote_root=transfer.remote_destination,
+                total_bytes=transfer.total_bytes,
             )
             self._active_worker.moveToThread(self._active_thread)
 
@@ -233,9 +251,9 @@ class ManualTransferController(QObject):
         logger.error(f"Transfer: Failed: {transfer.display_name}: {error_msg}")
         self.transfer_failed.emit(transfer.local_paths[0], error_msg)
 
-    def _on_transfer_progress(self, transferred: int, total: int) -> None:
+    def _on_transfer_progress(self, percentage: int) -> None:
         """Forward progress from worker to UI."""
-        self.transfer_progress.emit(transferred, total)
+        self.transfer_progress.emit(percentage)
 
     def _cleanup_and_next(self) -> None:
         """Clean up current transfer and process next in queue."""
