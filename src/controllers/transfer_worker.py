@@ -12,7 +12,6 @@ from src.models.errors import (
     RemoteDirectoryError,
     TransferVerificationError,
 )
-from src.utils.helper import format_size
 from src.utils.logging_signal import logger
 
 
@@ -25,18 +24,22 @@ class TransferWorker(QObject):
 
     finished = Signal()
     error = Signal(str)
+    progress = Signal(int)  # percentage 0-100
 
     def __init__(
         self,
         sftp: SFTPClient,
         local_paths: List[str],
         remote_root: str,
+        total_bytes: int = 0,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.sftp = sftp
         self.local_paths = local_paths
         self.remote_root = remote_root
+        self._total_bytes = total_bytes
+        self._cumulative_bytes = 0  # Track total bytes transferred across all files
 
     # ----------------------------
     #  Internal helpers
@@ -143,10 +146,13 @@ class TransferWorker(QObject):
             if total <= 0:
                 return
             pct = int(transferred * 100 / total)
-            if pct % 5 == 0:  # throttle logs a bit
+            if pct % 5 == 0:
                 logger.progress_signal.emit(pct)
+            # Emit overall percentage
+            if self._total_bytes > 0:
+                overall_pct = int((self._cumulative_bytes + transferred) * 100 / self._total_bytes)
+                self.progress.emit(min(overall_pct, 100))
 
-        logger.upload(f"Manual: {filename}: Start upload")
         logger.progress_signal.emit(0)
 
         try:
@@ -155,7 +161,9 @@ class TransferWorker(QObject):
             # Verify upload
             self._verify_upload(local_path, remote_file)
 
-            logger.success(f"Manual: {filename}: Uploaded ({format_size(size_bytes)})")
+            # Add this file's size to cumulative total
+            self._cumulative_bytes += size_bytes
+
             logger.progress_signal.emit(100)
 
         except TransferVerificationError as e:

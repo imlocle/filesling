@@ -43,8 +43,6 @@ class ConnectionManagerService:
         if self.ssh_client and self.sftp_client:
             return True
 
-        logger.search(f"Connection: Checking: {self.settings.pi_ip}...")
-        
         # Validate SSH key exists before attempting connection
         if not os.path.exists(self.settings.ssh_key_path):
             error_msg = f"SSH key not found: {self.settings.ssh_key_path}"
@@ -76,8 +74,6 @@ class ConnectionManagerService:
                 self.ssh_client = SSHClient()
                 self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
                 
-                logger.info(f"Connection: Attempt {retries + 1}/{max_retries}")
-                
                 self.ssh_client.connect(
                     hostname=self.settings.pi_ip,
                     username=self.settings.pi_user,
@@ -98,7 +94,7 @@ class ConnectionManagerService:
                         details=str(e)
                     )
                 
-                logger.start(f"Connection: Start: {self.settings.pi_ip}")
+                logger.success(f"Connected: {self.settings.pi_ip}")
                 return True
                 
             except AuthenticationException as e:
@@ -130,7 +126,7 @@ class ConnectionManagerService:
                 retries += 1
                 logger.error(
                     f"Connection: Timeout: Retry {retries}/{max_retries}\n"
-                    f"Check if Pi is reachable at {self.settings.pi_ip}"
+                    f"Check if server is reachable at {self.settings.pi_ip}"
                 )
                 self.ssh_client = None
                 self.sftp_client = None
@@ -152,10 +148,10 @@ class ConnectionManagerService:
         error_msg = (
             f"Connection failed after {max_retries} attempts. "
             f"Please check:\n"
-            f"1. Pi is powered on and connected to network\n"
+            f"1. Server is powered on and connected to network\n"
             f"2. IP address is correct: {self.settings.pi_ip}\n"
-            f"3. SSH is enabled on Pi\n"
-            f"4. SSH key is authorized on Pi"
+            f"3. SSH is enabled on the server\n"
+            f"4. SSH key is authorized on the server"
         )
         logger.error(f"Connection: {error_msg}")
         
@@ -235,7 +231,7 @@ class ConnectionManagerService:
             logger.error(f"Test: Authentication failed: {e}")
             return False
         except TimeoutError:
-            logger.error(f"Test: Connection timeout - Pi not reachable at {self.settings.pi_ip}")
+            logger.error(f"Test: Connection timeout - server not reachable at {self.settings.pi_ip}")
             return False
         except Exception as e:
             logger.error(f"Test: Connection failed: {e}")

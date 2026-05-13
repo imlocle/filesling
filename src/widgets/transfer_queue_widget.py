@@ -1,0 +1,445 @@
+"""
+Transfer queue widget — shows pending, in-progress, and completed transfers.
+"""
+
+import os
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import List, Optional
+
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+class TransferStatus(Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass
+class TransferItem:
+    """Represents a single transfer in the queue."""
+    display_name: str
+    total_bytes: int = 0
+    transferred_bytes: int = 0
+    status: TransferStatus = TransferStatus.PENDING
+    error_message: str = ""
+    start_time: float = 0.0
+    end_time: float = 0.0
+
+    @property
+    def progress_percent(self) -> int:
+        if self.total_bytes <= 0:
+            return 0
+        return min(100, int(self.transferred_bytes * 100 / self.total_bytes))
+
+    @property
+    def speed_bytes_per_sec(self) -> float:
+        if self.start_time <= 0 or self.transferred_bytes <= 0:
+            return 0.0
+        elapsed = (self.end_time or time.time()) - self.start_time
+        if elapsed <= 0:
+            return 0.0
+        return self.transferred_bytes / elapsed
+
+    @property
+    def eta_seconds(self) -> Optional[float]:
+        speed = self.speed_bytes_per_sec
+        if speed <= 0 or self.total_bytes <= 0:
+            return None
+        remaining = self.total_bytes - self.transferred_bytes
+        return remaining / speed
+
+
+class TransferItemWidget(QFrame):
+    """Widget for a single transfer item in the queue."""
+
+    retry_requested = Signal(int)  # index
+    cancel_requested = Signal(int)  # index
+
+    def __init__(self, index: int, item: TransferItem, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.item = item
+        self.setObjectName("transfer_item")
+        self.setStyleSheet("""
+            QFrame#transfer_item {
+                background-color: #2d2d2d;
+                border: 1px solid #3e3e42;
+                border-radius: 4px;
+                padding: 6px;
+                margin: 2px 0;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+
+        # Top row: name + status + cancel
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
+
+        self.name_label = QLabel(item.display_name)
+        self.name_label.setStyleSheet("color: #cccccc; font-size: 12px; font-weight: 500;")
+        self.name_label.setMaximumWidth(400)
+        self.name_label.setWordWrap(False)
+
+        self.status_label = QLabel()
+        self.status_label.setStyleSheet("font-size: 11px;")
+
+        self.cancel_btn = QPushButton("✕")
+        self.cancel_btn.setMaximumWidth(22)
+        self.cancel_btn.setMaximumHeight(22)
+        self.cancel_btn.setToolTip("Cancel")
+        self.cancel_btn.setStyleSheet(
+            "font-size: 11px; padding: 0; color: #858585; border: none;"
+        )
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.index))
+        self.cancel_btn.setVisible(False)
+
+        top_row.addWidget(self.name_label, stretch=1)
+        top_row.addWidget(self.status_label)
+        top_row.addWidget(self.cancel_btn)
+
+        layout.addLayout(top_row)
+
+        # Progress bar (only for in-progress)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximumHeight(14)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #1e1e1e;
+                border: none;
+                border-radius: 3px;
+            }
+            QProgressBar::chunk {
+                background-color: #0078d4;
+                border-radius: 3px;
+            }
+        """)
+        layout.addWidget(self.progress_bar)
+
+        # Bottom row: speed + ETA or error
+        self.detail_label = QLabel()
+        self.detail_label.setStyleSheet("color: #858585; font-size: 11px;")
+        layout.addWidget(self.detail_label)
+
+        # Retry button (hidden by default)
+        self.retry_btn = QPushButton("↻ Retry")
+        self.retry_btn.setMaximumWidth(60)
+        self.retry_btn.setMaximumHeight(22)
+        self.retry_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
+        self.retry_btn.setVisible(False)
+        self.retry_btn.clicked.connect(lambda: self.retry_requested.emit(self.index))
+        layout.addWidget(self.retry_btn)
+
+        self.update_display()
+
+    def update_display(self):
+        """Update the widget to reflect current item state."""
+        item = self.item
+
+        if item.status == TransferStatus.PENDING:
+            self.status_label.setText("⏳ Queued")
+            self.status_label.setStyleSheet("color: #858585; font-size: 11px;")
+            self.progress_bar.setVisible(False)
+            self.detail_label.setVisible(False)
+            self.retry_btn.setVisible(False)
+            self.cancel_btn.setVisible(True)
+
+        elif item.status == TransferStatus.IN_PROGRESS:
+            self.status_label.setText("⬆️ Uploading")
+            self.status_label.setStyleSheet("color: #0078d4; font-size: 11px;")
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setValue(item.progress_percent)
+            self.detail_label.setVisible(True)
+            self.retry_btn.setVisible(False)
+            self.cancel_btn.setVisible(False)
+
+            # Speed and ETA
+            speed = item.speed_bytes_per_sec
+            eta = item.eta_seconds
+            parts = []
+            if speed > 0:
+                parts.append(f"{_format_speed(speed)}")
+            if eta is not None and eta > 0:
+                parts.append(f"ETA: {_format_time(eta)}")
+            parts.append(f"{item.progress_percent}%")
+            self.detail_label.setText(" · ".join(parts))
+
+        elif item.status == TransferStatus.COMPLETED:
+            self.status_label.setText("✅ Done")
+            self.status_label.setStyleSheet("color: #4ec9b0; font-size: 11px;")
+            self.progress_bar.setVisible(False)
+            self.detail_label.setVisible(True)
+            self.retry_btn.setVisible(False)
+            self.cancel_btn.setVisible(False)
+
+            # Show duration
+            if item.start_time and item.end_time:
+                duration = item.end_time - item.start_time
+                speed = item.speed_bytes_per_sec
+                parts = [f"{_format_time(duration)}"]
+                if speed > 0:
+                    parts.append(f"avg {_format_speed(speed)}")
+                self.detail_label.setText(" · ".join(parts))
+            else:
+                self.detail_label.setText("")
+
+        elif item.status == TransferStatus.FAILED:
+            self.status_label.setText("❌ Failed")
+            self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.progress_bar.setVisible(False)
+            self.detail_label.setVisible(True)
+            self.detail_label.setText(item.error_message[:80])
+            self.detail_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.retry_btn.setVisible(True)
+            self.cancel_btn.setVisible(False)
+
+
+class TransferQueueWidget(QWidget):
+    """
+    Visual transfer queue panel.
+
+    Shows all transfers: pending, in-progress, completed, and failed.
+    Updates in real-time as transfers progress.
+    """
+
+    retry_transfer = Signal(int)  # index of failed transfer to retry
+    cancel_transfer = Signal(int)  # index of pending transfer to cancel
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items: List[TransferItem] = []
+        self._item_widgets: List[TransferItemWidget] = []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        # Header
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
+
+        self.header_label = QLabel("Transfers")
+        self.header_label.setStyleSheet("color: #cccccc; font-size: 12px; font-weight: 600;")
+
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setMaximumWidth(50)
+        self.clear_btn.setMaximumHeight(20)
+        self.clear_btn.setStyleSheet("font-size: 10px; padding: 2px 6px; color: #858585;")
+        self.clear_btn.clicked.connect(self.clear_completed)
+        self.clear_btn.setVisible(False)
+
+        header_layout.addWidget(self.header_label)
+        header_layout.addStretch()
+        header_layout.addWidget(self.clear_btn)
+        layout.addLayout(header_layout)
+
+        # Scroll area for items
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setMaximumHeight(200)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+
+        self.items_container = QWidget()
+        self.items_layout = QVBoxLayout(self.items_container)
+        self.items_layout.setContentsMargins(0, 0, 0, 0)
+        self.items_layout.setSpacing(4)
+        self.items_layout.addStretch()
+
+        self.scroll_area.setWidget(self.items_container)
+        layout.addWidget(self.scroll_area)
+
+        # Empty state
+        self.empty_label = QLabel("No transfers")
+        self.empty_label.setStyleSheet("color: #858585; font-size: 11px; padding: 12px;")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.empty_label)
+
+        self.scroll_area.setVisible(False)
+
+        # Update timer for speed/ETA
+        self._update_timer = QTimer(self)
+        self._update_timer.timeout.connect(self._refresh_active)
+        self._update_timer.setInterval(500)
+
+    def add_transfer(self, display_name: str, total_bytes: int = 0) -> int:
+        """Add a new transfer to the queue. Returns its index."""
+        item = TransferItem(display_name=display_name, total_bytes=total_bytes)
+        self._items.append(item)
+        index = len(self._items) - 1
+
+        widget = TransferItemWidget(index, item)
+        widget.retry_requested.connect(self.retry_transfer.emit)
+        widget.cancel_requested.connect(self._cancel_item)
+        self._item_widgets.append(widget)
+
+        # Insert before the stretch
+        self.items_layout.insertWidget(self.items_layout.count() - 1, widget)
+
+        self._update_visibility()
+        return index
+
+    def set_in_progress(self, index: int) -> None:
+        """Mark a transfer as in-progress."""
+        if 0 <= index < len(self._items):
+            self._items[index].status = TransferStatus.IN_PROGRESS
+            self._items[index].start_time = time.time()
+            self._item_widgets[index].update_display()
+            self._update_timer.start()
+
+    def update_progress(self, index: int, transferred: int, total: int) -> None:
+        """Update transfer progress."""
+        if 0 <= index < len(self._items):
+            self._items[index].transferred_bytes = transferred
+            if total > 0:
+                self._items[index].total_bytes = total
+            # Don't update widget here — timer handles it
+
+    def set_completed(self, index: int) -> None:
+        """Mark a transfer as completed."""
+        if 0 <= index < len(self._items):
+            self._items[index].status = TransferStatus.COMPLETED
+            self._items[index].end_time = time.time()
+            self._items[index].transferred_bytes = self._items[index].total_bytes
+            self._item_widgets[index].update_display()
+            self._check_stop_timer()
+            self._update_visibility()
+
+    def set_failed(self, index: int, error: str) -> None:
+        """Mark a transfer as failed."""
+        if 0 <= index < len(self._items):
+            self._items[index].status = TransferStatus.FAILED
+            self._items[index].end_time = time.time()
+            self._items[index].error_message = error
+            self._item_widgets[index].update_display()
+            self._check_stop_timer()
+            self._update_visibility()
+
+    def clear_completed(self) -> None:
+        """Remove completed and failed items from the list."""
+        indices_to_remove = [
+            i for i, item in enumerate(self._items)
+            if item.status in (TransferStatus.COMPLETED, TransferStatus.FAILED)
+        ]
+        # Remove in reverse order to preserve indices
+        for i in reversed(indices_to_remove):
+            self._items.pop(i)
+            widget = self._item_widgets.pop(i)
+            self.items_layout.removeWidget(widget)
+            widget.deleteLater()
+
+        # Re-index remaining widgets
+        for i, widget in enumerate(self._item_widgets):
+            widget.index = i
+
+        self._update_visibility()
+
+    def _cancel_item(self, index: int) -> None:
+        """Cancel a pending transfer and remove it from the queue."""
+        if 0 <= index < len(self._items):
+            item = self._items[index]
+            if item.status != TransferStatus.PENDING:
+                return  # Can only cancel pending items
+
+            # Count how many pending items come before this one
+            # (this maps to the internal queue index in the controller)
+            pending_position = sum(
+                1 for i in range(index)
+                if self._items[i].status == TransferStatus.PENDING
+            )
+
+            # Remove from visual queue
+            self._items.pop(index)
+            widget = self._item_widgets.pop(index)
+            self.items_layout.removeWidget(widget)
+            widget.deleteLater()
+
+            # Re-index remaining widgets
+            for i, w in enumerate(self._item_widgets):
+                w.index = i
+
+            self._update_visibility()
+
+            # Emit signal with the pending position for the controller
+            self.cancel_transfer.emit(pending_position)
+
+    def _refresh_active(self) -> None:
+        """Refresh display of active transfers (called by timer)."""
+        for i, item in enumerate(self._items):
+            if item.status == TransferStatus.IN_PROGRESS:
+                self._item_widgets[i].update_display()
+
+    def _check_stop_timer(self) -> None:
+        """Stop the update timer if no transfers are in progress."""
+        has_active = any(
+            item.status == TransferStatus.IN_PROGRESS for item in self._items
+        )
+        if not has_active:
+            self._update_timer.stop()
+
+    def _update_visibility(self) -> None:
+        """Show/hide elements based on queue state."""
+        has_items = len(self._items) > 0
+        self.scroll_area.setVisible(has_items)
+        self.empty_label.setVisible(not has_items)
+
+        has_clearable = any(
+            item.status in (TransferStatus.COMPLETED, TransferStatus.FAILED)
+            for item in self._items
+        )
+        self.clear_btn.setVisible(has_clearable)
+
+        # Update header count
+        active = sum(1 for item in self._items if item.status in (TransferStatus.PENDING, TransferStatus.IN_PROGRESS))
+        if active > 0:
+            self.header_label.setText(f"Transfers ({active} active)")
+        else:
+            self.header_label.setText("Transfers")
+
+
+def _format_speed(bytes_per_sec: float) -> str:
+    """Format transfer speed."""
+    if bytes_per_sec < 1024:
+        return f"{bytes_per_sec:.0f} B/s"
+    elif bytes_per_sec < 1024 * 1024:
+        return f"{bytes_per_sec / 1024:.1f} KB/s"
+    else:
+        return f"{bytes_per_sec / (1024 * 1024):.1f} MB/s"
+
+
+def _format_time(seconds: float) -> str:
+    """Format time duration."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f"{m}m {s}s"
+    else:
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        return f"{h}h {m}m"

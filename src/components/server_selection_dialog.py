@@ -1,5 +1,5 @@
 """
-Server selection dialog for choosing which Raspberry Pi to connect to.
+Server selection dialog for choosing which server to connect to.
 
 Shows a list of saved servers with their connection details.
 Allows adding new servers or editing existing ones.
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from src.config.settings import Settings
 from src.utils.constants import SOFTWARE_NAME
+from src.utils.logging_signal import logger
 
 
 class ServerSelectionDialog(QDialog):
@@ -80,7 +81,7 @@ class ServerSelectionDialog(QDialog):
         header_layout = QVBoxLayout(header)
         header_layout.setSpacing(8)
 
-        title = QLabel("Select Raspberry Pi Server")
+        title = QLabel("Select Server")
         title.setStyleSheet("font-size: 18px; font-weight: 600; color: #ffffff;")
         header_layout.addWidget(title)
 
@@ -137,6 +138,12 @@ class ServerSelectionDialog(QDialog):
         self.edit_btn.setEnabled(False)
         self.edit_btn.clicked.connect(self._edit_server)
 
+        self.default_btn = QPushButton("⭐ Set as Default")
+        self.default_btn.setMinimumHeight(36)
+        self.default_btn.setEnabled(False)
+        self.default_btn.setToolTip("Auto-connect to this server on launch")
+        self.default_btn.clicked.connect(self._set_as_default)
+
         self.delete_btn = QPushButton("🗑 Delete Server")
         self.delete_btn.setMinimumHeight(36)
         self.delete_btn.setEnabled(False)
@@ -144,6 +151,7 @@ class ServerSelectionDialog(QDialog):
 
         action_layout.addWidget(self.add_btn)
         action_layout.addWidget(self.edit_btn)
+        action_layout.addWidget(self.default_btn)
         action_layout.addWidget(self.delete_btn)
         action_layout.addStretch()
 
@@ -207,7 +215,9 @@ class ServerSelectionDialog(QDialog):
         name = config.get("name", server_id)
         user = config.get("pi_user", "")
         ip = config.get("pi_ip", "")
-        return f"{name}\n{user}@{ip}"
+        is_default = self.settings.config.default_server_id == server_id
+        prefix = "⭐ " if is_default else ""
+        return f"{prefix}{name}\n{user}@{ip}"
 
     def _on_selection_changed(self):
         """Handle server selection change."""
@@ -223,6 +233,7 @@ class ServerSelectionDialog(QDialog):
         
         self.connect_btn.setEnabled(has_valid_server)
         self.edit_btn.setEnabled(has_valid_server)
+        self.default_btn.setEnabled(has_valid_server)
         self.delete_btn.setEnabled(has_valid_server)
 
     def _on_server_double_clicked(self, item: QListWidgetItem):
@@ -244,6 +255,22 @@ class ServerSelectionDialog(QDialog):
             self.selected_server_id = server_id
             self.server_selected.emit(server_id)
             self.accept()
+
+    def _set_as_default(self):
+        """Set the selected server as the default for auto-connect."""
+        selected_items = self.server_list.selectedItems()
+        if not selected_items:
+            return
+
+        item = selected_items[0]
+        server_id = item.data(Qt.ItemDataRole.UserRole)
+
+        if server_id:
+            self.settings.set_default_server(server_id)
+            server_name = self.settings.get_server(server_id).get("name", server_id)
+            logger.success(f"Default server set: {server_name}")
+            # Reload list to show the star indicator
+            self._load_servers()
 
     def _add_new_server(self):
         """Open settings to add a new server."""

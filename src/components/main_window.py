@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
@@ -8,9 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QProgressBar,
     QPushButton,
-    QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -27,12 +27,12 @@ from src.widgets.file_explorer_widget import FileExplorerWidget
 
 class MainWindow(QWidget):
     """
-    Modern, clean main window for PiSync.
+    Main window for PiSync — a remote file manager.
 
     Features:
-    - Clean toolbar with icon + text buttons
-    - Status bar with connection and monitoring status
-    - Dual-pane file explorer
+    - Clean toolbar with connection controls
+    - Status bar with connection status
+    - Remote file explorer with drag-and-drop upload
     - Activity log with timestamps
     - Progress indicator
     """
@@ -42,7 +42,7 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(SOFTWARE_NAME)
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(700, 700)
 
         # Connection retry tracking
         self.connection_attempts = 0
@@ -96,25 +96,16 @@ class MainWindow(QWidget):
         QTimer.singleShot(200, self._auto_connect_and_start)
 
     def _auto_connect_and_start(self):
-        """Automatically connect and start monitoring after window loads (if enabled in settings)."""
-        # Only auto-connect if auto_start_monitor is enabled
-        if not self.settings.auto_start_monitor:
-            logger.info("Auto-connect disabled in settings")
-            return
-
-        # Connect to the server
+        """Automatically connect after window loads."""
         self.controller.connect()
-
-        # Start monitoring after successful connection
-        if self.connection_manager_service.is_connected():
-            self.controller.start_monitor()
 
     def _should_show_server_selection(self) -> bool:
         """
         Check if we should show server selection dialog.
+        If a default server is set, skip the dialog and load it directly.
 
         Returns:
-            True if server selection should be shown
+            True if server was selected/loaded successfully
         """
         servers = self.settings.get_servers()
 
@@ -122,7 +113,13 @@ class MainWindow(QWidget):
         if not servers:
             return self._show_initial_setup()
 
-        # If servers exist, show selection dialog
+        # If a default server is set, try to load it directly (skip dialog)
+        default_id = self.settings.config.default_server_id
+        if default_id and default_id in servers:
+            if self.settings.load_server(default_id):
+                return True
+
+        # Otherwise show selection dialog
         return self._show_server_selection()
 
     def _show_initial_setup(self) -> bool:
@@ -135,7 +132,7 @@ class MainWindow(QWidget):
         QMessageBox.information(
             self,
             "Welcome to PiSync",
-            "Welcome! Let's set up your first Raspberry Pi server.",
+            "Welcome! Let's set up your first server connection.",
             QMessageBox.StandardButton.Ok,
         )
 
@@ -212,7 +209,7 @@ class MainWindow(QWidget):
         return True
 
     def handle_connection_failure(self):
-        """Handle connection failure with retry logic."""
+        """Handle connection failure — show server selection dialog."""
         self.connection_attempts += 1
 
         if self.connection_attempts >= self.max_connection_attempts:
@@ -230,14 +227,11 @@ class MainWindow(QWidget):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                # Reset attempts and show server selection
                 self.connection_attempts = 0
                 if self._show_server_selection():
-                    # Reconnect with new server
+                    self.connection_manager_service = ConnectionManagerService(self.settings)
+                    self.controller.connection_manager = self.connection_manager_service
                     self.controller.connect()
-            else:
-                # User chose not to select different server
-                logger.info("User cancelled server selection")
         else:
             logger.warn(
                 f"Connection attempt {self.connection_attempts}/{self.max_connection_attempts} failed"
@@ -245,24 +239,30 @@ class MainWindow(QWidget):
 
     def change_server(self):
         """Allow user to change to a different server."""
-        # Stop monitoring if active
-        if self.controller.auto_sync.is_monitoring():
-            self.controller.stop_monitor()
+        from src.components.server_selection_dialog import ServerSelectionDialog
+
+        selection_dialog = ServerSelectionDialog(self)
+        if selection_dialog.exec() != QDialog.DialogCode.Accepted:
+            # User cancelled — reconnect to current server
+            return
+
+        server_id = selection_dialog.get_selected_server_id()
+        if not server_id:
+            return
+
+        if not self.settings.load_server(server_id):
+            return
 
         # Disconnect current connection
         self.connection_manager_service.disconnect()
-
-        # Reset connection attempts
         self.connection_attempts = 0
 
-        # Show server selection
-        if self._show_server_selection():
-            # Update connection manager with new settings
-            self.connection_manager_service = ConnectionManagerService(self.settings)
-            self.controller.connection_manager = self.connection_manager_service
+        # Update connection manager with new settings
+        self.connection_manager_service = ConnectionManagerService(self.settings)
+        self.controller.connection_manager = self.connection_manager_service
 
-            # Connect to new server
-            self.controller.connect()
+        # Connect to new server
+        self.controller.connect()
 
     # ------------------------------------------------------------------
     # Signal Wiring
@@ -270,35 +270,20 @@ class MainWindow(QWidget):
     def _setup_connections(self) -> None:
         """Wire UI signals to controller actions."""
         self.connect_btn.clicked.connect(self.controller.connect)
-        self.start_btn.clicked.connect(self.controller.start_monitor)
-        self.stop_btn.clicked.connect(self.controller.stop_monitor)
-        self.upload_all_btn.clicked.connect(self.controller.upload_all)
         self.change_server_btn.clicked.connect(self.change_server)
         self.refresh_btn.clicked.connect(self.controller.refresh_explorers)
         self.settings_btn.clicked.connect(self.controller.open_settings)
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
 
-        # Watch explorer
-        self.watch_explorer.file_delete_requested.connect(self.controller.delete_item)
-        self.watch_explorer.file_rename_requested.connect(self.controller.rename_item)
-        self.watch_explorer.folder_create_requested.connect(
-            self.controller.create_folder
-        )
-        self.watch_explorer.item_move_requested.connect(self.controller.move_item)
-        self.watch_explorer.item_selected.connect(
-            self.controller.handle_selection_changed
-        )
-        self.watch_explorer.file_opened.connect(self.controller.handle_file_open)
-
         # Pi explorer
-        self.pi_explorer.file_delete_requested.connect(self.controller.delete_item)
-        self.pi_explorer.file_rename_requested.connect(self.controller.rename_item)
-        self.pi_explorer.folder_create_requested.connect(self.controller.create_folder)
-        self.pi_explorer.item_move_requested.connect(self.controller.move_item)
-        self.pi_explorer.item_selected.connect(self.controller.handle_selection_changed)
-        self.pi_explorer.file_opened.connect(self.controller.handle_file_open)
-        self.pi_explorer.files_dropped.connect(self._handle_pi_drop)
-        self.pi_explorer.remote_error.connect(
+        self.remote_explorer.file_delete_requested.connect(self.controller.delete_item)
+        self.remote_explorer.file_rename_requested.connect(self.controller.rename_item)
+        self.remote_explorer.folder_create_requested.connect(self.controller.create_folder)
+        self.remote_explorer.item_move_requested.connect(self.controller.move_item)
+        self.remote_explorer.item_selected.connect(self.controller.handle_selection_changed)
+        self.remote_explorer.file_opened.connect(self.controller.handle_file_open)
+        self.remote_explorer.files_dropped.connect(self._handle_remote_drop)
+        self.remote_explorer.remote_error.connect(
             self.controller.handle_remote_explorer_failure
         )
 
@@ -306,7 +291,7 @@ class MainWindow(QWidget):
     # UI Setup
     # ------------------------------------------------------------------
     def _setup_toolbar(self, layout: QVBoxLayout) -> None:
-        """Create modern toolbar with icon + text buttons."""
+        """Create modern toolbar with icon buttons."""
         toolbar = QFrame()
         toolbar.setObjectName("toolbar")
         toolbar.setStyleSheet(
@@ -323,45 +308,27 @@ class MainWindow(QWidget):
         toolbar_layout.setContentsMargins(12, 8, 12, 8)
         toolbar_layout.setSpacing(8)
 
-        # Connect button
-        self.connect_btn = QPushButton("🔌 Connect")
-        self.connect_btn.setObjectName("primary_btn")
+        # Left side buttons
+        self.connect_btn = QPushButton("🔌")
+        self.connect_btn.setObjectName("icon_btn")
+        self.connect_btn.setToolTip("Connect")
         self.connect_btn.setMinimumHeight(36)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Start button
-        self.start_btn = QPushButton("▶  Start Monitoring")
-        self.start_btn.setMinimumHeight(36)
-        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.change_server_btn = QPushButton("🔄")
+        self.change_server_btn.setObjectName("icon_btn")
+        self.change_server_btn.setMinimumHeight(36)
+        self.change_server_btn.setToolTip("Change Server")
+        self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Stop button
-        self.stop_btn = QPushButton("⏹  Stop Monitoring")
-        self.stop_btn.setMinimumHeight(36)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        # Upload all button
-        self.upload_all_btn = QPushButton("⬆  Upload All")
-        self.upload_all_btn.setMinimumHeight(36)
-        self.upload_all_btn.setEnabled(False)
-        self.upload_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        # Spacer
         toolbar_layout.addWidget(self.connect_btn)
-        toolbar_layout.addWidget(self.start_btn)
-        toolbar_layout.addWidget(self.stop_btn)
-        toolbar_layout.addWidget(self.upload_all_btn)
+        toolbar_layout.addWidget(self.change_server_btn)
         toolbar_layout.addStretch()
 
         # Right side buttons
-        self.change_server_btn = QPushButton("🔄 Change Server")
-        self.change_server_btn.setMinimumHeight(36)
-        self.change_server_btn.setToolTip("Select a different server")
-        self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setObjectName("icon_btn")
-        self.refresh_btn.setToolTip("Refresh Explorers")
+        self.refresh_btn.setToolTip("Refresh")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.delete_btn = QPushButton("🗑")
@@ -375,7 +342,6 @@ class MainWindow(QWidget):
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        toolbar_layout.addWidget(self.change_server_btn)
         toolbar_layout.addWidget(self.refresh_btn)
         toolbar_layout.addWidget(self.delete_btn)
         toolbar_layout.addWidget(self.settings_btn)
@@ -412,45 +378,26 @@ class MainWindow(QWidget):
         self.connection_status_label = QLabel("● Disconnected")
         self.connection_status_label.setObjectName("connection_disconnected")
 
-        # Monitoring status
-        self.status_label = QLabel("⏸ Monitoring: Idle")
-        self.status_label.setStyleSheet("color: #858585; font-weight: 500;")
-
         status_layout.addWidget(self.connection_status_label)
-        status_layout.addWidget(self.status_label)
         status_layout.addStretch()
 
         layout.addWidget(status_bar)
 
     def _setup_content_area(self, layout: QVBoxLayout) -> None:
-        """Create main content area with file explorers."""
+        """Create main content area with Pi file explorer."""
         content_container = QWidget()
         content_layout = QVBoxLayout(content_container)
         content_layout.setContentsMargins(12, 12, 12, 12)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(2)
-
-        self.watch_explorer = FileExplorerWidget(
-            settings=self.settings,
-            root_path=self.settings.local_watch_dir,
-            title="📁 Local Files",
-        )
-
-        self.pi_explorer = FileExplorerWidget(
+        self.remote_explorer = FileExplorerWidget(
             settings=self.settings,
             root_path=self.settings.remote_base_dir,
-            title="🥧 Raspberry Pi",
+            title="🖥 Remote Server",
             is_remote=True,
             sftp=None,
         )
 
-        splitter.addWidget(self.watch_explorer)
-        splitter.addWidget(self.pi_explorer)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-
-        content_layout.addWidget(splitter)
+        content_layout.addWidget(self.remote_explorer)
         layout.addWidget(content_container, stretch=1)
 
     def _setup_activity_log(self, layout: QVBoxLayout) -> None:
@@ -486,20 +433,17 @@ class MainWindow(QWidget):
         layout.addWidget(log_container)
 
     def _setup_progress_bar(self, layout: QVBoxLayout) -> None:
-        """Create progress bar."""
-        progress_container = QWidget()
-        progress_layout = QVBoxLayout(progress_container)
-        progress_layout.setContentsMargins(12, 0, 12, 12)
+        """Create transfer queue panel."""
+        from src.widgets.transfer_queue_widget import TransferQueueWidget
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("")
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMinimumHeight(28)
+        queue_container = QWidget()
+        queue_layout = QVBoxLayout(queue_container)
+        queue_layout.setContentsMargins(12, 0, 12, 12)
 
-        progress_layout.addWidget(self.progress_bar)
-        layout.addWidget(progress_container)
+        self.transfer_queue = TransferQueueWidget()
+        queue_layout.addWidget(self.transfer_queue)
+
+        layout.addWidget(queue_container)
 
     # ------------------------------------------------------------------
     # Logging & Progress
@@ -512,14 +456,8 @@ class MainWindow(QWidget):
         scrollbar.setValue(scrollbar.maximum())
 
     def update_progress(self, value: int) -> None:
-        """Update progress bar."""
-        self.progress_bar.setValue(value)
-        if value < 100:
-            self.progress_bar.setFormat(f"Transferring... {value}%")
-        else:
-            self.progress_bar.setFormat("✓ Transfer Complete")
-            # Reset after 2 seconds
-            QTimer.singleShot(2000, lambda: self.progress_bar.setFormat(""))
+        """Update progress (legacy — now handled by queue widget)."""
+        pass
 
     # ------------------------------------------------------------------
     # Lifecycle Events
@@ -548,12 +486,39 @@ class MainWindow(QWidget):
         else:
             event.ignore()
 
-    def _handle_pi_drop(self, local_paths: list[str], remote_dir: str) -> None:
+    def _handle_remote_drop(self, local_paths: list[str], remote_dir: str) -> None:
         """
-        Called when user drags files/folders from Finder onto the Pi explorer.
+        Called when user drags files/folders from Finder onto the remote explorer.
 
-        Delegates to ManualTransferController for handling.
+        Adds to visual queue and delegates to ManualTransferController.
         """
+        # Calculate total size for the queue widget
+        total_bytes = 0
+        for p in local_paths:
+            if os.path.isdir(p):
+                for root, _, files in os.walk(p):
+                    for f in files:
+                        if not f.startswith("."):
+                            try:
+                                total_bytes += os.path.getsize(os.path.join(root, f))
+                            except OSError:
+                                pass
+            elif os.path.isfile(p):
+                try:
+                    total_bytes += os.path.getsize(p)
+                except OSError:
+                    pass
+
+        # Build display name
+        names = [os.path.basename(p) for p in local_paths]
+        display_name = ", ".join(names[:2])
+        if len(names) > 2:
+            display_name += f" (+{len(names) - 2})"
+
+        # Add to visual queue
+        self.transfer_queue.add_transfer(display_name, total_bytes)
+
+        # Start the transfer
         self.controller.manual_transfer.transfer_to_pi(
             local_paths=local_paths, remote_destination=remote_dir
         )

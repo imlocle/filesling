@@ -34,7 +34,7 @@ class FileDeletionService:
                 return False
 
             send2trash(file_path)
-            logger.trash(f"Deletion: {file_path}: Completed")
+            logger.trash(f"Delete: {os.path.basename(file_path)}")
             return True
 
         except Exception as e:
@@ -57,15 +57,15 @@ class FileDeletionService:
         """
         try:
             if not os.path.exists(folder_path):
-                logger.warn(f"Deletion: {folder_path}: Folder not found")
+                logger.warn(f"Delete: {folder_path}: Folder not found")
                 return False
 
             if not os.path.isdir(folder_path):
-                logger.warn(f"Deletion: {folder_path}: Not a folder")
+                logger.warn(f"Delete: {folder_path}: Not a folder")
                 return False
 
             send2trash(folder_path)
-            logger.trash(f"Deletion: {folder_path}: Folder moved to trash")
+            logger.trash(f"Delete: {os.path.basename(folder_path)}")
             return True
 
         except Exception as e:

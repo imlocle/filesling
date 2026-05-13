@@ -211,22 +211,8 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        # Local paths group (only if not in server mode)
-        if not self.server_mode:
-            local_group = QGroupBox("Local Paths")
-            local_layout = QFormLayout()
-            local_layout.setSpacing(12)
-            local_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-            self.local_watch_dir_input = QLineEdit(self.settings.local_watch_dir)
-            self.local_watch_dir_input.setPlaceholderText("e.g., ~/Transfers")
-
-            local_layout.addRow("Watch Directory:", self.local_watch_dir_input)
-            local_group.setLayout(local_layout)
-            layout.addWidget(local_group)
-
         # Remote paths group
-        remote_group = QGroupBox("Remote Paths")
+        remote_group = QGroupBox("Remote Server")
         remote_layout = QFormLayout()
         remote_layout.setSpacing(12)
         remote_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -246,7 +232,7 @@ class SettingsWindow(QDialog):
 
         # Info label
         info_label = QLabel(
-            "💡 Tip: Local directory structure will be mirrored on the remote Pi"
+            "💡 The base directory is the root folder shown in the file explorer when you connect."
         )
         info_label.setStyleSheet(
             "color: #858585; padding: 8px; background-color: #252526; border-radius: 4px;"
@@ -264,30 +250,6 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        # Monitoring group
-        monitoring_group = QGroupBox("Monitoring Behavior")
-        monitoring_layout = QFormLayout()
-        monitoring_layout.setSpacing(12)
-        monitoring_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self.auto_start_monitor_checkbox = QCheckBox()
-        self.auto_start_monitor_checkbox.setChecked(
-            getattr(self.settings, "auto_start_monitor", False)
-        )
-
-        self.stability_duration_input = QLineEdit(str(self.settings.stability_duration))
-        self.stability_duration_input.setPlaceholderText("2.0")
-
-        monitoring_layout.addRow(
-            "Auto-start monitoring:", self.auto_start_monitor_checkbox
-        )
-        monitoring_layout.addRow(
-            "File stability duration (seconds):", self.stability_duration_input
-        )
-
-        monitoring_group.setLayout(monitoring_layout)
-        layout.addWidget(monitoring_group)
-
         # Transfer group
         transfer_group = QGroupBox("Transfer Behavior")
         transfer_layout = QFormLayout()
@@ -300,35 +262,23 @@ class SettingsWindow(QDialog):
         )
 
         transfer_layout.addRow(
-            "Delete local files after transfer:", self.delete_after_transfer_checkbox
+            "Move to trash after transfer:", self.delete_after_transfer_checkbox
         )
 
         transfer_group.setLayout(transfer_layout)
         layout.addWidget(transfer_group)
 
-        # Info labels
-        info_layout = QVBoxLayout()
-        info_layout.setSpacing(8)
-
-        stability_info = QLabel(
-            "💡 File stability: Wait time to ensure files are completely written before transfer"
-        )
-        stability_info.setStyleSheet(
-            "color: #858585; padding: 8px; background-color: #252526; border-radius: 4px;"
-        )
-        stability_info.setWordWrap(True)
-        info_layout.addWidget(stability_info)
-
+        # Info label
         delete_info = QLabel(
-            "⚠️ Delete after transfer: Use with caution! Files will be permanently deleted after successful transfer"
+            "💡 When enabled, local files are moved to the Trash after a successful upload. "
+            "They can be recovered from Trash if needed."
         )
         delete_info.setStyleSheet(
-            "color: #ce9178; padding: 8px; background-color: #252526; border-radius: 4px;"
+            "color: #858585; padding: 8px; background-color: #252526; border-radius: 4px;"
         )
         delete_info.setWordWrap(True)
-        info_layout.addWidget(delete_info)
+        layout.addWidget(delete_info)
 
-        layout.addLayout(info_layout)
         layout.addStretch()
         self.tab_widget.addTab(tab, "⚙️ Behavior")
 
@@ -340,11 +290,11 @@ class SettingsWindow(QDialog):
         layout.setSpacing(16)
 
         # File extensions group
-        extensions_group = QGroupBox("File Extensions to Monitor")
+        extensions_group = QGroupBox("File Extensions to Transfer")
         extensions_layout = QVBoxLayout()
         extensions_layout.setSpacing(8)
 
-        extensions_label = QLabel("Comma-separated list of file extensions:")
+        extensions_label = QLabel("Only upload files with these extensions (comma-separated):")
         extensions_label.setStyleSheet("color: #858585;")
         extensions_layout.addWidget(extensions_label)
 
@@ -365,7 +315,7 @@ class SettingsWindow(QDialog):
         skip_layout = QVBoxLayout()
         skip_layout.setSpacing(8)
 
-        skip_label = QLabel("Comma-separated list of patterns to skip:")
+        skip_label = QLabel("Skip files matching these patterns (comma-separated):")
         skip_label.setStyleSheet("color: #858585;")
         skip_layout.addWidget(skip_label)
 
@@ -488,7 +438,6 @@ class SettingsWindow(QDialog):
             # Validate the configuration
             temp_config = {
                 **server_config,
-                "local_watch_dir": self.settings.local_watch_dir,
                 "file_extensions": list(self.settings.file_extensions),
                 "skip_patterns": list(self.settings.skip_patterns),
             }
@@ -551,21 +500,15 @@ class SettingsWindow(QDialog):
             config_data = {
                 "servers": self.settings.config.servers,  # Keep existing servers
                 "current_server_id": self.settings.config.current_server_id,
+                "default_server_id": self.settings.config.default_server_id,
                 "pi_user": self.pi_user_input.text().strip(),
                 "pi_ip": self.pi_ip_input.text().strip(),
                 "ssh_key_path": self.ssh_key_path.text().strip(),
                 "ssh_port": int(self.ssh_port_input.text().strip() or "22"),
-                "local_watch_dir": self.local_watch_dir_input.text()
-                .rstrip("/")
-                .strip(),
                 "remote_base_dir": self.remote_base_dir_input.text()
                 .rstrip("/")
                 .strip(),
-                "auto_start_monitor": self.auto_start_monitor_checkbox.isChecked(),
                 "delete_after_transfer": self.delete_after_transfer_checkbox.isChecked(),
-                "stability_duration": float(
-                    self.stability_duration_input.text().strip() or "2.0"
-                ),
                 "file_extensions": [
                     ext.strip()
                     for ext in self.file_extensions_input.toPlainText().split(",")
@@ -654,7 +597,7 @@ class SettingsWindow(QDialog):
             )
 
     def test_connection(self):
-        """Test connection to Raspberry Pi."""
+        """Test connection to remote server."""
         self.connection_status_label.setText("● Testing connection...")
         self.connection_status_label.setStyleSheet("color: #ce9178; font-weight: 500;")
 
@@ -681,7 +624,6 @@ class SettingsWindow(QDialog):
                 "ssh_port": int(self.ssh_port_input.text().strip() or "22"),
                 "remote_base_dir": self.remote_base_dir_input.text().strip()
                 or "/mnt/external",
-                "local_watch_dir": self.settings.local_watch_dir,
             }
             try:
                 temp_config = SettingsConfig.from_json(temp_config_data)
