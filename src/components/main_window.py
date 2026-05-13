@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QCloseEvent, QShowEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -27,7 +27,7 @@ from src.widgets.file_explorer_widget import FileExplorerWidget
 
 class MainWindow(QWidget):
     """
-    Main window for PiSync — a remote file manager.
+    Main window for Shuttle — a remote file manager.
 
     Features:
     - Clean toolbar with connection controls
@@ -42,7 +42,7 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(SOFTWARE_NAME)
-        self.setMinimumSize(700, 700)
+        self.setMinimumSize(700, 850)
 
         # Connection retry tracking
         self.connection_attempts = 0
@@ -77,6 +77,7 @@ class MainWindow(QWidget):
 
         # === 3. Wire Signals ===
         self._setup_connections()
+        self._setup_shortcuts()
 
         # === 4. Connect logger ===
         logger.log_signal.connect(self.log)
@@ -131,7 +132,7 @@ class MainWindow(QWidget):
         """
         QMessageBox.information(
             self,
-            "Welcome to PiSync",
+            "Welcome to Shuttle",
             "Welcome! Let's set up your first server connection.",
             QMessageBox.StandardButton.Ok,
         )
@@ -141,7 +142,7 @@ class MainWindow(QWidget):
             QMessageBox.critical(
                 self,
                 "Setup Required",
-                "At least one server must be configured to use PiSync.",
+                "At least one server must be configured to use Shuttle.",
                 QMessageBox.StandardButton.Ok,
             )
             self.close()
@@ -200,7 +201,7 @@ class MainWindow(QWidget):
                 QMessageBox.critical(
                     self,
                     "Setup Failed",
-                    "Settings are required to run PiSync.",
+                    "Settings are required to run Shuttle.",
                     QMessageBox.StandardButton.Ok,
                 )
                 self.close()
@@ -288,6 +289,73 @@ class MainWindow(QWidget):
         )
 
     # ------------------------------------------------------------------
+    # Keyboard Shortcuts (macOS)
+    # ------------------------------------------------------------------
+    def _setup_shortcuts(self) -> None:
+        """Set up keyboard shortcuts."""
+        # ⌘+Backspace — Delete selected items
+        QShortcut(QKeySequence("Ctrl+Backspace"), self).activated.connect(
+            self.controller.delete_selected_item
+        )
+
+        # ⌘+R — Refresh explorer
+        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(
+            self.controller.refresh_explorers
+        )
+
+        # Enter — Navigate into selected folder (only when search bar not focused)
+        self._enter_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
+        self._enter_shortcut.activated.connect(self._navigate_or_search)
+
+        # ⌘+Up — Go back / up one directory
+        QShortcut(QKeySequence("Ctrl+Up"), self).activated.connect(
+            self.remote_explorer.go_back
+        )
+
+        # ⌘+N — New folder
+        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(
+            self._create_folder_shortcut
+        )
+
+        # ⌘+F — Focus search/filter
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(
+            self.remote_explorer.show_search
+        )
+
+        # Escape — Deselect all / hide search
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self).activated.connect(
+            self._handle_escape
+        )
+
+    def _navigate_selected(self) -> None:
+        """Navigate into the selected folder."""
+        items = self.remote_explorer.tree_widget.selectedItems()
+        if items and len(items) == 1:
+            self.remote_explorer.navigate(items[0])
+
+    def _navigate_or_search(self) -> None:
+        """Enter key: if search bar is focused, run search. Otherwise navigate."""
+        if self.remote_explorer._search_bar.hasFocus():
+            self.remote_explorer._execute_search()
+        else:
+            self._navigate_selected()
+
+    def _create_folder_shortcut(self) -> None:
+        """Trigger new folder creation in current directory."""
+        self.remote_explorer._prompt_and_create_folder()
+
+    def _deselect_all(self) -> None:
+        """Clear selection in the explorer."""
+        self.remote_explorer.tree_widget.clearSelection()
+
+    def _handle_escape(self) -> None:
+        """Escape: clear search if active, otherwise deselect."""
+        if self.remote_explorer._search_bar.text():
+            self.remote_explorer.hide_search()
+        else:
+            self._deselect_all()
+
+    # ------------------------------------------------------------------
     # UI Setup
     # ------------------------------------------------------------------
     def _setup_toolbar(self, layout: QVBoxLayout) -> None:
@@ -312,12 +380,10 @@ class MainWindow(QWidget):
         self.connect_btn = QPushButton("🔌")
         self.connect_btn.setObjectName("icon_btn")
         self.connect_btn.setToolTip("Connect")
-        self.connect_btn.setMinimumHeight(36)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.change_server_btn = QPushButton("🔄")
         self.change_server_btn.setObjectName("icon_btn")
-        self.change_server_btn.setMinimumHeight(36)
         self.change_server_btn.setToolTip("Change Server")
         self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -326,7 +392,7 @@ class MainWindow(QWidget):
         toolbar_layout.addStretch()
 
         # Right side buttons
-        self.refresh_btn = QPushButton("↻")
+        self.refresh_btn = QPushButton("🔃")
         self.refresh_btn.setObjectName("icon_btn")
         self.refresh_btn.setToolTip("Refresh")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -337,7 +403,7 @@ class MainWindow(QWidget):
         self.delete_btn.setEnabled(False)
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.settings_btn = QPushButton("⚙")
+        self.settings_btn = QPushButton("⚙️")
         self.settings_btn.setObjectName("icon_btn")
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -471,16 +537,36 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event: QCloseEvent):
         """Called when user clicks the window's close button."""
-        reply = QMessageBox.question(
-            self,
-            f"Exit {SOFTWARE_NAME}",
-            "Are you sure you want to quit?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        # Check if user opted to skip the confirmation
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
+
+        if skip_confirm:
+            self.controller.shutdown()
+            event.accept()
+            return
+
+        from PySide6.QtWidgets import QCheckBox
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"Exit {SOFTWARE_NAME}")
+        msg.setText("Are you sure you want to quit?")
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+
+        checkbox = QCheckBox("Don't ask me again")
+        msg.setCheckBox(checkbox)
+
+        reply = msg.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            logger.info(f"Closing {SOFTWARE_NAME}...")
+            # Save preference if checked
+            if checkbox.isChecked():
+                self.settings.config.skip_exit_confirm = True
+                self.settings.save_config(self.settings._config_to_dict())
+
             self.controller.shutdown()
             event.accept()
         else:

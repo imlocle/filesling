@@ -1,5 +1,5 @@
 """
-Custom exception hierarchy for PiSync application.
+Custom exception hierarchy for Shuttle application.
 """
 
 from typing import Optional

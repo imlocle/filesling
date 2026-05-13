@@ -9,7 +9,7 @@ from src.utils.helper import get_path, rounded_icon
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("PiSync")
+    app.setApplicationName("Shuttle")
     app.setApplicationVersion("1.0.0")
 
     # ---- STYLESHEET ----
@@ -21,7 +21,7 @@ def main():
         print("No stylesheet found — using default theme.")
 
     # ---- SPLASH ----
-    logo_path = get_path("assets/icons/pisync_logo.png")
+    logo_path = get_path("assets/icons/shuttle_logo.png")
     splash = SplashScreen(str(logo_path), duration=2500)
     splash.show()
 

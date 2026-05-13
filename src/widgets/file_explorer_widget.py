@@ -375,6 +375,9 @@ class FileExplorerWidget(QWidget):
         header_layout: QHBoxLayout = QHBoxLayout()
 
         self.back_btn: QPushButton = QPushButton("←")
+        self.back_btn.setObjectName("icon_btn")
+        self.back_btn.setToolTip("Go back")
+        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.title_label: QLabel = QLabel(f"{self.title} ({self.current_path})")
         self.title_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -384,6 +387,35 @@ class FileExplorerWidget(QWidget):
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
         layout.addLayout(header_layout)
+
+        # ------------------------------------------------------------------
+        # Search / Filter bar
+        # ------------------------------------------------------------------
+        from PySide6.QtWidgets import QLineEdit
+
+        self._search_bar = QLineEdit()
+        self._search_bar.setPlaceholderText("🔍 Filter...")
+        self._search_bar.setClearButtonEnabled(True)
+        self._search_bar.setMaximumHeight(28)
+        self._search_bar.setStyleSheet("""
+            QLineEdit {
+                background-color: #1e1e1e;
+                border: 1px solid #3e3e42;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 12px;
+                color: #cccccc;
+            }
+            QLineEdit:focus {
+                border-color: #0078d4;
+            }
+        """)
+        self._search_bar.returnPressed.connect(self._execute_search)
+        self._search_bar.textChanged.connect(self._on_search_cleared)
+        self._is_searching = False
+
+        # Also trigger search on editingFinished (covers Enter on some Qt versions)
+        layout.addWidget(self._search_bar)
 
         # ------------------------------------------------------------------
         # Tree widget with columns
@@ -821,6 +853,197 @@ class FileExplorerWidget(QWidget):
         entry = items[0].text(0)  # Get name from first column
         full_path = os.path.join(self.current_path, entry)
         self.item_selected.emit(full_path)
+
+    def show_search(self) -> None:
+        """Focus the search bar."""
+        self._search_bar.setFocus()
+        self._search_bar.selectAll()
+
+    def hide_search(self) -> None:
+        """Clear the search filter."""
+        self._search_bar.clear()
+
+    def _on_search_cleared(self, text: str) -> None:
+        """When search text is cleared, restore normal view."""
+        if not text.strip() and self._is_searching:
+            self._is_searching = False
+            self.refresh()
+
+    def _execute_search(self) -> None:
+        """Execute search on Enter press."""
+        text = self._search_bar.text().strip()
+        if text:
+            self._search_bar.clear()
+            self._filter_items(text)
+
+    def _filter_items(self, text: str) -> None:
+        """Filter tree items. If query is empty, show normal directory listing.
+        If query has text, do a recursive search across subdirectories."""
+        query = text.lower().strip()
+
+        if not query:
+            # No filter — show normal directory listing
+            for i in range(self.tree_widget.topLevelItemCount()):
+                self.tree_widget.topLevelItem(i).setHidden(False)
+            # If we were showing search results, refresh to restore normal view
+            if hasattr(self, '_is_searching') and self._is_searching:
+                self._is_searching = False
+                self.refresh()
+            return
+
+        # Recursive search — run in background for remote
+        self._is_searching = True
+        if self.is_remote and self.sftp:
+            self._run_recursive_search(query)
+        else:
+            self._run_local_recursive_search(query)
+
+    def _run_recursive_search(self, query: str) -> None:
+        """Search recursively on remote server in a background thread."""
+        self.tree_widget.clear()
+        self._spinner.resize(self.tree_widget.size())
+        self._spinner.start()
+
+        # Wait for any existing loader
+        if self._loader_thread is not None:
+            if self._loader_thread.isRunning():
+                self._loader_thread.quit()
+                self._loader_thread.wait(3000)
+            self._loader_thread.deleteLater()
+            self._loader_thread = None
+        if self._loader_worker is not None:
+            self._loader_worker.deleteLater()
+            self._loader_worker = None
+
+        # Run search in background
+        self._loader_thread = QThread(self)
+        self._search_query = query
+
+        class SearchWorker(QObject):
+            finished = Signal(list)
+            error = Signal(str)
+
+            def __init__(self, sftp, base_path, query, max_depth=3):
+                super().__init__()
+                self.sftp = sftp
+                self.base_path = base_path
+                self.query = query
+                self.max_depth = max_depth
+
+            def run(self):
+                try:
+                    results = []
+                    self._search_dir(self.base_path, results, 0)
+                    self.finished.emit(results)
+                except Exception as e:
+                    self.error.emit(str(e))
+
+            def _search_dir(self, path, results, depth):
+                if depth > self.max_depth:
+                    return
+                try:
+                    entries = self.sftp.listdir_attr(path)
+                    for attr in entries:
+                        name = attr.filename
+                        if name.startswith(".") or name.startswith("._"):
+                            continue
+                        full_path = f"{path}/{name}"
+                        is_dir = attr.st_mode is not None and S_ISDIR(attr.st_mode)
+
+                        if self.query in name.lower():
+                            rel = os.path.relpath(full_path, self.base_path)
+                            size_str = "—" if is_dir else self._fmt_size(attr.st_size or 0)
+                            results.append((rel, is_dir, size_str))
+
+                        if is_dir:
+                            self._search_dir(full_path, results, depth + 1)
+                except Exception:
+                    pass
+
+            def _fmt_size(self, size_bytes):
+                if size_bytes < 1024:
+                    return f"{size_bytes} B"
+                elif size_bytes < 1024 * 1024:
+                    return f"{size_bytes / 1024:.1f} KB"
+                elif size_bytes < 1024 * 1024 * 1024:
+                    return f"{size_bytes / (1024 * 1024):.1f} MB"
+                else:
+                    return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+        self._loader_worker = SearchWorker(self.sftp, self.current_path, query)
+        self._loader_worker.moveToThread(self._loader_thread)
+
+        self._loader_thread.started.connect(self._loader_worker.run)
+        self._loader_worker.finished.connect(self._on_search_finished)
+        self._loader_worker.error.connect(self._on_search_error)
+        self._loader_worker.finished.connect(self._loader_thread.quit)
+        self._loader_worker.error.connect(self._loader_thread.quit)
+
+        self._loader_thread.start()
+
+    def _on_search_finished(self, results: list) -> None:
+        """Handle search results from background thread."""
+        self._spinner.stop()
+        self.tree_widget.clear()
+
+        for rel_path, is_dir, size_str in results:
+            icon = (
+                QIcon.fromTheme("folder") if is_dir
+                else QIcon.fromTheme("text-x-generic")
+            )
+            item = SortableTreeWidgetItem([rel_path, size_str])
+            item.setIcon(0, icon)
+            item.setData(1, Qt.ItemDataRole.UserRole, 0)
+            self.tree_widget.addTopLevelItem(item)
+
+        if not results:
+            item = QTreeWidgetItem(["No results found", ""])
+            self.tree_widget.addTopLevelItem(item)
+
+        self._loader_worker = None
+        self._loader_thread = None
+
+    def _on_search_error(self, error_msg: str) -> None:
+        """Handle search error."""
+        self._spinner.stop()
+        logger.error(f"Search failed: {error_msg}")
+        self._loader_worker = None
+        self._loader_thread = None
+
+    def _run_local_recursive_search(self, query: str) -> None:
+        """Search recursively on local filesystem."""
+        self.tree_widget.clear()
+        results = []
+
+        for root, dirs, files in os.walk(self.current_path):
+            # Limit depth
+            rel_root = os.path.relpath(root, self.current_path)
+            if rel_root.count(os.sep) > 3:
+                continue
+            # Skip hidden
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+
+            for name in dirs + files:
+                if name.startswith("."):
+                    continue
+                if query in name.lower():
+                    full_path = os.path.join(root, name)
+                    rel = os.path.relpath(full_path, self.current_path)
+                    is_dir = os.path.isdir(full_path)
+                    size_str = "—" if is_dir else self._format_size(os.path.getsize(full_path))
+                    results.append((rel, is_dir, size_str))
+
+        from src.widgets.file_explorer_widget import SortableTreeWidgetItem
+        for rel_path, is_dir, size_str in results:
+            icon = QIcon.fromTheme("folder") if is_dir else QIcon.fromTheme("text-x-generic")
+            item = SortableTreeWidgetItem([rel_path, size_str])
+            item.setIcon(0, icon)
+            item.setData(1, Qt.ItemDataRole.UserRole, 0)
+            self.tree_widget.addTopLevelItem(item)
+
+        if not results:
+            item = QTreeWidgetItem(["No results found", ""])
+            self.tree_widget.addTopLevelItem(item)
 
     def _start_inline_rename(self, item: QTreeWidgetItem, column: int) -> None:
         """Start inline editing using a QLineEdit overlay."""
