@@ -2,9 +2,8 @@
 Transfer queue widget — shows pending, in-progress, and completed transfers.
 """
 
-import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
@@ -31,6 +30,7 @@ class TransferStatus(Enum):
 @dataclass
 class TransferItem:
     """Represents a single transfer in the queue."""
+
     display_name: str
     total_bytes: int = 0
     transferred_bytes: int = 0
@@ -93,7 +93,9 @@ class TransferItemWidget(QFrame):
         top_row.setSpacing(8)
 
         self.name_label = QLabel(item.display_name)
-        self.name_label.setStyleSheet("color: #cccccc; font-size: 12px; font-weight: 500;")
+        self.name_label.setStyleSheet(
+            "color: #cccccc; font-size: 12px; font-weight: 500;"
+        )
         self.name_label.setMaximumWidth(400)
         self.name_label.setWordWrap(False)
 
@@ -239,12 +241,16 @@ class TransferQueueWidget(QWidget):
         header_layout.setSpacing(8)
 
         self.header_label = QLabel("Transfers")
-        self.header_label.setStyleSheet("color: #cccccc; font-size: 12px; font-weight: 600;")
+        self.header_label.setStyleSheet(
+            "color: #cccccc; font-size: 12px; font-weight: 600;"
+        )
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setMaximumWidth(50)
         self.clear_btn.setMaximumHeight(20)
-        self.clear_btn.setStyleSheet("font-size: 10px; padding: 2px 6px; color: #858585;")
+        self.clear_btn.setStyleSheet(
+            "font-size: 10px; padding: 2px 6px; color: #858585;"
+        )
         self.clear_btn.clicked.connect(self.clear_completed)
         self.clear_btn.setVisible(False)
 
@@ -275,7 +281,9 @@ class TransferQueueWidget(QWidget):
 
         # Empty state
         self.empty_label = QLabel("No transfers")
-        self.empty_label.setStyleSheet("color: #858585; font-size: 11px; padding: 12px;")
+        self.empty_label.setStyleSheet(
+            "color: #858585; font-size: 11px; padding: 12px;"
+        )
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_label)
 
@@ -342,7 +350,8 @@ class TransferQueueWidget(QWidget):
     def clear_completed(self) -> None:
         """Remove completed and failed items from the list."""
         indices_to_remove = [
-            i for i, item in enumerate(self._items)
+            i
+            for i, item in enumerate(self._items)
             if item.status in (TransferStatus.COMPLETED, TransferStatus.FAILED)
         ]
         # Remove in reverse order to preserve indices
@@ -368,7 +377,8 @@ class TransferQueueWidget(QWidget):
             # Count how many pending items come before this one
             # (this maps to the internal queue index in the controller)
             pending_position = sum(
-                1 for i in range(index)
+                1
+                for i in range(index)
                 if self._items[i].status == TransferStatus.PENDING
             )
 
@@ -414,7 +424,11 @@ class TransferQueueWidget(QWidget):
         self.clear_btn.setVisible(has_clearable)
 
         # Update header count
-        active = sum(1 for item in self._items if item.status in (TransferStatus.PENDING, TransferStatus.IN_PROGRESS))
+        active = sum(
+            1
+            for item in self._items
+            if item.status in (TransferStatus.PENDING, TransferStatus.IN_PROGRESS)
+        )
         if active > 0:
             self.header_label.setText(f"Transfers ({active} active)")
         else:

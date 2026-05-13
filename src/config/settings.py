@@ -45,7 +45,14 @@ class SettingsConfig(BaseModel):
     delete_after_transfer: bool = True
     file_extensions: set[str] = Field(
         default_factory=lambda: {
-            ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".srt", ".nfo",
+            ".mp4",
+            ".mkv",
+            ".avi",
+            ".mov",
+            ".webm",
+            ".flv",
+            ".srt",
+            ".nfo",
         }
     )
     skip_patterns: set[str] = Field(
@@ -222,7 +229,9 @@ class Settings:
         save_data = config_data.copy()
 
         # Convert sets to lists for JSON
-        if "file_extensions" in save_data and isinstance(save_data["file_extensions"], set):
+        if "file_extensions" in save_data and isinstance(
+            save_data["file_extensions"], set
+        ):
             save_data["file_extensions"] = list(save_data["file_extensions"])
         if "skip_patterns" in save_data and isinstance(save_data["skip_patterns"], set):
             save_data["skip_patterns"] = list(save_data["skip_patterns"])
@@ -242,11 +251,13 @@ class Settings:
 
     def is_valid(self) -> bool:
         """Check if critical settings are configured."""
-        return all([
-            self.username.strip(),
-            self.host.strip(),
-            self.remote_base_dir.strip(),
-        ])
+        return all(
+            [
+                self.username.strip(),
+                self.host.strip(),
+                self.remote_base_dir.strip(),
+            ]
+        )
 
     def get_servers(self) -> dict[str, dict]:
         return self.config.servers.copy()
@@ -284,7 +295,9 @@ class Settings:
             "ssh_key_path", os.path.expanduser(DEFAULT_SSH_KEY_PATH)
         )
         self.config.ssh_port = server_config.get("ssh_port", DEFAULT_SSH_PORT)
-        self.config.remote_base_dir = server_config.get("remote_base_dir", DEFAULT_REMOTE_BASE_DIR)
+        self.config.remote_base_dir = server_config.get(
+            "remote_base_dir", DEFAULT_REMOTE_BASE_DIR
+        )
         self.config.current_server_id = server_id
         return True
 

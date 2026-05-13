@@ -84,4 +84,3 @@ def format_size(num_bytes: int) -> str:
 
     except Exception:
         return f"{num_bytes} B"
-

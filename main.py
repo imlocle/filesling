@@ -1,4 +1,5 @@
 import sys
+from importlib.metadata import version
 
 from PySide6.QtWidgets import QApplication
 
@@ -10,7 +11,7 @@ from src.utils.helper import get_path, rounded_icon
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Shuttle")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(version("shuttle"))
 
     # ---- STYLESHEET ----
     stylesheet_path = get_path("assets/styles/modern_theme.qss")

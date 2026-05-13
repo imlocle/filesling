@@ -5,9 +5,10 @@ from datetime import datetime
 
 from PySide6.QtCore import QObject, Signal
 
-
 # Logs directory path (relative to project root)
-_LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
+_LOGS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs"
+)
 
 
 def _ensure_logs_dir():
@@ -34,7 +35,11 @@ def _write_error_log(msg: str):
         entry = {
             "timestamp": datetime.now().isoformat(),
             "message": msg,
-            "traceback": traceback.format_exc() if traceback.format_exc().strip() != "NoneType: None" else None,
+            "traceback": (
+                traceback.format_exc()
+                if traceback.format_exc().strip() != "NoneType: None"
+                else None
+            ),
         }
         entries.append(entry)
 
@@ -51,16 +56,16 @@ def _write_error_log(msg: str):
 class Logger(QObject):
     """
     Enhanced logger with timestamps and HTML formatting.
-    
+
     Emits formatted log messages with:
     - Timestamps
     - Color-coded severity levels
     - Icons for visual identification
     - HTML formatting for rich text display
-    
+
     Errors are also persisted to logs/errors.json.
     """
-    
+
     log_signal = Signal(str)  # For text logs (HTML formatted)
     progress_signal = Signal(int)  # For progress 0–100
 

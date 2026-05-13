@@ -18,11 +18,16 @@ from src.models.errors import (
     SSHConnectionError,
 )
 from src.services.connection_manager_service import ConnectionManagerService
-from src.utils.constants import CONN_TYPE_ADB, CONN_TYPE_KEY, CONN_TYPE_SSH, DEFAULT_ADB_BASE_DIR
+from src.utils.constants import (
+    CONN_TYPE_ADB,
+    CONN_TYPE_KEY,
+    CONN_TYPE_SSH,
+    DEFAULT_ADB_BASE_DIR,
+)
 from src.utils.logging_signal import logger
 
 if TYPE_CHECKING:
-    from src.components.main_window import MainWindow
+    from src.components.main_window import MainWindow  # noqa: F401
 
 
 class MainWindowController:
@@ -69,7 +74,7 @@ class MainWindowController:
         self.manual_transfer.queue_changed.connect(self._on_queue_changed)
 
         # Queue widget signals
-        if hasattr(self.view, 'transfer_queue'):
+        if hasattr(self.view, "transfer_queue"):
             self.view.transfer_queue.cancel_transfer.connect(self._on_cancel_transfer)
 
     # --------------------------------------------------------------
@@ -78,7 +83,7 @@ class MainWindowController:
     def _on_manual_transfer_started(self, path: str) -> None:
         """Handle manual transfer started — mark current item as in-progress."""
         # Mark the first pending item as in-progress
-        if hasattr(self.view, 'transfer_queue'):
+        if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
             for i, item in enumerate(queue._items):
                 if item.status.value == "pending":
@@ -88,21 +93,21 @@ class MainWindowController:
 
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed — mark item as done."""
-        if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
+        if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
             self.view.transfer_queue.set_completed(self._current_queue_index)
             self._current_queue_index = -1
         self.refresh_explorers()
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed — mark item as failed."""
-        if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
-            short_error = error.split('\n')[0][:80]
+        if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
+            short_error = error.split("\n")[0][:80]
             self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
             self._current_queue_index = -1
 
     def _on_transfer_progress(self, percentage: int) -> None:
         """Handle transfer progress update."""
-        if hasattr(self.view, 'transfer_queue') and self._current_queue_index >= 0:
+        if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
             # Convert percentage back to bytes for the queue widget
             queue = self.view.transfer_queue
             if self._current_queue_index < len(queue._items):
@@ -125,7 +130,9 @@ class MainWindowController:
         """Establish connection to remote server with error handling."""
         # Check if this is an ADB (USB) connection
         server_config = self.settings.get_server(self.settings.config.current_server_id)
-        connection_type = server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH) if server_config else "ssh"
+        connection_type = (
+            server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH) if server_config else "ssh"
+        )
 
         if connection_type == CONN_TYPE_ADB:
             self._connect_adb(server_config)
@@ -146,7 +153,9 @@ class MainWindowController:
         if not devices:
             self.view.connection_status_label.setText("● No device found")
             self.view.connection_status_label.setObjectName("connection_disconnected")
-            self.view.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
+            self.view.connection_status_label.setStyleSheet(
+                "color: #f48771; font-weight: 500;"
+            )
             logger.error("ADB: No Android device connected")
             return
 
@@ -183,7 +192,9 @@ class MainWindowController:
         except Exception as e:
             self.view.connection_status_label.setText("● ADB Error")
             self.view.connection_status_label.setObjectName("connection_disconnected")
-            self.view.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
+            self.view.connection_status_label.setStyleSheet(
+                "color: #f48771; font-weight: 500;"
+            )
             logger.error(f"ADB connection failed: {e}")
 
     def _connect_ssh(self) -> None:
@@ -204,7 +215,9 @@ class MainWindowController:
             self.view.connection_attempts = 0
 
             server_name = ""
-            server_config = self.settings.get_server(self.settings.config.current_server_id)
+            server_config = self.settings.get_server(
+                self.settings.config.current_server_id
+            )
             if server_config:
                 server_name = server_config.get("name", "")
 
@@ -506,13 +519,13 @@ class MainWindowController:
                 shutil.rmtree(path, ignore_errors=True)
             else:
                 os.remove(path)
-        except PermissionError as e:
+        except PermissionError:
             raise FileDeletionError(
                 "Permission denied",
                 path=path,
                 details="You don't have permission to delete this item",
             )
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             raise FileDeletionError(
                 "File not found",
                 path=path,
@@ -586,7 +599,7 @@ class MainWindowController:
             QMessageBox.warning(
                 self.view,
                 "Folder Exists",
-                f"A folder with this name already exists.",
+                "A folder with this name already exists.",
                 QMessageBox.StandardButton.Ok,
             )
         except Exception as e:
@@ -665,7 +678,7 @@ class MainWindowController:
             QMessageBox.warning(
                 self.view,
                 "Move Failed",
-                f"An item with that name already exists at the destination.",
+                "An item with that name already exists at the destination.",
                 QMessageBox.StandardButton.Ok,
             )
         except Exception as e:

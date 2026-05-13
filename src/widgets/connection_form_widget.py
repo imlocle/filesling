@@ -6,7 +6,7 @@ Used by both the "Add Server" dialog and the main Settings window.
 
 import os
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -26,14 +26,12 @@ from src.utils.constants import (
     DEFAULT_ADB_BASE_DIR,
     DEFAULT_REMOTE_BASE_DIR,
     DEFAULT_SSH_KEY_PATH,
-    DEFAULT_SSH_PORT,
     PLACEHOLDER_BASE_DIR,
     PLACEHOLDER_HOST,
     PLACEHOLDER_NO_DEVICES,
     PLACEHOLDER_SSH_KEY,
     PLACEHOLDER_USERNAME,
 )
-from src.utils.logging_signal import logger
 
 
 class ConnectionFormWidget(QWidget):
@@ -137,7 +135,11 @@ class ConnectionFormWidget(QWidget):
 
         # --- Base directory ---
         layout.addWidget(QLabel("Base Directory"))
-        default_base = DEFAULT_ADB_BASE_DIR if current_type == CONN_TYPE_ADB else DEFAULT_REMOTE_BASE_DIR
+        default_base = (
+            DEFAULT_ADB_BASE_DIR
+            if current_type == CONN_TYPE_ADB
+            else DEFAULT_REMOTE_BASE_DIR
+        )
         self.remote_base_dir_input = QLineEdit(
             self._config.get("remote_base_dir", default_base)
         )
@@ -174,7 +176,8 @@ class ConnectionFormWidget(QWidget):
             return {
                 CONN_TYPE_KEY: CONN_TYPE_ADB,
                 "device_id": self.adb_device_combo.currentData() or "",
-                "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip() or DEFAULT_ADB_BASE_DIR,
+                "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip()
+                or DEFAULT_ADB_BASE_DIR,
             }
         else:
             return {
@@ -183,7 +186,8 @@ class ConnectionFormWidget(QWidget):
                 "host": self.host_input.text().strip(),
                 "ssh_key_path": self.ssh_key_path.text().strip(),
                 "ssh_port": int(self.ssh_port_input.text().strip() or "22"),
-                "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip() or DEFAULT_REMOTE_BASE_DIR,
+                "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip()
+                or DEFAULT_REMOTE_BASE_DIR,
             }
 
     def test_connection(self) -> None:

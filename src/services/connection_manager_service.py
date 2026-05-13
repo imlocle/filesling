@@ -31,10 +31,10 @@ class ConnectionManagerService:
     def connect(self) -> bool:
         """
         Establishes SSH connection with retry logic.
-        
+
         Returns:
             True if connection successful, False otherwise
-            
+
         Raises:
             SSHConnectionError: If connection fails after all retries
             AuthenticationError: If SSH authentication fails
@@ -50,14 +50,14 @@ class ConnectionManagerService:
             raise FileAccessError(
                 "SSH key file not found",
                 path=self.settings.ssh_key_path,
-                details="Please check your SSH key path in settings"
+                details="Please check your SSH key path in settings",
             )
-        
+
         # Check SSH key permissions (should be 600 or 400)
         try:
             key_stat = os.stat(self.settings.ssh_key_path)
             key_perms = oct(key_stat.st_mode)[-3:]
-            if key_perms not in ['600', '400']:
+            if key_perms not in ["600", "400"]:
                 logger.warn(
                     f"Connection: SSH key has insecure permissions: {key_perms}. "
                     f"Should be 600 or 400"
@@ -73,14 +73,14 @@ class ConnectionManagerService:
             try:
                 self.ssh_client = SSHClient()
                 self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
-                
+
                 self.ssh_client.connect(
                     hostname=self.settings.host,
                     username=self.settings.username,
                     key_filename=self.settings.ssh_key_path,
                     timeout=10,
                 )
-                
+
                 # Open SFTP session
                 try:
                     self.sftp_client = self.ssh_client.open_sftp()
@@ -90,13 +90,12 @@ class ConnectionManagerService:
                         self.ssh_client.close()
                         self.ssh_client = None
                     raise SFTPConnectionError(
-                        "Failed to open SFTP session",
-                        details=str(e)
+                        "Failed to open SFTP session", details=str(e)
                     )
-                
+
                 logger.success(f"Connected: {self.settings.host}")
                 return True
-                
+
             except AuthenticationException as e:
                 last_error = e
                 logger.error(
@@ -108,19 +107,21 @@ class ConnectionManagerService:
                 self.sftp_client = None
                 raise AuthenticationError(
                     "SSH authentication failed",
-                    details=f"User: {self.settings.username}, Key: {self.settings.ssh_key_path}"
+                    details=f"User: {self.settings.username}, Key: {self.settings.ssh_key_path}",
                 )
-                
+
             except SSHException as e:
                 last_error = e
                 retries += 1
-                logger.error(f"Connection: SSH Error: Retry {retries}/{max_retries}: {e}")
+                logger.error(
+                    f"Connection: SSH Error: Retry {retries}/{max_retries}: {e}"
+                )
                 self.ssh_client = None
                 self.sftp_client = None
-                
+
                 if retries < max_retries:
                     sleep(3)
-                    
+
             except TimeoutError as e:
                 last_error = e
                 retries += 1
@@ -130,20 +131,20 @@ class ConnectionManagerService:
                 )
                 self.ssh_client = None
                 self.sftp_client = None
-                
+
                 if retries < max_retries:
                     sleep(3)
-                    
+
             except Exception as e:
                 last_error = e
                 retries += 1
                 logger.error(f"Connection: Failed: Retry {retries}/{max_retries}: {e}")
                 self.ssh_client = None
                 self.sftp_client = None
-                
+
                 if retries < max_retries:
                     sleep(3)
-        
+
         # All retries exhausted
         error_msg = (
             f"Connection failed after {max_retries} attempts. "
@@ -154,20 +155,20 @@ class ConnectionManagerService:
             f"4. SSH key is authorized on the server"
         )
         logger.error(f"Connection: {error_msg}")
-        
+
         raise SSHConnectionError(
             f"Failed to connect after {max_retries} attempts",
-            details=str(last_error) if last_error else "Unknown error"
+            details=str(last_error) if last_error else "Unknown error",
         )
 
     def open_sftp_session(self) -> Optional[SFTPClient]:
         """
         Create a NEW SFTP client for a worker thread.
         This avoids thread contention with the UI explorer's SFTP.
-        
+
         Returns:
             New SFTP client or None if SSH not connected
-            
+
         Raises:
             SFTPConnectionError: If SFTP session cannot be opened
         """
@@ -179,8 +180,7 @@ class ConnectionManagerService:
         except Exception as e:
             logger.error(f"Connection: Failed to open SFTP session: {e}")
             raise SFTPConnectionError(
-                "Failed to open worker SFTP session",
-                details=str(e)
+                "Failed to open worker SFTP session", details=str(e)
             )
 
     def is_connected(self) -> bool:
@@ -194,7 +194,7 @@ class ConnectionManagerService:
                 self.sftp_client = None
         except Exception as e:
             logger.warn(f"Connection: Error closing SFTP: {e}")
-            
+
         try:
             if self.ssh_client:
                 self.ssh_client.close()
@@ -207,7 +207,7 @@ class ConnectionManagerService:
     def test_connection(self) -> bool:
         """
         Temporary connection just for testing.
-        
+
         Returns:
             True if connection succeeds, False otherwise
         """
@@ -216,7 +216,7 @@ class ConnectionManagerService:
             if not os.path.exists(self.settings.ssh_key_path):
                 logger.error(f"Test: SSH key not found: {self.settings.ssh_key_path}")
                 return False
-                
+
             test_ssh = SSHClient()
             test_ssh.set_missing_host_key_policy(AutoAddPolicy())
             test_ssh.connect(
@@ -231,7 +231,9 @@ class ConnectionManagerService:
             logger.error(f"Test: Authentication failed: {e}")
             return False
         except TimeoutError:
-            logger.error(f"Test: Connection timeout - server not reachable at {self.settings.host}")
+            logger.error(
+                f"Test: Connection timeout - server not reachable at {self.settings.host}"
+            )
             return False
         except Exception as e:
             logger.error(f"Test: Connection failed: {e}")

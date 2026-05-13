@@ -40,34 +40,34 @@ class SplashScreen(QSplashScreen):
         Show splash screen and wait for both:
         1. Minimum duration to elapse
         2. Window to signal it's fully loaded
-        
+
         Args:
             callback: Function to call when ready to show main window
             window: MainWindow instance to monitor for loaded signal
         """
         self.show()
         self.callback = callback
-        
+
         # Set minimum duration timer
         self.min_duration_timer = QTimer()
         self.min_duration_timer.setSingleShot(True)
         self.min_duration_timer.timeout.connect(self._on_min_duration_elapsed)
         self.min_duration_timer.start(self.duration)
-        
+
         # Connect to window's loaded signal if provided
         if window:
             window.fully_loaded.connect(self._on_window_loaded)
-    
+
     def _on_min_duration_elapsed(self):
         """Called when minimum display duration has elapsed."""
         self.ready_to_close = True
         self._try_close()
-    
+
     def _on_window_loaded(self):
         """Called when main window signals it's fully loaded."""
         self.window_loaded = True
         self._try_close()
-    
+
     def _try_close(self):
         """Close splash only when both conditions are met."""
         if self.ready_to_close and self.window_loaded:

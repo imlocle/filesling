@@ -39,7 +39,7 @@ class FileDeletionService:
 
         except Exception as e:
             raise FileDeletionError(
-                f"Failed to delete file", path=file_path, details=str(e)
+                "Failed to delete file", path=file_path, details=str(e)
             )
 
     def delete_folder(self, folder_path: str) -> bool:
@@ -70,5 +70,5 @@ class FileDeletionService:
 
         except Exception as e:
             raise FileDeletionError(
-                f"Failed to delete folder", path=folder_path, details=str(e)
+                "Failed to delete folder", path=folder_path, details=str(e)
             )

@@ -9,18 +9,16 @@ and USB Debugging enabled on the Android device.
 """
 
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from stat import S_IFDIR, S_IFREG
 from typing import List, Optional
 
-from src.utils.logging_signal import logger
-
 
 @dataclass
 class ADBStat:
     """Mimics paramiko's SFTPAttributes."""
+
     st_mode: int
     st_size: int
 
@@ -189,7 +187,7 @@ class ADBClient:
         if callback:
             callback(0, total_size)
 
-        result = self._run(
+        self._run(
             ["push", local_path, remote_path],
             timeout=600,  # 10 min timeout for large files
         )
@@ -238,7 +236,6 @@ class ADBClient:
 
     def close(self) -> None:
         """No-op — ADB doesn't maintain a persistent connection."""
-        pass
 
 
 class ADBSession:
@@ -264,6 +261,7 @@ class ADBSession:
 # -------------------------------------------------------------------------
 # Device discovery
 # -------------------------------------------------------------------------
+
 
 def get_connected_devices() -> List[dict]:
     """
@@ -291,11 +289,13 @@ def get_connected_devices() -> List[dict]:
                     if part.startswith("model:"):
                         model = part.split(":", 1)[1]
                         break
-                devices.append({
-                    "id": device_id,
-                    "status": "device",
-                    "model": model or device_id,
-                })
+                devices.append(
+                    {
+                        "id": device_id,
+                        "status": "device",
+                        "model": model or device_id,
+                    }
+                )
         return devices
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return []

@@ -76,7 +76,29 @@ Stored at `~/.Shuttle/config.json`:
 | `⌘+Delete` | Delete selected                   |
 | `Escape`   | Clear search / deselect           |
 
+## Development
+
+```bash
+# Install dev dependencies
+make dev-install
+
+# Run the app
+make run
+
+# Format code
+make format
+
+# Lint
+make lint
+
+# Run tests
+make test
+
+# Build distribution
+make build
+```
+
 ## Docs
 
-- [Architecture](docs/architecture.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Feature Ideas](docs/ideas.md)

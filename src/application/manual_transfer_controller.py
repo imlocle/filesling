@@ -21,6 +21,7 @@ from src.utils.logging_signal import logger
 @dataclass
 class QueuedTransfer:
     """A transfer waiting in the queue."""
+
     local_paths: List[str]
     remote_destination: str
     delete_after: bool
@@ -41,7 +42,9 @@ class QueuedTransfer:
                         for f in files:
                             if not f.startswith("."):
                                 try:
-                                    self.total_bytes += os.path.getsize(os.path.join(root, f))
+                                    self.total_bytes += os.path.getsize(
+                                        os.path.join(root, f)
+                                    )
                                 except OSError:
                                     pass
                 elif os.path.isfile(p):
@@ -160,9 +163,7 @@ class ManualTransferController(QObject):
         if not self.connection_manager.is_connected():
             if not self.connection_manager.connect():
                 logger.error("Transfer: Connection failed")
-                self.transfer_failed.emit(
-                    transfer.local_paths[0], "Connection failed"
-                )
+                self.transfer_failed.emit(transfer.local_paths[0], "Connection failed")
                 # Try next item
                 QTimer.singleShot(100, self._process_next)
                 return
@@ -294,4 +295,6 @@ class ManualTransferController(QObject):
         if 0 <= queue_index < len(self._queue):
             removed = self._queue.pop(queue_index)
             logger.info(f"Transfer: Cancelled: {removed.display_name}")
-            self.queue_changed.emit(len(self._queue) + (1 if self._is_processing else 0))
+            self.queue_changed.emit(
+                len(self._queue) + (1 if self._is_processing else 0)
+            )

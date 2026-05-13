@@ -2,18 +2,14 @@
 Settings window with tabbed interface.
 """
 
-import os
 import uuid
 from datetime import datetime
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
-    QFormLayout,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -124,14 +120,18 @@ class SettingsWindow(QDialog):
             layout.addWidget(self.server_name_input)
 
         # Connection form widget (handles SSH/ADB fields + test)
-        config = self.server_config if self.server_mode else {
-            CONN_TYPE_KEY: CONN_TYPE_SSH,
-            "username": self.settings.username,
-            "host": self.settings.host,
-            "ssh_port": self.settings.ssh_port,
-            "ssh_key_path": self.settings.ssh_key_path,
-            "remote_base_dir": self.settings.remote_base_dir,
-        }
+        config = (
+            self.server_config
+            if self.server_mode
+            else {
+                CONN_TYPE_KEY: CONN_TYPE_SSH,
+                "username": self.settings.username,
+                "host": self.settings.host,
+                "ssh_port": self.settings.ssh_port,
+                "ssh_key_path": self.settings.ssh_key_path,
+                "remote_base_dir": self.settings.remote_base_dir,
+            }
+        )
         self.connection_form = ConnectionFormWidget(config=config)
         layout.addWidget(self.connection_form)
 
@@ -150,7 +150,9 @@ class SettingsWindow(QDialog):
         layout.addWidget(QLabel("Transfer Behavior"))
 
         self.delete_after_transfer_checkbox = QCheckBox("Move to trash after transfer")
-        self.delete_after_transfer_checkbox.setChecked(self.settings.delete_after_transfer)
+        self.delete_after_transfer_checkbox.setChecked(
+            self.settings.delete_after_transfer
+        )
         layout.addWidget(self.delete_after_transfer_checkbox)
 
         info = QLabel(
@@ -254,20 +256,30 @@ class SettingsWindow(QDialog):
 
             # Validate SSH config
             if config.get(CONN_TYPE_KEY) == CONN_TYPE_SSH:
-                SettingsConfig.from_json({
-                    **config,
-                    "file_extensions": list(self.settings.file_extensions),
-                    "skip_patterns": list(self.settings.skip_patterns),
-                })
-            elif config.get(CONN_TYPE_KEY) == CONN_TYPE_ADB and not config.get("device_id"):
-                QMessageBox.warning(self, "No Device", "Please connect and select a device.")
+                SettingsConfig.from_json(
+                    {
+                        **config,
+                        "file_extensions": list(self.settings.file_extensions),
+                        "skip_patterns": list(self.settings.skip_patterns),
+                    }
+                )
+            elif config.get(CONN_TYPE_KEY) == CONN_TYPE_ADB and not config.get(
+                "device_id"
+            ):
+                QMessageBox.warning(
+                    self, "No Device", "Please connect and select a device."
+                )
                 return
 
             self.settings.add_server(self.server_id, config)
             logger.success(f"Server '{server_name}' saved")
             self.accept()
 
-        except (IPAddressValidationError, SSHKeyValidationError, PathValidationError) as e:
+        except (
+            IPAddressValidationError,
+            SSHKeyValidationError,
+            PathValidationError,
+        ) as e:
             QMessageBox.warning(self, "Validation Error", f"{e.message}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save:\n{str(e)}")
@@ -284,7 +296,9 @@ class SettingsWindow(QDialog):
                 "host": conn_config.get("host", ""),
                 "ssh_key_path": conn_config.get("ssh_key_path", ""),
                 "ssh_port": conn_config.get("ssh_port", 22),
-                "remote_base_dir": conn_config.get("remote_base_dir", DEFAULT_REMOTE_BASE_DIR),
+                "remote_base_dir": conn_config.get(
+                    "remote_base_dir", DEFAULT_REMOTE_BASE_DIR
+                ),
                 "delete_after_transfer": self.delete_after_transfer_checkbox.isChecked(),
                 "file_extensions": [
                     ext.strip()
@@ -308,7 +322,11 @@ class SettingsWindow(QDialog):
             logger.success("Settings saved")
             self.accept()
 
-        except (IPAddressValidationError, SSHKeyValidationError, PathValidationError) as e:
+        except (
+            IPAddressValidationError,
+            SSHKeyValidationError,
+            PathValidationError,
+        ) as e:
             QMessageBox.warning(self, "Validation Error", f"{e.message}")
         except (InvalidConfigurationError, ConfigurationSaveError) as e:
             QMessageBox.critical(self, "Save Failed", f"{e.message}")

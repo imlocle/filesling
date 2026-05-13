@@ -25,7 +25,7 @@ from src.utils.logging_signal import logger
 
 class ServerSelectionDialog(QDialog):
     """Dialog for selecting which server to connect to."""
-    
+
     server_selected = Signal(str)  # Emits server_id when selected
 
     def __init__(self, parent=None):
@@ -33,19 +33,20 @@ class ServerSelectionDialog(QDialog):
         self.setWindowTitle(f"{SOFTWARE_NAME} - Select Server")
         self.setMinimumSize(500, 400)
         self.setModal(True)
-        
+
         self.settings = Settings()
         self.selected_server_id = None
-        
+
         self._setup_ui()
         self._load_servers()
-        
+
         # Center on screen
         self._center_on_screen()
-    
+
     def _center_on_screen(self):
         """Center the dialog on the screen."""
         from PySide6.QtWidgets import QApplication
+
         screen = QApplication.primaryScreen().geometry()
         dialog_geometry = self.frameGeometry()
         center_point = screen.center()
@@ -77,7 +78,7 @@ class ServerSelectionDialog(QDialog):
                 padding: 16px;
             }
         """)
-        
+
         header_layout = QVBoxLayout(header)
         header_layout.setSpacing(8)
 
@@ -122,7 +123,7 @@ class ServerSelectionDialog(QDialog):
         """)
         self.server_list.itemDoubleClicked.connect(self._on_server_double_clicked)
         self.server_list.itemSelectionChanged.connect(self._on_selection_changed)
-        
+
         list_layout.addWidget(self.server_list)
 
         # Action buttons
@@ -168,7 +169,7 @@ class ServerSelectionDialog(QDialog):
                 padding: 16px;
             }
         """)
-        
+
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
         footer_layout.addStretch()
@@ -193,17 +194,19 @@ class ServerSelectionDialog(QDialog):
     def _load_servers(self):
         """Load saved servers into the list."""
         self.server_list.clear()
-        
+
         servers = self.settings.get_servers()
-        
+
         if not servers:
             # Show empty state
-            item = QListWidgetItem("No servers configured. Click 'Add New Server' to get started.")
+            item = QListWidgetItem(
+                "No servers configured. Click 'Add New Server' to get started."
+            )
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             item.setForeground(Qt.GlobalColor.gray)
             self.server_list.addItem(item)
             return
-        
+
         for server_id, server_config in servers.items():
             display_text = self._format_server_display(server_id, server_config)
             item = QListWidgetItem(display_text)
@@ -223,14 +226,14 @@ class ServerSelectionDialog(QDialog):
         """Handle server selection change."""
         selected_items = self.server_list.selectedItems()
         has_selection = len(selected_items) > 0
-        
+
         if has_selection:
             item = selected_items[0]
             server_id = item.data(Qt.ItemDataRole.UserRole)
             has_valid_server = server_id is not None
         else:
             has_valid_server = False
-        
+
         self.connect_btn.setEnabled(has_valid_server)
         self.edit_btn.setEnabled(has_valid_server)
         self.default_btn.setEnabled(has_valid_server)
@@ -247,10 +250,10 @@ class ServerSelectionDialog(QDialog):
         selected_items = self.server_list.selectedItems()
         if not selected_items:
             return
-        
+
         item = selected_items[0]
         server_id = item.data(Qt.ItemDataRole.UserRole)
-        
+
         if server_id:
             self.selected_server_id = server_id
             self.server_selected.emit(server_id)
@@ -275,7 +278,7 @@ class ServerSelectionDialog(QDialog):
     def _add_new_server(self):
         """Open settings to add a new server."""
         from src.components.settings_window import SettingsWindow
-        
+
         settings_dialog = SettingsWindow(self.settings, server_mode=True)
         if settings_dialog.exec() == QDialog.DialogCode.Accepted:
             self._load_servers()
@@ -285,17 +288,15 @@ class ServerSelectionDialog(QDialog):
         selected_items = self.server_list.selectedItems()
         if not selected_items:
             return
-        
+
         item = selected_items[0]
         server_id = item.data(Qt.ItemDataRole.UserRole)
-        
+
         if server_id:
             from src.components.settings_window import SettingsWindow
-            
+
             settings_dialog = SettingsWindow(
-                self.settings, 
-                server_mode=True, 
-                server_id=server_id
+                self.settings, server_mode=True, server_id=server_id
             )
             if settings_dialog.exec() == QDialog.DialogCode.Accepted:
                 self._load_servers()
@@ -305,25 +306,25 @@ class ServerSelectionDialog(QDialog):
         selected_items = self.server_list.selectedItems()
         if not selected_items:
             return
-        
+
         item = selected_items[0]
         server_id = item.data(Qt.ItemDataRole.UserRole)
-        
+
         if not server_id:
             return
-        
+
         servers = self.settings.get_servers()
         server_config = servers.get(server_id, {})
         server_name = server_config.get("name", server_id)
-        
+
         reply = QMessageBox.question(
             self,
             "Delete Server",
             f"Are you sure you want to delete '{server_name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
-        
+
         if reply == QMessageBox.StandardButton.Yes:
             self.settings.delete_server(server_id)
             self._load_servers()

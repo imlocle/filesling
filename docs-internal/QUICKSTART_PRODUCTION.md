@@ -12,13 +12,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # Install all dependencies
+make dev-install
+
+# Or manually:
 pip install -r requirements-dev.txt
 
-# Or install as editable package
-pip install -e ".[dev]"
-
 # Run the app
-python main.py
+make run
 ```
 
 ---
@@ -113,14 +113,19 @@ git commit -m "update dependencies"
 
 ```bash
 # Format
-black src main.py
-isort src main.py
+make format
 
 # Lint
-flake8 src main.py
-mypy src main.py
+make lint
 
 # Test (when tests exist)
+make test
+
+# Or run individually:
+black src main.py
+isort src main.py
+flake8 src main.py
+mypy src main.py
 pytest tests/ --cov=src
 ```
 

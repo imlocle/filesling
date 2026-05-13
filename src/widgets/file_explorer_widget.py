@@ -6,18 +6,28 @@ from stat import S_ISDIR
 from typing import List, Optional
 
 from paramiko import SFTPClient
-from PySide6.QtCore import QPoint, QRectF, Qt, QUrl, Signal, QMimeData, QTimer, QThread, QObject
+from PySide6.QtCore import (
+    QMimeData,
+    QObject,
+    QPoint,
+    QRectF,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
+    QDrag,
     QDragEnterEvent,
     QDragLeaveEvent,
     QDropEvent,
     QFont,
     QIcon,
+    QMouseEvent,
     QPainter,
     QPen,
-    QMouseEvent,
-    QDrag,
 )
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -196,7 +206,12 @@ class LoadingSpinner(QWidget):
         rect = QRectF(cx - half, cy - half, self._spinner_size, self._spinner_size)
 
         # Draw spinning arc
-        pen = QPen(self._color, self._line_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        pen = QPen(
+            self._color,
+            self._line_width,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+        )
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
 
@@ -214,8 +229,14 @@ class DirectoryLoader(QObject):
     finished = Signal(list)  # list of (entry, icon_hint, size_str, size_bytes)
     error = Signal(str)
 
-    def __init__(self, path: str, is_remote: bool, sftp: Optional[SFTPClient],
-                 settings: Settings, parent=None):
+    def __init__(
+        self,
+        path: str,
+        is_remote: bool,
+        sftp: Optional[SFTPClient],
+        settings: Settings,
+        parent=None,
+    ):
         super().__init__(parent)
         self.path = path
         self.is_remote = is_remote
@@ -234,8 +255,13 @@ class DirectoryLoader(QObject):
                 entries = os.listdir(self.path)
 
             filtered = [
-                e for e in entries
-                if not (e.startswith(".") or e.startswith("._") or e in self.settings.skip_files)
+                e
+                for e in entries
+                if not (
+                    e.startswith(".")
+                    or e.startswith("._")
+                    or e in self.settings.skip_files
+                )
             ]
             filtered.sort(key=lambda s: s.lower())
 
@@ -549,7 +575,12 @@ class FileExplorerWidget(QWidget):
 
     def _handle_move_item(self, src_path: str) -> None:
         """Handle moving an item — show a folder picker dialog."""
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTreeWidget, QTreeWidgetItem
+        from PySide6.QtWidgets import (
+            QDialog,
+            QDialogButtonBox,
+            QTreeWidget,
+            QTreeWidgetItem,
+        )
 
         basename = os.path.basename(src_path)
 
@@ -592,18 +623,30 @@ class FileExplorerWidget(QWidget):
                 else:
                     entries = os.listdir(path)
 
-                folders = sorted([
-                    e for e in entries
-                    if not e.startswith(".")
-                    and (
-                        (self.is_remote and self._is_remote_directory(os.path.join(path, e)))
-                        or (not self.is_remote and os.path.isdir(os.path.join(path, e)))
-                    )
-                ], key=str.lower)
+                folders = sorted(
+                    [
+                        e
+                        for e in entries
+                        if not e.startswith(".")
+                        and (
+                            (
+                                self.is_remote
+                                and self._is_remote_directory(os.path.join(path, e))
+                            )
+                            or (
+                                not self.is_remote
+                                and os.path.isdir(os.path.join(path, e))
+                            )
+                        )
+                    ],
+                    key=str.lower,
+                )
 
                 for folder in folders:
                     child = QTreeWidgetItem([folder])
-                    child.setData(0, Qt.ItemDataRole.UserRole, os.path.join(path, folder))
+                    child.setData(
+                        0, Qt.ItemDataRole.UserRole, os.path.join(path, folder)
+                    )
                     parent_item.addChild(child)
             except Exception:
                 pass
@@ -886,7 +929,7 @@ class FileExplorerWidget(QWidget):
             for i in range(self.tree_widget.topLevelItemCount()):
                 self.tree_widget.topLevelItem(i).setHidden(False)
             # If we were showing search results, refresh to restore normal view
-            if hasattr(self, '_is_searching') and self._is_searching:
+            if hasattr(self, "_is_searching") and self._is_searching:
                 self._is_searching = False
                 self.refresh()
             return
@@ -952,7 +995,9 @@ class FileExplorerWidget(QWidget):
 
                         if self.query in name.lower():
                             rel = os.path.relpath(full_path, self.base_path)
-                            size_str = "—" if is_dir else self._fmt_size(attr.st_size or 0)
+                            size_str = (
+                                "—" if is_dir else self._fmt_size(attr.st_size or 0)
+                            )
                             results.append((rel, is_dir, size_str))
 
                         if is_dir:
@@ -988,7 +1033,8 @@ class FileExplorerWidget(QWidget):
 
         for rel_path, is_dir, size_str in results:
             icon = (
-                QIcon.fromTheme("folder") if is_dir
+                QIcon.fromTheme("folder")
+                if is_dir
                 else QIcon.fromTheme("text-x-generic")
             )
             item = SortableTreeWidgetItem([rel_path, size_str])
@@ -1030,12 +1076,19 @@ class FileExplorerWidget(QWidget):
                     full_path = os.path.join(root, name)
                     rel = os.path.relpath(full_path, self.current_path)
                     is_dir = os.path.isdir(full_path)
-                    size_str = "—" if is_dir else self._format_size(os.path.getsize(full_path))
+                    size_str = (
+                        "—" if is_dir else self._format_size(os.path.getsize(full_path))
+                    )
                     results.append((rel, is_dir, size_str))
 
         from src.widgets.file_explorer_widget import SortableTreeWidgetItem
+
         for rel_path, is_dir, size_str in results:
-            icon = QIcon.fromTheme("folder") if is_dir else QIcon.fromTheme("text-x-generic")
+            icon = (
+                QIcon.fromTheme("folder")
+                if is_dir
+                else QIcon.fromTheme("text-x-generic")
+            )
             item = SortableTreeWidgetItem([rel_path, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, 0)
@@ -1129,7 +1182,6 @@ class FileExplorerWidget(QWidget):
 
     def _on_item_renamed(self, item: QTreeWidgetItem, column: int) -> None:
         """No-op — rename is handled by _commit_rename."""
-        pass
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1457,7 +1509,7 @@ class FileExplorerWidget(QWidget):
                         f"Moved: {entry}: Into {os.path.basename(target_folder_path)}"
                     )
                 moved_count += 1
-            except Exception as e:
+            except Exception:
                 logger.error(f"Moved: {entry}: Failed")
 
         if moved_count > 0:

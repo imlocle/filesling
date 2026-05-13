@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -230,7 +230,9 @@ class MainWindow(QWidget):
             if reply == QMessageBox.StandardButton.Yes:
                 self.connection_attempts = 0
                 if self._show_server_selection():
-                    self.connection_manager_service = ConnectionManagerService(self.settings)
+                    self.connection_manager_service = ConnectionManagerService(
+                        self.settings
+                    )
                     self.controller.connection_manager = self.connection_manager_service
                     self.controller.connect()
         else:
@@ -279,9 +281,13 @@ class MainWindow(QWidget):
         # Pi explorer
         self.remote_explorer.file_delete_requested.connect(self.controller.delete_item)
         self.remote_explorer.file_rename_requested.connect(self.controller.rename_item)
-        self.remote_explorer.folder_create_requested.connect(self.controller.create_folder)
+        self.remote_explorer.folder_create_requested.connect(
+            self.controller.create_folder
+        )
         self.remote_explorer.item_move_requested.connect(self.controller.move_item)
-        self.remote_explorer.item_selected.connect(self.controller.handle_selection_changed)
+        self.remote_explorer.item_selected.connect(
+            self.controller.handle_selection_changed
+        )
         self.remote_explorer.file_opened.connect(self.controller.handle_file_open)
         self.remote_explorer.files_dropped.connect(self._handle_remote_drop)
         self.remote_explorer.remote_error.connect(
@@ -362,15 +368,13 @@ class MainWindow(QWidget):
         """Create modern toolbar with icon buttons."""
         toolbar = QFrame()
         toolbar.setObjectName("toolbar")
-        toolbar.setStyleSheet(
-            """
+        toolbar.setStyleSheet("""
             QFrame#toolbar {
                 background-color: #252526;
                 border-bottom: 1px solid #3e3e42;
                 padding: 8px;
             }
-        """
-        )
+        """)
 
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(12, 8, 12, 8)
@@ -418,8 +422,7 @@ class MainWindow(QWidget):
         """Create status bar with connection and monitoring status."""
         status_bar = QFrame()
         status_bar.setObjectName("status_bar")
-        status_bar.setStyleSheet(
-            """
+        status_bar.setStyleSheet("""
             QFrame#status_bar {
                 background-color: #252526;
                 border-bottom: 1px solid #3e3e42;
@@ -433,8 +436,7 @@ class MainWindow(QWidget):
                 color: #4ec9b0;
                 font-weight: 500;
             }
-        """
-        )
+        """)
 
         status_layout = QHBoxLayout(status_bar)
         status_layout.setContentsMargins(12, 6, 12, 6)
@@ -482,8 +484,7 @@ class MainWindow(QWidget):
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setMaximumHeight(180)
-        self.log_box.setStyleSheet(
-            """
+        self.log_box.setStyleSheet("""
             QTextEdit {
                 background-color: #1e1e1e;
                 border: 1px solid #3e3e42;
@@ -492,8 +493,7 @@ class MainWindow(QWidget):
                 font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
                 font-size: 12px;
             }
-        """
-        )
+        """)
         log_layout.addWidget(self.log_box)
 
         layout.addWidget(log_container)
@@ -523,7 +523,6 @@ class MainWindow(QWidget):
 
     def update_progress(self, value: int) -> None:
         """Update progress (legacy — now handled by queue widget)."""
-        pass
 
     # ------------------------------------------------------------------
     # Lifecycle Events
@@ -538,7 +537,6 @@ class MainWindow(QWidget):
     def closeEvent(self, event: QCloseEvent):
         """Called when user clicks the window's close button."""
         # Check if user opted to skip the confirmation
-        server_config = self.settings.get_server(self.settings.config.current_server_id)
         skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
 
         if skip_confirm:

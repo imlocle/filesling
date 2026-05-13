@@ -99,7 +99,7 @@ class TransferWorker(QObject):
 
             if local_size != remote_size:
                 raise TransferVerificationError(
-                    f"File size mismatch after upload",
+                    "File size mismatch after upload",
                     file_path=local_path,
                     details=f"Local: {local_size} bytes, Remote: {remote_size} bytes",
                 )
@@ -109,7 +109,7 @@ class TransferWorker(QObject):
             raise
         except Exception as e:
             raise TransferVerificationError(
-                f"Failed to verify upload", file_path=local_path, details=str(e)
+                "Failed to verify upload", file_path=local_path, details=str(e)
             )
 
     def _upload_file(self, local_path: str, remote_dir: str) -> None:
@@ -138,7 +138,7 @@ class TransferWorker(QObject):
             size_bytes = os.path.getsize(local_path)
         except OSError as e:
             raise FileUploadError(
-                f"Cannot access local file", file_path=local_path, details=str(e)
+                "Cannot access local file", file_path=local_path, details=str(e)
             )
 
         # progress callback
@@ -150,7 +150,9 @@ class TransferWorker(QObject):
                 logger.progress_signal.emit(pct)
             # Emit overall percentage
             if self._total_bytes > 0:
-                overall_pct = int((self._cumulative_bytes + transferred) * 100 / self._total_bytes)
+                overall_pct = int(
+                    (self._cumulative_bytes + transferred) * 100 / self._total_bytes
+                )
                 self.progress.emit(min(overall_pct, 100))
 
         logger.progress_signal.emit(0)
@@ -174,7 +176,7 @@ class TransferWorker(QObject):
             except Exception:
                 pass
             raise FileUploadError(
-                f"Upload verification failed", file_path=local_path, details=str(e)
+                "Upload verification failed", file_path=local_path, details=str(e)
             )
         except IOError as e:
             if "Socket is closed" in str(e) or "not open" in str(e).lower():
@@ -182,11 +184,11 @@ class TransferWorker(QObject):
                     "Connection lost during upload", details=str(e)
                 )
             raise FileUploadError(
-                f"Failed to upload file", file_path=local_path, details=str(e)
+                "Failed to upload file", file_path=local_path, details=str(e)
             )
         except Exception as e:
             raise FileUploadError(
-                f"Unexpected error during upload", file_path=local_path, details=str(e)
+                "Unexpected error during upload", file_path=local_path, details=str(e)
             )
 
     def _upload_folder(self, local_folder: str, remote_root: str) -> None:
