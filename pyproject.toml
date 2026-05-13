@@ -3,15 +3,15 @@ requires = ["setuptools>=65.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pisync"
-version = "1.0.0"
-description = "Automated media transfer to Raspberry Pi with real-time file synchronization"
+name = "shuttle"
+version = "1.1.0"
+description = "Desktop file transfer tool for Raspberry Pi and Android devices"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [{name = "Loc Le", email = "loc.tan.le@gmail.com"}]
 maintainers = [{name = "Loc Le", email = "loc.tan.le@gmail.com"}]
-keywords = ["raspberry-pi", "media", "sftp", "automation", "sync", "transfer"]
+keywords = ["raspberry-pi", "android", "media", "sftp", "adb", "transfer", "file-manager"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: X11 Applications :: Qt",
@@ -62,14 +62,13 @@ build = [
 ]
 
 [project.scripts]
-pisync = "main:main"
+shuttle = "main:main"
 
 [project.urls]
-Homepage = "https://github.com/imlocle/pisync"
-Repository = "https://github.com/imlocle/pisync.git"
-Documentation = "https://github.com/imlocle/pisync/tree/main/docs"
-"Documentation Index" = "https://github.com/imlocle/pisync/blob/main/docs/INDEX.md"
-"Bug Reports" = "https://github.com/imlocle/pisync/issues"
+Homepage = "https://github.com/imlocle/shuttle"
+Repository = "https://github.com/imlocle/shuttle.git"
+Documentation = "https://github.com/imlocle/shuttle/tree/main/docs"
+"Bug Reports" = "https://github.com/imlocle/shuttle/issues"
 
 [tool.setuptools]
 packages = ["src"]
