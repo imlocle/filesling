@@ -18,6 +18,7 @@ from src.models.errors import (
     SSHConnectionError,
 )
 from src.services.connection_manager_service import ConnectionManagerService
+from src.utils.constants import CONN_TYPE_ADB, CONN_TYPE_KEY, CONN_TYPE_SSH, DEFAULT_ADB_BASE_DIR
 from src.utils.logging_signal import logger
 
 if TYPE_CHECKING:
@@ -124,9 +125,9 @@ class MainWindowController:
         """Establish connection to remote server with error handling."""
         # Check if this is an ADB (USB) connection
         server_config = self.settings.get_server(self.settings.config.current_server_id)
-        connection_type = server_config.get("connection_type", "ssh") if server_config else "ssh"
+        connection_type = server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH) if server_config else "ssh"
 
-        if connection_type == "adb":
+        if connection_type == CONN_TYPE_ADB:
             self._connect_adb(server_config)
             return
 
@@ -138,7 +139,7 @@ class MainWindowController:
 
         device_id = server_config.get("device_id")
         device_name = server_config.get("name", "Android Device")
-        root_path = server_config.get("remote_base_dir", "/sdcard")
+        root_path = server_config.get("remote_base_dir", DEFAULT_ADB_BASE_DIR)
 
         # Check for connected devices
         devices = get_connected_devices()

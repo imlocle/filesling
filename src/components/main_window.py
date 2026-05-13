@@ -537,16 +537,36 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event: QCloseEvent):
         """Called when user clicks the window's close button."""
-        reply = QMessageBox.question(
-            self,
-            f"Exit {SOFTWARE_NAME}",
-            "Are you sure you want to quit?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        # Check if user opted to skip the confirmation
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
+
+        if skip_confirm:
+            self.controller.shutdown()
+            event.accept()
+            return
+
+        from PySide6.QtWidgets import QCheckBox
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"Exit {SOFTWARE_NAME}")
+        msg.setText("Are you sure you want to quit?")
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+
+        checkbox = QCheckBox("Don't ask me again")
+        msg.setCheckBox(checkbox)
+
+        reply = msg.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            logger.info(f"Closing {SOFTWARE_NAME}...")
+            # Save preference if checked
+            if checkbox.isChecked():
+                self.settings.config.skip_exit_confirm = True
+                self.settings.save_config(self.settings._config_to_dict())
+
             self.controller.shutdown()
             event.accept()
         else:

@@ -14,7 +14,13 @@ from src.models.errors import (
     PathValidationError,
     SSHKeyValidationError,
 )
-from src.utils.constants import CONFIG_JSON, SOFTWARE_NAME
+from src.utils.constants import (
+    CONFIG_JSON,
+    DEFAULT_REMOTE_BASE_DIR,
+    DEFAULT_SSH_KEY_PATH,
+    DEFAULT_SSH_PORT,
+    SOFTWARE_NAME,
+)
 from src.utils.logging_signal import logger
 
 
@@ -29,11 +35,11 @@ class SettingsConfig(BaseModel):
     # Connection Settings
     username: str = ""
     host: str = ""
-    ssh_key_path: str = os.path.expanduser("~/.ssh/id_rsa")
-    ssh_port: int = 22
+    ssh_key_path: str = os.path.expanduser(DEFAULT_SSH_KEY_PATH)
+    ssh_port: int = DEFAULT_SSH_PORT
 
     # Remote Path
-    remote_base_dir: str = "/mnt/external"
+    remote_base_dir: str = DEFAULT_REMOTE_BASE_DIR
 
     # Transfer Behavior
     delete_after_transfer: bool = True
@@ -48,6 +54,7 @@ class SettingsConfig(BaseModel):
 
     # Metadata
     last_modified: str = ""
+    skip_exit_confirm: bool = False
 
     @field_validator("host")
     @classmethod
@@ -274,10 +281,10 @@ class Settings:
         self.config.username = server_config.get("username", "")
         self.config.host = server_config.get("host", "")
         self.config.ssh_key_path = server_config.get(
-            "ssh_key_path", os.path.expanduser("~/.ssh/id_rsa")
+            "ssh_key_path", os.path.expanduser(DEFAULT_SSH_KEY_PATH)
         )
-        self.config.ssh_port = server_config.get("ssh_port", 22)
-        self.config.remote_base_dir = server_config.get("remote_base_dir", "/mnt/external")
+        self.config.ssh_port = server_config.get("ssh_port", DEFAULT_SSH_PORT)
+        self.config.remote_base_dir = server_config.get("remote_base_dir", DEFAULT_REMOTE_BASE_DIR)
         self.config.current_server_id = server_id
         return True
 
@@ -295,5 +302,6 @@ class Settings:
             "delete_after_transfer": self.config.delete_after_transfer,
             "file_extensions": list(self.config.file_extensions),
             "skip_patterns": list(self.config.skip_patterns),
+            "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,
         }
