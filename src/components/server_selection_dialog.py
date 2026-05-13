@@ -213,8 +213,8 @@ class ServerSelectionDialog(QDialog):
     def _format_server_display(self, server_id: str, config: dict) -> str:
         """Format server information for display."""
         name = config.get("name", server_id)
-        user = config.get("pi_user", "")
-        ip = config.get("pi_ip", "")
+        user = config.get("username", "")
+        ip = config.get("host", "")
         is_default = self.settings.config.default_server_id == server_id
         prefix = "⭐ " if is_default else ""
         return f"{prefix}{name}\n{user}@{ip}"

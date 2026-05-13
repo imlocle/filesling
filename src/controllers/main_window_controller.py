@@ -137,9 +137,19 @@ class MainWindowController:
             # Connection successful - reset attempt counter
             self.view.connection_attempts = 0
 
-            self.view.connection_status_label.setText(
-                f"● Connected to {self.settings.pi_ip}"
-            )
+            server_name = ""
+            server_config = self.settings.get_server(self.settings.config.current_server_id)
+            if server_config:
+                server_name = server_config.get("name", "")
+
+            if server_name:
+                self.view.connection_status_label.setText(
+                    f"● Connected to {server_name} ({self.settings.host})"
+                )
+            else:
+                self.view.connection_status_label.setText(
+                    f"● Connected to {self.settings.host}"
+                )
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.setStyleSheet(
                 "color: #4ec9b0; font-weight: 500;"

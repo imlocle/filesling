@@ -4,42 +4,49 @@
 
 ---
 
-## 🚀 High Priority (Daily Workflow)
+## ✅ Completed
 
-### Transfer Queue Improvements
+### Transfer Queue
 
 - [x] Visual queue panel showing pending/in-progress/completed transfers
-- [x] Show transfer speed (MB/s) in progress bar
-- [x] Show ETA for current transfer
+- [x] Show transfer speed (MB/s) and ETA
 - [x] Retry failed transfers with one click
 - [x] Cancel individual queued transfers
-- [ ] Drag to reorder queue priority (skipped — rarely needed with short queues)
 
 ### Keyboard Shortcuts
 
-- [ ] `⌘+Delete` — Delete selected item
-- [ ] `⌘+R` — Refresh explorer
-- [ ] `Enter` — Navigate into folder
-- [ ] `⌘+↑` — Go back / up one directory
-- [ ] `⌘+N` — New folder
-- [ ] `⌘+F` — Focus search/filter
-- [ ] `Escape` — Deselect all
+- [x] `⌘+Delete` — Delete selected items
+- [x] `⌘+R` — Refresh explorer
+- [x] `Enter` — Navigate into folder / execute search
+- [x] `⌘+↑` — Go back / up one directory
+- [x] `⌘+N` — New folder
+- [x] `⌘+F` — Focus search bar
+- [x] `Escape` — Clear search / deselect all
 
 ### Disk Space Indicator
 
-- [x] Visual bar showing used/total space on remote drive
-- [x] Show in status bar or below explorer
-- [x] Warn when disk is nearly full before starting a transfer
-
----
-
-## 🎯 Medium Priority (Quality of Life)
+- [x] Visual bar below explorer showing used/total
+- [x] Color-coded: blue → orange (75%) → red (90%)
 
 ### Search & Filter
 
-- [ ] Filter bar above explorer to search current directory
-- [ ] Real-time filtering as you type
-- [ ] Option to search recursively across all subdirectories
+- [x] Always-visible search bar above explorer
+- [x] Recursive search across subdirectories (3 levels deep)
+- [x] Background thread search with loading spinner
+- [x] Enter to search, Escape to clear
+
+### Code Cleanup (Done)
+
+- [x] Removed all auto-sync/monitoring code
+- [x] Removed watchdog, pillow, pydantic-settings dependencies
+- [x] Removed 16 unused error classes
+- [x] Removed legacy settings fields (pi_user → username, pi_ip → host)
+- [x] Removed path_mapper, monitor_thread, file_monitor_repository
+- [x] Cleaned up log format (concise, no duplicates)
+
+---
+
+## 🚀 Next Up
 
 ### Download from Server
 
@@ -52,7 +59,6 @@
 - [ ] Persist transfer history between sessions (JSON log)
 - [ ] Show history panel: file name, date, size, destination
 - [ ] "Did I already upload this?" search
-- [ ] Clear history option
 
 ### Bookmarked Folders
 
@@ -60,81 +66,40 @@
 - [ ] Add/remove bookmarks from context menu
 - [ ] Show as sidebar or dropdown above explorer
 
-### Multi-Select Drag
-
-- [ ] Select multiple files/folders and drag them all at once
-- [ ] Show count badge on drag ("3 items")
-- [ ] Queue each as a separate transfer or batch them
-
----
-
-## 💡 Lower Priority (Nice to Have)
-
-### Connection Health
-
-- [ ] Background ping/heartbeat to detect disconnection early
-- [ ] Auto-reconnect when connection drops
-- [ ] Visual indicator (green/yellow/red) for connection quality
-- [ ] Show latency in status bar
-
-### File Previews
-
-- [ ] Show file type icons (video, subtitle, image, etc.)
-- [ ] Thumbnail previews for images
-- [ ] File info tooltip on hover (full path, modified date, size)
-
-### Theme Support
-
-- [ ] Light mode option
-- [ ] Follow system appearance (dark/light)
-- [ ] Custom accent color
-
 ### Duplicate Detection
 
 - [ ] Warn before uploading a file that already exists on remote
 - [ ] Options: skip, overwrite, rename
 - [ ] Compare by name + size for quick detection
 
+---
+
+## 💡 Nice to Have
+
+### Connection Health
+
+- [ ] Auto-reconnect when connection drops
+- [ ] Visual indicator for connection quality
+- [ ] Show latency in status bar
+
+### File Previews
+
+- [ ] Show file type icons (video, subtitle, image, etc.)
+- [ ] File info tooltip on hover (full path, modified date, size)
+
+### Theme Support
+
+- [ ] Light mode option
+- [ ] Follow system appearance (dark/light)
+
 ### Batch Rename
 
 - [ ] Select multiple files → batch rename with pattern
 - [ ] Find & replace in filenames
-- [ ] Add prefix/suffix to selected items
 
 ### Drag from Explorer to Finder
 
 - [ ] Drag a remote file to Finder to download it
-- [ ] Reverse of the current upload flow
-
----
-
-## 🏗 Architecture & Code Quality
-
-### Testing
-
-- [ ] Unit tests for ManualTransferController queue logic
-- [ ] Unit tests for PathMapper
-- [ ] Integration test with mock SFTP server
-- [ ] UI tests for drag-and-drop behavior
-
-### Performance
-
-- [ ] Lazy-load directory sizes (don't block listing)
-- [ ] Cache directory listings for back-navigation
-- [ ] Parallel SFTP stat calls for faster directory loading
-
-### Error Handling
-
-- [ ] Structured error recovery (auto-reconnect on socket close)
-- [ ] User-friendly error messages (not raw exceptions)
-- [ ] Error notification badge on status bar
-
-### Code Cleanup
-
-- [ ] Remove unused settings fields (auto_start_monitor, stability_duration, local_watch_dir)
-- [ ] Remove dead error classes from errors.py
-- [ ] Consolidate path_mapper (only used as fallback now)
-- [ ] Remove watchdog from requirements.txt
 
 ---
 
@@ -146,25 +111,45 @@
 - [ ] Update SOFTWARE_NAME constant
 - [ ] New app icon
 - [ ] Update config directory (~/.PiSync → ~/.shuttle)
-- [ ] Migration path for existing configs
 
 ### Multi-Server Dashboard
 
 - [ ] Show all servers at a glance with connection status
 - [ ] Quick-switch between servers without dialog
-- [ ] Transfer to multiple servers simultaneously
 
-### Scheduled Transfers
+### Android Device Support (USB)
 
-- [ ] Set up recurring transfers (e.g., every night at 2am)
-- [ ] Watch a local folder and auto-upload new files on schedule
-- [ ] Notification when scheduled transfer completes
+Replace Android File Transfer with something that actually works on modern macOS.
+
+**Option A: ADB (Developer Mode required)**
+
+- [ ] ADB transport backend — `adb push/pull/shell`
+- [ ] Auto-detect connected devices via `adb devices`
+- [ ] Browse device filesystem via `adb shell ls`
+- [ ] Transfer files via `adb push` (upload) / `adb pull` (download)
+- [ ] Same explorer UI, just a different connection backend
+- [ ] Works with phones, tablets, Quest VR headsets
+- [ ] More reliable and faster than MTP
+- [ ] Tradeoff: user must enable Developer Mode + USB Debugging once
+
+**Option B: MTP (Plug-and-play, no setup)**
+
+- [ ] MTP transport backend via libmtp / pymtp
+- [ ] No Developer Mode needed — just plug in USB
+- [ ] True Android File Transfer replacement
+- [ ] Challenge: MTP protocol is flaky on macOS (disconnects, slow)
+- [ ] Would need robust retry/error handling
+
+**Architecture:**
+
+- [ ] Abstract the connection layer (SSH, ADB, MTP) behind a common interface
+- [ ] Explorer widget doesn't care what backend is used
+- [ ] Server selection dialog shows device type (SSH server vs USB device)
 
 ### Plugin System
 
 - [ ] Post-transfer hooks (run a script after upload)
-- [ ] Custom file processors (compress before upload, etc.)
-- [ ] Notification integrations (Slack, Discord, email)
+- [ ] Notification integrations (Slack, Discord)
 
 ---
 

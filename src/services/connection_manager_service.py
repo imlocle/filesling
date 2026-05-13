@@ -75,8 +75,8 @@ class ConnectionManagerService:
                 self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
                 
                 self.ssh_client.connect(
-                    hostname=self.settings.pi_ip,
-                    username=self.settings.pi_user,
+                    hostname=self.settings.host,
+                    username=self.settings.username,
                     key_filename=self.settings.ssh_key_path,
                     timeout=10,
                 )
@@ -94,7 +94,7 @@ class ConnectionManagerService:
                         details=str(e)
                     )
                 
-                logger.success(f"Connected: {self.settings.pi_ip}")
+                logger.success(f"Connected: {self.settings.host}")
                 return True
                 
             except AuthenticationException as e:
@@ -108,7 +108,7 @@ class ConnectionManagerService:
                 self.sftp_client = None
                 raise AuthenticationError(
                     "SSH authentication failed",
-                    details=f"User: {self.settings.pi_user}, Key: {self.settings.ssh_key_path}"
+                    details=f"User: {self.settings.username}, Key: {self.settings.ssh_key_path}"
                 )
                 
             except SSHException as e:
@@ -126,7 +126,7 @@ class ConnectionManagerService:
                 retries += 1
                 logger.error(
                     f"Connection: Timeout: Retry {retries}/{max_retries}\n"
-                    f"Check if server is reachable at {self.settings.pi_ip}"
+                    f"Check if server is reachable at {self.settings.host}"
                 )
                 self.ssh_client = None
                 self.sftp_client = None
@@ -149,7 +149,7 @@ class ConnectionManagerService:
             f"Connection failed after {max_retries} attempts. "
             f"Please check:\n"
             f"1. Server is powered on and connected to network\n"
-            f"2. IP address is correct: {self.settings.pi_ip}\n"
+            f"2. IP address is correct: {self.settings.host}\n"
             f"3. SSH is enabled on the server\n"
             f"4. SSH key is authorized on the server"
         )
@@ -220,8 +220,8 @@ class ConnectionManagerService:
             test_ssh = SSHClient()
             test_ssh.set_missing_host_key_policy(AutoAddPolicy())
             test_ssh.connect(
-                hostname=self.settings.pi_ip,
-                username=self.settings.pi_user,
+                hostname=self.settings.host,
+                username=self.settings.username,
                 key_filename=self.settings.ssh_key_path,
                 timeout=10,
             )
@@ -231,7 +231,7 @@ class ConnectionManagerService:
             logger.error(f"Test: Authentication failed: {e}")
             return False
         except TimeoutError:
-            logger.error(f"Test: Connection timeout - server not reachable at {self.settings.pi_ip}")
+            logger.error(f"Test: Connection timeout - server not reachable at {self.settings.host}")
             return False
         except Exception as e:
             logger.error(f"Test: Connection failed: {e}")

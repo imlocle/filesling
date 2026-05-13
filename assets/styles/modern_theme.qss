@@ -50,11 +50,11 @@ QPushButton {
     background-color: #1e293b;
     color: #f1f5f9;
     border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 12px 20px;
-    font-size: 13px;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
     font-weight: 500;
-    min-height: 36px;
+    min-height: 28px;
 }
 
 QPushButton:hover:!disabled {
@@ -85,7 +85,6 @@ QPushButton#primary_btn {
 
 QPushButton#primary_btn:hover:!disabled {
     background-color: #0284c7;
-    /* Subtle shadow effect for depth */
     border: none;
 }
 
@@ -122,13 +121,13 @@ QPushButton#danger_btn:hover:!disabled {
 
 /* Icon-only buttons (toolbar) */
 QPushButton#icon_btn {
-    min-width: 44px;
-    max-width: 44px;
-    min-height: 44px;
-    max-height: 44px;
-    padding: 8px;
-    font-size: 18px;
-    border-radius: 8px;
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 4px;
+    font-size: 15px;
+    border-radius: 6px;
     background-color: transparent;
     border: none;
 }
@@ -446,8 +445,9 @@ QToolTip {
     background-color: #1e293b;
     color: #f1f5f9;
     border: 1px solid #334155;
-    padding: 8px 12px;
-    border-radius: 6px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 11px;
 }
 
 /* ============================================================================

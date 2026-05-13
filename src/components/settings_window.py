@@ -162,23 +162,23 @@ class SettingsWindow(QDialog):
 
         # Get values from server config if in server mode, otherwise from settings
         if self.server_mode:
-            pi_user = self.server_config.get("pi_user", "")
-            pi_ip = self.server_config.get("pi_ip", "")
+            username = self.server_config.get("username", "")
+            host_val = self.server_config.get("host", "")
             ssh_port = self.server_config.get("ssh_port", 22)
             ssh_key = self.server_config.get(
                 "ssh_key_path", os.path.expanduser("~/.ssh/id_rsa")
             )
         else:
-            pi_user = self.settings.pi_user
-            pi_ip = self.settings.pi_ip
+            username = self.settings.username
+            host_val = self.settings.host
             ssh_port = self.settings.ssh_port
             ssh_key = self.settings.ssh_key_path
 
-        self.pi_user_input = QLineEdit(pi_user)
-        self.pi_user_input.setPlaceholderText("e.g., pi")
+        self.username_input = QLineEdit(username)
+        self.username_input.setPlaceholderText("e.g., pi")
 
-        self.pi_ip_input = QLineEdit(pi_ip)
-        self.pi_ip_input.setPlaceholderText("e.g., 192.168.1.100")
+        self.host_input = QLineEdit(host_val)
+        self.host_input.setPlaceholderText("e.g., 192.168.1.100")
 
         self.ssh_port_input = QLineEdit(str(ssh_port))
         self.ssh_port_input.setPlaceholderText("22")
@@ -186,8 +186,8 @@ class SettingsWindow(QDialog):
         self.ssh_key_path = QLineEdit(ssh_key)
         self.ssh_key_path.setPlaceholderText("e.g., ~/.ssh/id_rsa")
 
-        ssh_layout.addRow("Username:", self.pi_user_input)
-        ssh_layout.addRow("IP Address:", self.pi_ip_input)
+        ssh_layout.addRow("Username:", self.username_input)
+        ssh_layout.addRow("IP Address:", self.host_input)
         ssh_layout.addRow("SSH Port:", self.ssh_port_input)
         ssh_layout.addRow("SSH Key Path:", self.ssh_key_path)
 
@@ -427,8 +427,8 @@ class SettingsWindow(QDialog):
 
             server_config = {
                 "name": server_name,
-                "pi_user": self.pi_user_input.text().strip(),
-                "pi_ip": self.pi_ip_input.text().strip(),
+                "username": self.username_input.text().strip(),
+                "host": self.host_input.text().strip(),
                 "ssh_key_path": self.ssh_key_path.text().strip(),
                 "ssh_port": ssh_port,
                 "remote_base_dir": self.remote_base_dir_input.text()
@@ -463,7 +463,7 @@ class SettingsWindow(QDialog):
                 QMessageBox.StandardButton.Ok,
             )
             self.tab_widget.setCurrentIndex(0)
-            self.pi_ip_input.setFocus()
+            self.host_input.setFocus()
 
         except SSHKeyValidationError as e:
             QMessageBox.warning(
@@ -501,8 +501,8 @@ class SettingsWindow(QDialog):
                 "servers": self.settings.config.servers,  # Keep existing servers
                 "current_server_id": self.settings.config.current_server_id,
                 "default_server_id": self.settings.config.default_server_id,
-                "pi_user": self.pi_user_input.text().strip(),
-                "pi_ip": self.pi_ip_input.text().strip(),
+                "username": self.username_input.text().strip(),
+                "host": self.host_input.text().strip(),
                 "ssh_key_path": self.ssh_key_path.text().strip(),
                 "ssh_port": int(self.ssh_port_input.text().strip() or "22"),
                 "remote_base_dir": self.remote_base_dir_input.text()
@@ -550,7 +550,7 @@ class SettingsWindow(QDialog):
                 QMessageBox.StandardButton.Ok,
             )
             self.tab_widget.setCurrentIndex(0)  # Switch to Connection tab
-            self.pi_ip_input.setFocus()
+            self.host_input.setFocus()
 
         except SSHKeyValidationError as e:
             QMessageBox.warning(
@@ -612,14 +612,14 @@ class SettingsWindow(QDialog):
 
                 def __init__(self, config: SettingsConfig):
                     self.config = config
-                    self.pi_user = config.pi_user
-                    self.pi_ip = config.pi_ip
+                    self.username = config.username
+                    self.host = config.host
                     self.ssh_key_path = config.ssh_key_path
                     self.ssh_port = config.ssh_port
 
             temp_config_data = {
-                "pi_user": self.pi_user_input.text().strip(),
-                "pi_ip": self.pi_ip_input.text().strip(),
+                "username": self.username_input.text().strip(),
+                "host": self.host_input.text().strip(),
                 "ssh_key_path": self.ssh_key_path.text().strip(),
                 "ssh_port": int(self.ssh_port_input.text().strip() or "22"),
                 "remote_base_dir": self.remote_base_dir_input.text().strip()
