@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shuttle"
-version = "1.1.2"
+version = "1.2.0"
 description = "Desktop file transfer tool for Raspberry Pi and Android devices"
 readme = "README.md"
 requires-python = ">=3.9"
