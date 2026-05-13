@@ -54,7 +54,7 @@ class SettingsWindow(QDialog):
     ):
         super().__init__()
         self.setWindowTitle(f"{SOFTWARE_NAME} - Settings")
-        self.setMinimumSize(600, 700)
+        self.setMinimumSize(500, 550)
 
         self.settings = settings
         self.server_mode = server_mode  # If True, we're adding/editing a server
@@ -81,7 +81,6 @@ class SettingsWindow(QDialog):
         self.tab_widget.setDocumentMode(True)
 
         self._setup_connection_tab()
-        self._setup_paths_tab()
 
         # Only show behavior and files tabs if not in server mode
         if not server_mode:
@@ -135,113 +134,145 @@ class SettingsWindow(QDialog):
 
     def _setup_connection_tab(self) -> None:
         """Create connection settings tab."""
+        from PySide6.QtWidgets import QComboBox
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
 
         # Server name (only in server mode)
         if self.server_mode:
-            name_group = QGroupBox("Server Name")
-            name_layout = QFormLayout()
-            name_layout.setSpacing(12)
-            name_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
+            layout.addWidget(QLabel("Name"))
             self.server_name_input = QLineEdit(self.server_config.get("name", ""))
             self.server_name_input.setPlaceholderText("e.g., Living Room Pi")
+            layout.addWidget(self.server_name_input)
 
-            name_layout.addRow("Name:", self.server_name_input)
-            name_group.setLayout(name_layout)
-            layout.addWidget(name_group)
+        # Connection type
+        from PySide6.QtWidgets import QListView
+        layout.addWidget(QLabel("Connection Type"))
+        self.connection_type_combo = QComboBox()
+        self.connection_type_combo.setView(QListView())
+        self.connection_type_combo.addItem("SSH (Remote Server)", "ssh")
+        self.connection_type_combo.addItem("USB (Android Device)", "adb")
+        current_type = self.server_config.get("connection_type", "ssh") if self.server_mode else "ssh"
+        self.connection_type_combo.setCurrentIndex(0 if current_type == "ssh" else 1)
+        self.connection_type_combo.currentIndexChanged.connect(self._on_connection_type_changed)
+        layout.addWidget(self.connection_type_combo)
 
-        # SSH Connection group
-        ssh_group = QGroupBox("SSH Connection")
-        ssh_layout = QFormLayout()
-        ssh_layout.setSpacing(12)
-        ssh_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        # --- SSH fields ---
+        self.ssh_group = QWidget()
+        ssh_layout = QVBoxLayout(self.ssh_group)
+        ssh_layout.setContentsMargins(0, 6, 0, 0)
+        ssh_layout.setSpacing(6)
 
-        # Get values from server config if in server mode, otherwise from settings
         if self.server_mode:
             username = self.server_config.get("username", "")
             host_val = self.server_config.get("host", "")
             ssh_port = self.server_config.get("ssh_port", 22)
-            ssh_key = self.server_config.get(
-                "ssh_key_path", os.path.expanduser("~/.ssh/id_rsa")
-            )
+            ssh_key = self.server_config.get("ssh_key_path", os.path.expanduser("~/.ssh/id_rsa"))
         else:
             username = self.settings.username
             host_val = self.settings.host
             ssh_port = self.settings.ssh_port
             ssh_key = self.settings.ssh_key_path
 
-        self.username_input = QLineEdit(username)
-        self.username_input.setPlaceholderText("e.g., pi")
-
+        ssh_layout.addWidget(QLabel("Host"))
         self.host_input = QLineEdit(host_val)
-        self.host_input.setPlaceholderText("e.g., 192.168.1.100")
+        self.host_input.setPlaceholderText("192.168.1.100")
+        ssh_layout.addWidget(self.host_input)
 
+        ssh_layout.addWidget(QLabel("Username"))
+        self.username_input = QLineEdit(username)
+        self.username_input.setPlaceholderText("pi")
+        ssh_layout.addWidget(self.username_input)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        port_col = QVBoxLayout()
+        port_col.addWidget(QLabel("Port"))
         self.ssh_port_input = QLineEdit(str(ssh_port))
         self.ssh_port_input.setPlaceholderText("22")
-
+        self.ssh_port_input.setMaximumWidth(80)
+        port_col.addWidget(self.ssh_port_input)
+        row.addLayout(port_col)
+        key_col = QVBoxLayout()
+        key_col.addWidget(QLabel("SSH Key"))
         self.ssh_key_path = QLineEdit(ssh_key)
-        self.ssh_key_path.setPlaceholderText("e.g., ~/.ssh/id_rsa")
+        self.ssh_key_path.setPlaceholderText("~/.ssh/id_rsa")
+        key_col.addWidget(self.ssh_key_path)
+        row.addLayout(key_col, stretch=1)
+        ssh_layout.addLayout(row)
 
-        ssh_layout.addRow("Username:", self.username_input)
-        ssh_layout.addRow("IP Address:", self.host_input)
-        ssh_layout.addRow("SSH Port:", self.ssh_port_input)
-        ssh_layout.addRow("SSH Key Path:", self.ssh_key_path)
+        layout.addWidget(self.ssh_group)
 
-        ssh_group.setLayout(ssh_layout)
-        layout.addWidget(ssh_group)
+        # --- ADB fields ---
+        self.adb_group = QWidget()
+        adb_layout = QVBoxLayout(self.adb_group)
+        adb_layout.setContentsMargins(0, 6, 0, 0)
+        adb_layout.setSpacing(6)
 
-        # Test connection button
+        adb_layout.addWidget(QLabel("Device"))
+        adb_row = QHBoxLayout()
+        adb_row.setSpacing(8)
+        self.adb_device_combo = QComboBox()
+        self.adb_device_combo.setView(QListView())
+        self.adb_device_combo.setPlaceholderText("No devices detected")
+        self._refresh_adb_devices()
+        self.adb_refresh_btn = QPushButton("🔃")
+        self.adb_refresh_btn.setObjectName("icon_btn")
+        self.adb_refresh_btn.setToolTip("Refresh devices")
+        self.adb_refresh_btn.clicked.connect(self._refresh_adb_devices)
+        adb_row.addWidget(self.adb_device_combo, stretch=1)
+        adb_row.addWidget(self.adb_refresh_btn)
+        adb_layout.addLayout(adb_row)
+
+        layout.addWidget(self.adb_group)
+
+        # --- Base directory (shared) ---
+        layout.addWidget(QLabel("Base Directory"))
+        remote_base = self.server_config.get("remote_base_dir", "/mnt/external") if self.server_mode else self.settings.remote_base_dir
+        self.remote_base_dir_input = QLineEdit(remote_base)
+        self.remote_base_dir_input.setPlaceholderText("/mnt/external or /sdcard")
+        layout.addWidget(self.remote_base_dir_input)
+
+        # Show/hide based on type
+        self.adb_group.setVisible(current_type == "adb")
+        self.ssh_group.setVisible(current_type == "ssh")
+
+        # Test connection
         test_btn = QPushButton("🔌 Test Connection")
         test_btn.setObjectName("primary_btn")
         test_btn.clicked.connect(self.test_connection)
-        test_btn.setMinimumHeight(36)
         layout.addWidget(test_btn)
 
         layout.addStretch()
         self.tab_widget.addTab(tab, "🔌 Connection")
 
-    def _setup_paths_tab(self) -> None:
-        """Create paths settings tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+    def _on_connection_type_changed(self, index: int) -> None:
+        """Show/hide connection fields based on type."""
+        is_adb = self.connection_type_combo.currentData() == "adb"
+        self.adb_group.setVisible(is_adb)
+        self.ssh_group.setVisible(not is_adb)
+        # Update base directory to sensible default for the connection type
+        current_text = self.remote_base_dir_input.text().strip()
+        if is_adb and current_text in ("", "/mnt/external"):
+            self.remote_base_dir_input.setText("/sdcard")
+        elif not is_adb and current_text in ("", "/sdcard"):
+            self.remote_base_dir_input.setText("/mnt/external")
 
-        # Remote paths group
-        remote_group = QGroupBox("Remote Server")
-        remote_layout = QFormLayout()
-        remote_layout.setSpacing(12)
-        remote_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+    def _refresh_adb_devices(self) -> None:
+        """Refresh the list of connected ADB devices."""
+        from src.services.adb_client import get_connected_devices
 
-        # Get value from server config if in server mode, otherwise from settings
-        if self.server_mode:
-            remote_base = self.server_config.get("remote_base_dir", "/mnt/external")
+        self.adb_device_combo.clear()
+        devices = get_connected_devices()
+        if devices:
+            for device in devices:
+                label = f"{device['model']} ({device['id']})"
+                self.adb_device_combo.addItem(label, device["id"])
         else:
-            remote_base = self.settings.remote_base_dir
-
-        self.remote_base_dir_input = QLineEdit(remote_base)
-        self.remote_base_dir_input.setPlaceholderText("e.g., /mnt/external")
-
-        remote_layout.addRow("Base Directory:", self.remote_base_dir_input)
-        remote_group.setLayout(remote_layout)
-        layout.addWidget(remote_group)
-
-        # Info label
-        info_label = QLabel(
-            "💡 The base directory is the root folder shown in the file explorer when you connect."
-        )
-        info_label.setStyleSheet(
-            "color: #858585; padding: 8px; background-color: #252526; border-radius: 4px;"
-        )
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
-        self.tab_widget.addTab(tab, "📁 Paths")
+            self.adb_device_combo.setPlaceholderText("No devices — plug in via USB")
 
     def _setup_behavior_tab(self) -> None:
         """Create behavior settings tab."""
@@ -411,37 +442,63 @@ class SettingsWindow(QDialog):
             return
 
         try:
-            # Convert and validate port before building config
-            ssh_port_str = self.ssh_port_input.text().strip()
-            try:
-                ssh_port = int(ssh_port_str or "22")
-            except ValueError:
-                QMessageBox.warning(
-                    self,
-                    "Invalid SSH Port",
-                    f"SSH port must be a valid integer. Got: '{ssh_port_str}'",
-                    QMessageBox.StandardButton.Ok,
-                )
-                self.ssh_port_input.setFocus()
-                return
+            connection_type = self.connection_type_combo.currentData()
 
-            server_config = {
-                "name": server_name,
-                "username": self.username_input.text().strip(),
-                "host": self.host_input.text().strip(),
-                "ssh_key_path": self.ssh_key_path.text().strip(),
-                "ssh_port": ssh_port,
-                "remote_base_dir": self.remote_base_dir_input.text()
-                .rstrip("/")
-                .strip(),
-            }
-            # Validate the configuration
-            temp_config = {
-                **server_config,
-                "file_extensions": list(self.settings.file_extensions),
-                "skip_patterns": list(self.settings.skip_patterns),
-            }
-            SettingsConfig.from_json(temp_config)
+            if connection_type == "adb":
+                # ADB server config
+                device_id = self.adb_device_combo.currentData()
+                if not device_id:
+                    QMessageBox.warning(
+                        self,
+                        "No Device Selected",
+                        "Please connect an Android device and select it.",
+                        QMessageBox.StandardButton.Ok,
+                    )
+                    return
+
+                server_config = {
+                    "name": server_name,
+                    "connection_type": "adb",
+                    "device_id": device_id,
+                    "remote_base_dir": self.remote_base_dir_input.text()
+                    .rstrip("/")
+                    .strip()
+                    or "/sdcard",
+                }
+            else:
+                # SSH server config
+                # Convert and validate port before building config
+                ssh_port_str = self.ssh_port_input.text().strip()
+                try:
+                    ssh_port = int(ssh_port_str or "22")
+                except ValueError:
+                    QMessageBox.warning(
+                        self,
+                        "Invalid SSH Port",
+                        f"SSH port must be a valid integer. Got: '{ssh_port_str}'",
+                        QMessageBox.StandardButton.Ok,
+                    )
+                    self.ssh_port_input.setFocus()
+                    return
+
+                server_config = {
+                    "name": server_name,
+                    "connection_type": "ssh",
+                    "username": self.username_input.text().strip(),
+                    "host": self.host_input.text().strip(),
+                    "ssh_key_path": self.ssh_key_path.text().strip(),
+                    "ssh_port": ssh_port,
+                    "remote_base_dir": self.remote_base_dir_input.text()
+                    .rstrip("/")
+                    .strip(),
+                }
+                # Validate SSH config
+                temp_config = {
+                    **server_config,
+                    "file_extensions": list(self.settings.file_extensions),
+                    "skip_patterns": list(self.settings.skip_patterns),
+                }
+                SettingsConfig.from_json(temp_config)
 
             # Save the server
             self.settings.add_server(self.server_id, server_config)
@@ -597,19 +654,20 @@ class SettingsWindow(QDialog):
             )
 
     def test_connection(self):
-        """Test connection to remote server."""
+        """Test connection to remote server or USB device."""
         self.connection_status_label.setText("● Testing connection...")
         self.connection_status_label.setStyleSheet("color: #ce9178; font-weight: 500;")
 
-        # Create temporary settings for testing
+        # Check if ADB connection type
+        if hasattr(self, 'connection_type_combo') and self.connection_type_combo.currentData() == "adb":
+            self._test_adb_connection()
+            return
+
+        # SSH connection test
         if self.server_mode:
-            # Use values from the form - create a lightweight settings-like object
-            # to avoid mutating the singleton Settings
             from src.config.settings import SettingsConfig
 
             class TempSettings:
-                """Temporary settings object for connection testing without mutating singleton."""
-
                 def __init__(self, config: SettingsConfig):
                     self.config = config
                     self.username = config.username
@@ -631,20 +689,38 @@ class SettingsWindow(QDialog):
                 connection_manager_service = ConnectionManagerService(temp_settings)
             except Exception as e:
                 self.connection_status_label.setText("● Invalid configuration")
-                self.connection_status_label.setStyleSheet(
-                    "color: #f48771; font-weight: 500;"
-                )
+                self.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
                 return
         else:
             connection_manager_service = ConnectionManagerService(self.settings)
 
         if connection_manager_service.test_connection():
             self.connection_status_label.setText("● Connected successfully")
-            self.connection_status_label.setStyleSheet(
-                "color: #4ec9b0; font-weight: 500;"
-            )
+            self.connection_status_label.setStyleSheet("color: #4ec9b0; font-weight: 500;")
         else:
             self.connection_status_label.setText("● Connection failed")
-            self.connection_status_label.setStyleSheet(
-                "color: #f48771; font-weight: 500;"
-            )
+            self.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
+
+    def _test_adb_connection(self):
+        """Test ADB connection to Android device."""
+        from src.services.adb_client import ADBClient, get_connected_devices
+
+        devices = get_connected_devices()
+        if not devices:
+            self.connection_status_label.setText("● No device connected")
+            self.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
+            return
+
+        device_id = self.adb_device_combo.currentData()
+        if not device_id:
+            device_id = devices[0]["id"]
+
+        try:
+            client = ADBClient(device_id)
+            base_dir = self.remote_base_dir_input.text().strip() or "/sdcard"
+            client.listdir(base_dir)
+            self.connection_status_label.setText("● Device connected successfully")
+            self.connection_status_label.setStyleSheet("color: #4ec9b0; font-weight: 500;")
+        except Exception as e:
+            self.connection_status_label.setText(f"● ADB error: {str(e)[:50]}")
+            self.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")

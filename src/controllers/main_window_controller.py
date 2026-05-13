@@ -122,6 +122,71 @@ class MainWindowController:
     # --------------------------------------------------------------
     def connect(self) -> None:
         """Establish connection to remote server with error handling."""
+        # Check if this is an ADB (USB) connection
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        connection_type = server_config.get("connection_type", "ssh") if server_config else "ssh"
+
+        if connection_type == "adb":
+            self._connect_adb(server_config)
+            return
+
+        self._connect_ssh()
+
+    def _connect_adb(self, server_config: dict) -> None:
+        """Connect to an Android device via ADB."""
+        from src.services.adb_client import ADBClient, get_connected_devices
+
+        device_id = server_config.get("device_id")
+        device_name = server_config.get("name", "Android Device")
+        root_path = server_config.get("remote_base_dir", "/sdcard")
+
+        # Check for connected devices
+        devices = get_connected_devices()
+        if not devices:
+            self.view.connection_status_label.setText("● No device found")
+            self.view.connection_status_label.setObjectName("connection_disconnected")
+            self.view.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
+            logger.error("ADB: No Android device connected")
+            return
+
+        # Use specified device or first available
+        if device_id:
+            matching = [d for d in devices if d["id"] == device_id]
+            if not matching:
+                logger.warn(f"ADB: Device {device_id} not found, using first available")
+                device_id = devices[0]["id"]
+        else:
+            device_id = devices[0]["id"]
+
+        try:
+            client = ADBClient(device_id)
+            # Test connection by listing root
+            client.listdir(root_path)
+
+            # Success — bind to explorer
+            self.view.connection_status_label.setText(
+                f"● Connected to {device_name} (USB)"
+            )
+            self.view.connection_status_label.setObjectName("connection_connected")
+            self.view.connection_status_label.setStyleSheet(
+                "color: #4ec9b0; font-weight: 500;"
+            )
+
+            self.view.remote_explorer.root_path = root_path
+            self.view.remote_explorer.current_path = root_path
+            self.view.remote_explorer.set_sftp(client)
+            self.view.remote_explorer.refresh()
+
+            logger.success(f"Connected: {device_name} (USB)")
+
+        except Exception as e:
+            self.view.connection_status_label.setText("● ADB Error")
+            self.view.connection_status_label.setObjectName("connection_disconnected")
+            self.view.connection_status_label.setStyleSheet("color: #f48771; font-weight: 500;")
+            logger.error(f"ADB connection failed: {e}")
+
+    def _connect_ssh(self) -> None:
+        """Establish SSH/SFTP connection."""
         try:
             if not self.connection_manager.connect():
                 self.view.connection_status_label.setText("● Disconnected")

@@ -1,0 +1,315 @@
+"""
+ADB client that mimics the Paramiko SFTPClient interface.
+
+This allows the FileExplorerWidget to work with Android devices
+connected via USB without any changes to the explorer code.
+
+Requires: `adb` installed (brew install android-platform-tools)
+and USB Debugging enabled on the Android device.
+"""
+
+import os
+import shutil
+import subprocess
+from dataclasses import dataclass
+from stat import S_IFDIR, S_IFREG
+from typing import List, Optional
+
+from src.utils.logging_signal import logger
+
+
+@dataclass
+class ADBStat:
+    """Mimics paramiko's SFTPAttributes."""
+    st_mode: int
+    st_size: int
+
+    @property
+    def filename(self) -> str:
+        return ""
+
+
+class ADBClient:
+    """
+    ADB-based file client that implements the same interface as Paramiko's SFTPClient.
+
+    The FileExplorerWidget calls methods like listdir(), stat(), rename(), etc.
+    This class translates those into `adb shell` commands.
+    """
+
+    def __init__(self, device_id: Optional[str] = None):
+        """
+        Initialize ADB client.
+
+        Args:
+            device_id: Specific device serial (from `adb devices`).
+                      If None, uses the only connected device.
+        """
+        self.device_id = device_id
+        self._adb_prefix = ["adb"]
+        if device_id:
+            self._adb_prefix = ["adb", "-s", device_id]
+
+    def _run(self, args: List[str], timeout: int = 10) -> str:
+        """Run an adb command and return stdout."""
+        cmd = self._adb_prefix + args
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if result.returncode != 0:
+                error = result.stderr.strip()
+                if error:
+                    raise IOError(f"adb error: {error}")
+            return result.stdout
+        except subprocess.TimeoutExpired:
+            raise IOError(f"adb command timed out: {' '.join(cmd)}")
+        except FileNotFoundError:
+            raise IOError(
+                "adb not found. Install with: brew install android-platform-tools"
+            )
+
+    def _shell(self, command: str, timeout: int = 10) -> str:
+        """Run a shell command on the device."""
+        return self._run(["shell", command], timeout=timeout)
+
+    # -------------------------------------------------------------------------
+    # SFTPClient-compatible interface
+    # -------------------------------------------------------------------------
+
+    def listdir(self, path: str) -> List[str]:
+        """List directory contents."""
+        # Use ls -1 for simple listing
+        output = self._shell(f'ls -1 "{path}"')
+        entries = [line.strip() for line in output.splitlines() if line.strip()]
+        return entries
+
+    def listdir_attr(self, path: str) -> List[ADBStat]:
+        """List directory with attributes (name, size, type)."""
+        # Use ls -la for detailed listing
+        output = self._shell(f'ls -la "{path}"')
+        results = []
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) < 7:
+                continue
+            # Skip "total" line
+            if parts[0] == "total":
+                continue
+
+            perms = parts[0]
+            try:
+                size = int(parts[3]) if len(parts) >= 5 else 0
+            except (ValueError, IndexError):
+                size = 0
+
+            # Determine name (last field, may contain spaces)
+            # Format: permissions links owner group size date time name
+            name = " ".join(parts[6:]) if len(parts) > 6 else parts[-1]
+
+            # Remove trailing / or -> symlink targets
+            if " -> " in name:
+                name = name.split(" -> ")[0]
+            name = name.rstrip("/")
+
+            if not name or name in (".", ".."):
+                continue
+
+            is_dir = perms.startswith("d")
+            mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
+
+            stat = ADBStat(st_mode=mode, st_size=size)
+            stat.filename = name
+            results.append(stat)
+
+        return results
+
+    def stat(self, path: str) -> ADBStat:
+        """Get file/directory info."""
+        output = self._shell(f'stat -c "%F %s" "{path}" 2>/dev/null || echo "error"')
+        output = output.strip()
+
+        if "error" in output or not output:
+            # Fallback: try ls -ld
+            output = self._shell(f'ls -ld "{path}"')
+            if output.strip():
+                parts = output.split()
+                is_dir = parts[0].startswith("d") if parts else False
+                try:
+                    size = int(parts[3]) if len(parts) >= 4 else 0
+                except (ValueError, IndexError):
+                    size = 0
+                mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
+                return ADBStat(st_mode=mode, st_size=size)
+            raise IOError(f"Cannot stat: {path}")
+
+        parts = output.split()
+        file_type = parts[0] if parts else ""
+        try:
+            size = int(parts[1]) if len(parts) > 1 else 0
+        except ValueError:
+            size = 0
+
+        is_dir = "directory" in file_type.lower()
+        mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
+        return ADBStat(st_mode=mode, st_size=size)
+
+    def rename(self, old_path: str, new_path: str) -> None:
+        """Rename/move a file or directory."""
+        self._shell(f'mv "{old_path}" "{new_path}"')
+
+    def remove(self, path: str) -> None:
+        """Delete a file."""
+        self._shell(f'rm -f "{path}"')
+
+    def rmdir(self, path: str) -> None:
+        """Delete a directory (recursively)."""
+        self._shell(f'rm -rf "{path}"')
+
+    def mkdir(self, path: str) -> None:
+        """Create a directory."""
+        self._shell(f'mkdir -p "{path}"')
+
+    def put(self, local_path: str, remote_path: str, callback=None) -> None:
+        """
+        Upload a file to the device.
+
+        Args:
+            local_path: Local file path
+            remote_path: Destination path on device
+            callback: Progress callback(transferred, total) — limited with adb
+        """
+        total_size = os.path.getsize(local_path)
+
+        # adb push doesn't support progress callbacks natively
+        # We emit 0% at start and 100% at end
+        if callback:
+            callback(0, total_size)
+
+        result = self._run(
+            ["push", local_path, remote_path],
+            timeout=600,  # 10 min timeout for large files
+        )
+
+        if callback:
+            callback(total_size, total_size)
+
+    def pull(self, remote_path: str, local_path: str, callback=None) -> None:
+        """
+        Download a file from the device.
+
+        Args:
+            remote_path: File path on device
+            local_path: Local destination path
+            callback: Progress callback(transferred, total)
+        """
+        # Get file size first
+        try:
+            stat = self.stat(remote_path)
+            total_size = stat.st_size
+        except Exception:
+            total_size = 0
+
+        if callback:
+            callback(0, total_size)
+
+        self._run(
+            ["pull", remote_path, local_path],
+            timeout=600,
+        )
+
+        if callback:
+            callback(total_size, total_size)
+
+    def get_channel(self):
+        """Compatibility stub — returns self for disk usage."""
+        return self
+
+    def get_transport(self):
+        """Compatibility stub — returns self for disk usage."""
+        return self
+
+    def open_session(self):
+        """Compatibility stub for disk usage command execution."""
+        return ADBSession(self)
+
+    def close(self) -> None:
+        """No-op — ADB doesn't maintain a persistent connection."""
+        pass
+
+
+class ADBSession:
+    """Mimics a paramiko SSH session for executing commands (used by disk usage)."""
+
+    def __init__(self, client: ADBClient):
+        self._client = client
+        self._output = ""
+
+    def exec_command(self, command: str) -> None:
+        """Execute a command on the device."""
+        # Extract the path from df command if present
+        self._output = self._client._shell(command)
+
+    def recv(self, size: int) -> bytes:
+        """Get command output."""
+        return self._output.encode("utf-8")
+
+    def close(self) -> None:
+        pass
+
+
+# -------------------------------------------------------------------------
+# Device discovery
+# -------------------------------------------------------------------------
+
+def get_connected_devices() -> List[dict]:
+    """
+    Get list of connected Android devices.
+
+    Returns:
+        List of dicts with 'id' and 'status' keys.
+        Example: [{"id": "ABCD1234", "status": "device", "model": "Pixel 6"}]
+    """
+    try:
+        result = subprocess.run(
+            ["adb", "devices", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        devices = []
+        for line in result.stdout.splitlines()[1:]:  # Skip header
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == "device":
+                device_id = parts[0]
+                # Try to get model name
+                model = ""
+                for part in parts[2:]:
+                    if part.startswith("model:"):
+                        model = part.split(":", 1)[1]
+                        break
+                devices.append({
+                    "id": device_id,
+                    "status": "device",
+                    "model": model or device_id,
+                })
+        return devices
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+
+
+def is_adb_available() -> bool:
+    """Check if adb is installed and accessible."""
+    try:
+        result = subprocess.run(
+            ["adb", "version"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
