@@ -27,7 +27,7 @@ from src.widgets.file_explorer_widget import FileExplorerWidget
 
 class MainWindow(QWidget):
     """
-    Main window for PiSync — a remote file manager.
+    Main window for Shuttle — a remote file manager.
 
     Features:
     - Clean toolbar with connection controls
@@ -132,7 +132,7 @@ class MainWindow(QWidget):
         """
         QMessageBox.information(
             self,
-            "Welcome to PiSync",
+            "Welcome to Shuttle",
             "Welcome! Let's set up your first server connection.",
             QMessageBox.StandardButton.Ok,
         )
@@ -142,7 +142,7 @@ class MainWindow(QWidget):
             QMessageBox.critical(
                 self,
                 "Setup Required",
-                "At least one server must be configured to use PiSync.",
+                "At least one server must be configured to use Shuttle.",
                 QMessageBox.StandardButton.Ok,
             )
             self.close()
@@ -201,7 +201,7 @@ class MainWindow(QWidget):
                 QMessageBox.critical(
                     self,
                     "Setup Failed",
-                    "Settings are required to run PiSync.",
+                    "Settings are required to run Shuttle.",
                     QMessageBox.StandardButton.Ok,
                 )
                 self.close()

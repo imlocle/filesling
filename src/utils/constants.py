@@ -1,5 +1,5 @@
 # App
-SOFTWARE_NAME = "PiSync"
+SOFTWARE_NAME = "Shuttle"
 CONFIG_JSON = "config.json"
 
 # Connection types

@@ -1,103 +1,118 @@
-# PiSync Architecture
+# Architecture
 
 ## Overview
 
-PiSync is a remote file manager built with Python and PySide6. It connects to any SSH server, lets you browse its filesystem, and transfer files via drag-and-drop from Finder.
+Shuttle is a macOS file manager that sends files to connected devices (SSH servers, Android phones/tablets) through drag-and-drop. Built with Python and PySide6.
 
 ## Project Structure
 
 ```
 src/
-├── application/           Business logic
-│   └── manual_transfer_controller.py   Transfer queue management
-├── components/            UI windows and dialogs
-│   ├── main_window.py                  Main application window
-│   ├── server_selection_dialog.py      Server picker
-│   ├── settings_window.py              Settings editor
-│   └── splash_screen.py                Startup splash
-├── config/                Configuration
-│   └── settings.py                     Pydantic settings model + singleton
-├── controllers/           Orchestration
-│   ├── main_window_controller.py       Routes UI events to services
-│   └── transfer_worker.py              Background SFTP upload worker
-├── models/                Data types
-│   └── errors.py                       Custom exception hierarchy
-├── services/              External I/O
+├── application/                    Business logic
+│   └── manual_transfer_controller.py   Transfer queue (queues, processes, retries)
+├── components/                     UI windows
+│   ├── main_window.py              Main app window (toolbar, explorer, log, queue)
+│   ├── server_selection_dialog.py  Server picker on launch
+│   ├── settings_window.py          Settings editor (connection, behavior, files)
+│   └── splash_screen.py            Startup splash
+├── config/
+│   └── settings.py                 Pydantic config model + singleton
+├── controllers/
+│   ├── main_window_controller.py   Routes UI events → services
+│   └── transfer_worker.py          Background SFTP/ADB upload worker
+├── models/
+│   └── errors.py                   Custom exception hierarchy
+├── services/
+│   ├── adb_client.py               ADB client (mimics SFTPClient interface)
 │   ├── connection_manager_service.py   SSH/SFTP connection lifecycle
-│   └── file_deletion_service.py        Safe file deletion (send2trash)
-├── utils/                 Shared utilities
-│   ├── constants.py                    App name, config filename
-│   ├── helper.py                       Path helpers, size formatting
-│   └── logging_signal.py              Qt signal-based logger + JSON error log
-└── widgets/               Reusable UI components
-    ├── file_explorer_widget.py         Remote file browser with drag-drop
-    └── transfer_queue_widget.py        Visual transfer queue panel
+│   └── file_deletion_service.py    Safe deletion via send2trash
+├── utils/
+│   ├── constants.py                App-wide constants and defaults
+│   ├── helper.py                   Path helpers, size formatting
+│   └── logging_signal.py           Qt signal logger + JSON error log
+└── widgets/
+    ├── connection_form_widget.py   Reusable SSH/ADB connection form
+    ├── file_explorer_widget.py     Remote file browser (tree, drag-drop, search)
+    └── transfer_queue_widget.py    Visual transfer queue panel
 ```
+
+## Connection Backends
+
+The app supports two connection types behind the same explorer UI:
+
+### SSH (Remote Servers)
+
+- Uses Paramiko `SFTPClient`
+- Key-based authentication
+- Separate SFTP sessions for explorer vs transfers (thread-safe)
+
+### ADB (Android Devices via USB)
+
+- Uses `ADBClient` class that mimics `SFTPClient` interface
+- Commands: `adb shell ls`, `adb push`, `adb pull`, `adb shell mv/rm/mkdir`
+- No persistent connection — each command is a subprocess call
+- Requires Developer Mode + USB Debugging on device
 
 ## Data Flow
 
-### Transfer (drag-and-drop)
+### Upload (drag-and-drop)
 
 ```
-User drops file on explorer
-    → FileExplorerWidget.dropEvent()
-    → MainWindow._handle_remote_drop()
-        → Calculates size, adds to TransferQueueWidget
-        → Calls ManualTransferController.transfer_to_pi()
-            → Queues the transfer
-            → Starts processing (if idle)
-                → Opens dedicated SFTP session
-                → Creates TransferWorker on QThread
-                → Worker uploads files, emits progress
-                → On completion: deletes local file (if configured)
-                → Moves to next queued item
+Finder drop → FileExplorerWidget.dropEvent()
+  → MainWindow._handle_remote_drop()
+    → Calculates size, adds to TransferQueueWidget
+    → ManualTransferController.transfer_to_pi()
+      → Queues transfer
+      → Processes sequentially:
+        → Opens dedicated SFTP session (or uses ADB)
+        → TransferWorker runs on QThread
+        → Emits progress percentage
+        → On success: deletes local file (if configured)
+        → Moves to next queued item
 ```
 
-### Connection
+### Directory Browsing
 
 ```
-App launches
-    → Settings loads default_server_id
-    → If default set: load server config, auto-connect
-    → If not: show ServerSelectionDialog
-    → ConnectionManagerService.connect()
-        → SSH connect with retry (3 attempts)
-        → Open SFTP session
-        → Bind to FileExplorerWidget
+Navigate/Refresh → FileExplorerWidget.refresh()
+  → Shows loading spinner
+  → DirectoryLoader runs on QThread
+    → SFTP: sftp.listdir() + sftp.stat()
+    → ADB: adb shell ls -la
+  → Results displayed in tree widget
+  → Disk usage bar updated
 ```
 
-## Threading Model
+## Threading
 
-```
-Main Thread (UI)
-    └── Qt event loop, all UI updates
+| Thread          | Purpose                                       |
+| --------------- | --------------------------------------------- |
+| Main (UI)       | Qt event loop, all widget updates             |
+| DirectoryLoader | Background directory listing (per-navigation) |
+| TransferWorker  | Background file upload (per-transfer)         |
+| SearchWorker    | Background recursive search                   |
 
-Transfer Thread (per-transfer)
-    └── TransferWorker.run() — SFTP upload
-    └── Own SFTP session (separate from explorer)
-
-Directory Loader Thread (per-navigation)
-    └── DirectoryLoader.run() — SFTP listdir + stat
-    └── Uses explorer's SFTP session
-```
-
-Each transfer gets its own SFTP channel via `open_sftp_session()`. The explorer uses the main SFTP client. They don't share state.
+Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer uses the main SFTP client. They don't share state — no locks needed.
 
 ## Configuration
 
-Stored at `~/.PiSync/config.json`. Supports multiple servers with a default for auto-connect.
+- Singleton `Settings` class loads from `~/.Shuttle/config.json`
+- Pydantic `SettingsConfig` model with validation
+- Multi-server support with default server for auto-connect
+- Server configs store connection type, credentials, and base directory
 
-Key fields:
+## Error Handling
 
-- `servers` — dict of server configs (name, ip, user, key, port, remote_base_dir)
-- `default_server_id` — auto-connect on launch
-- `delete_after_transfer` — move local files to trash after upload
-- `file_extensions` — allowed upload extensions
-- `skip_patterns` — files to hide in explorer
+- Custom exception hierarchy in `errors.py`
+- Errors logged to `logs/errors.json` (last 500 entries)
+- Transfer failures don't delete local files
+- Connection failures show server selection dialog
 
 ## Dependencies
 
-- **PySide6** — Qt UI framework
-- **Paramiko** — SSH/SFTP
-- **Pydantic** — Settings validation
-- **send2trash** — Safe file deletion
+| Package    | Purpose             |
+| ---------- | ------------------- |
+| PySide6    | Qt UI framework     |
+| Paramiko   | SSH/SFTP            |
+| Pydantic   | Settings validation |
+| send2trash | Safe file deletion  |

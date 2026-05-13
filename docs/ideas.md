@@ -1,4 +1,4 @@
-# PiSync — Feature Ideas & Improvements
+# Shuttle — Feature Ideas & Improvements
 
 > A living document of ideas for advancing the application.
 
@@ -35,14 +35,42 @@
 - [x] Background thread search with loading spinner
 - [x] Enter to search, Escape to clear
 
-### Code Cleanup (Done)
+### Android Device Support (USB via ADB)
+
+- [x] ADB transport backend — `adb push/pull/shell`
+- [x] Auto-detect connected devices via `adb devices`
+- [x] Browse device filesystem via `adb shell ls`
+- [x] Transfer files via `adb push` (upload)
+- [x] Same explorer UI, just a different connection backend
+- [x] Works with phones, tablets, Quest VR headsets
+- [x] Add Server UI supports USB device type selection
+- [x] Test Connection works for both SSH and ADB
+- [x] Device picker with refresh button
+
+### UI/UX Improvements
+
+- [x] Inline rename (slow-click to edit)
+- [x] Multi-select delete
+- [x] Folder picker dialog for Move To
+- [x] Auto-connect to default server on launch
+- [x] "Don't ask again" on exit confirmation
+- [x] Tightened button sizes, tooltips, toolbar layout
+- [x] Modern dropdown styling with hover highlights
+- [x] Input hover/focus border highlights
+- [x] Loading spinner for remote directory browsing
+- [x] Sortable columns (name, size)
+
+### Code Cleanup
 
 - [x] Removed all auto-sync/monitoring code
 - [x] Removed watchdog, pillow, pydantic-settings dependencies
 - [x] Removed 16 unused error classes
-- [x] Removed legacy settings fields (pi_user → username, pi_ip → host)
+- [x] Renamed pi_user → username, pi_ip → host (no legacy fields)
 - [x] Removed path_mapper, monitor_thread, file_monitor_repository
 - [x] Cleaned up log format (concise, no duplicates)
+- [x] Extracted ConnectionFormWidget from settings_window
+- [x] Centralized hardcoded strings into constants.py
+- [x] Removed local watch directory / Transfers folder creation
 
 ---
 
@@ -105,46 +133,17 @@
 
 ## 🔮 Future Directions
 
-### Rename to Shuttle
-
-- [ ] Rename app from PiSync to Shuttle
-- [ ] Update SOFTWARE_NAME constant
-- [ ] New app icon
-- [ ] Update config directory (~/.PiSync → ~/.shuttle)
-
 ### Multi-Server Dashboard
 
 - [ ] Show all servers at a glance with connection status
 - [ ] Quick-switch between servers without dialog
 
-### Android Device Support (USB)
-
-Replace Android File Transfer with something that actually works on modern macOS.
-
-**Option A: ADB (Developer Mode required)**
-
-- [ ] ADB transport backend — `adb push/pull/shell`
-- [ ] Auto-detect connected devices via `adb devices`
-- [ ] Browse device filesystem via `adb shell ls`
-- [ ] Transfer files via `adb push` (upload) / `adb pull` (download)
-- [ ] Same explorer UI, just a different connection backend
-- [ ] Works with phones, tablets, Quest VR headsets
-- [ ] More reliable and faster than MTP
-- [ ] Tradeoff: user must enable Developer Mode + USB Debugging once
-
-**Option B: MTP (Plug-and-play, no setup)**
+### MTP Support (Android — No Setup)
 
 - [ ] MTP transport backend via libmtp / pymtp
 - [ ] No Developer Mode needed — just plug in USB
 - [ ] True Android File Transfer replacement
-- [ ] Challenge: MTP protocol is flaky on macOS (disconnects, slow)
-- [ ] Would need robust retry/error handling
-
-**Architecture:**
-
-- [ ] Abstract the connection layer (SSH, ADB, MTP) behind a common interface
-- [ ] Explorer widget doesn't care what backend is used
-- [ ] Server selection dialog shows device type (SSH server vs USB device)
+- [ ] Challenge: MTP protocol is flaky on macOS
 
 ### Plugin System
 
