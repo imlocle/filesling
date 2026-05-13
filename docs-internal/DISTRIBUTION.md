@@ -1,270 +1,133 @@
-# PiSync Packaging & Distribution Guide
+# Shuttle — Distribution & Release Guide
 
 ## Overview
 
-This guide walks through building and distributing PiSync as both a PyPI package and standalone executable.
+Shuttle is distributed via GitHub Releases. When you push a version tag, the CI/CD workflow automatically builds the package and creates a GitHub Release.
 
-## Files Created
+## Release Workflow
 
-- **pyproject.toml** - Modern Python packaging configuration with metadata
-- **MANIFEST.in** - Specifies non-Python files to include in distributions
-- **Makefile** - Convenient build commands
-- **scripts/build.sh** - Build wheel and source distributions
-- **scripts/build_exe.sh** - Build standalone executable with PyInstaller
-- **scripts/setup_dev.sh** - Setup development environment
-- **.github/workflows/publish.yml** - CI/CD pipeline for automated publishing
+### How It Works
 
-## Quick Start
+1. You bump the version in `pyproject.toml`
+2. You merge `dev` → `main`
+3. You push a `v*` tag
+4. GitHub Actions builds the distribution and creates a release
 
-### 1. Setup Development Environment
+### Step-by-Step Release Commands
 
 ```bash
-# Make scripts executable
-chmod +x scripts/*.sh
+# 1. Make sure dev is up to date and committed
+git checkout dev
+git status  # should be clean
 
-# Setup development environment
-./scripts/setup_dev.sh
+# 2. Bump version in pyproject.toml
+# Edit: version = "X.Y.Z"
 
-# Or manually
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev,test,build]"
+# 3. Commit the version bump
+git add pyproject.toml
+git commit -m "bump version to X.Y.Z"
+git push origin dev
+
+# 4. Merge into main
+git checkout main
+git merge dev
+git push origin main
+
+# 5. Tag the release
+git tag vX.Y.Z
+git push origin vX.Y.Z
+
+# 6. Go back to dev
+git checkout dev
 ```
 
-### 2. Build Distributions
+### What the CI/CD Does
 
-#### Option A: Using Make
+The `.github/workflows/publish.yml` workflow triggers on `v*` tags and:
 
-```bash
-# Build both wheel and source distributions
-make build
+1. Checks out the code
+2. Builds a source distribution (`.tar.gz`) and wheel (`.whl`)
+3. Creates a GitHub Release with auto-generated release notes
+4. Attaches the build artifacts to the release
 
-# Build and publish to PyPI
-make publish
+No PyPI publishing — Shuttle is a desktop app, not a library.
 
-# Build and publish to TestPyPI (for testing)
-make publish-test
-```
+## Version Numbering
 
-#### Option B: Using Scripts
+Use semantic versioning: `MAJOR.MINOR.PATCH`
 
-```bash
-# Build wheel and source distributions
-./scripts/build.sh
+| Bump  | When                              | Example       |
+| ----- | --------------------------------- | ------------- |
+| PATCH | Bug fixes, small tweaks           | 1.1.0 → 1.1.1 |
+| MINOR | New features (non-breaking)       | 1.1.0 → 1.2.0 |
+| MAJOR | Breaking changes, major redesigns | 1.2.0 → 2.0.0 |
 
-# Build standalone executable
-./scripts/build_exe.sh
-```
+### Examples
 
-#### Option C: Manual Build
+- Fixed a crash when disconnecting → **PATCH**
+- Added Android USB support → **MINOR**
+- Renamed app from PiSync to Shuttle, new config format → **MAJOR**
+
+## Building Locally
+
+### Source Distribution + Wheel
 
 ```bash
 python -m build
-twine check dist/*
+# Output: dist/shuttle-X.Y.Z.tar.gz and dist/shuttle-X.Y.Z-py3-none-any.whl
 ```
 
-## Distribution Types
-
-### 1. Source Distribution (.tar.gz)
-
-- Contains all source code
-- Users must have Python installed
-- Build: `python -m build --sdist`
-
-### 2. Wheel (.whl)
-
-- Binary distribution, faster to install
-- Ready to use without compilation
-- Build: `python -m build --wheel`
-
-### 3. Standalone Executable (.exe/.app/.bin)
-
-- No dependencies required
-- Self-contained package
-- Build: `./scripts/build_exe.sh`
-
-## Testing Distributions
-
-Before publishing, test locally:
+### Standalone Executable (PyInstaller)
 
 ```bash
-# Create test environment
-python3 -m venv test_env
-source test_env/bin/activate
-
-# Install from local wheel
-pip install dist/pisync-*.whl
-
-# Run the application
-pisync
-```
-
-## Publishing to PyPI
-
-### Setup OneTime
-
-1. Create account at https://pypi.org
-2. Create ~/.pypirc:
-
-```
-[distutils]
-index-servers =
-    pypi
-    testpypi
-
-[pypi]
-username = __token__
-password = pypi_...
-
-[testpypi]
-repository = https://test.pypi.org/legacy/
-username = __token__
-password = pypi_...
-```
-
-3. Or set environment variables:
-
-```bash
-export TWINE_USERNAME=__token__
-export TWINE_PASSWORD=pypi_xxxx
-```
-
-### Publishing Steps
-
-1. **Update version** in pyproject.toml
-2. **Build distributions**:
-   ```bash
-   make build
-   ```
-3. **Test on TestPyPI** (optional but recommended):
-   ```bash
-   make publish-test
-   ```
-4. **Publish to PyPI**:
-   ```bash
-   make publish
-   ```
-5. **Create git tag**:
-   ```bash
-   git tag -a v1.0.0 -m "Release version 1.0.0"
-   git push origin v1.0.0
-   ```
-
-### Automated Publishing with GitHub Actions
-
-The `.github/workflows/publish.yml` workflow automatically:
-
-- Runs on version tags (v*.*.\*)
-- Tests on multiple Python versions (3.9-3.13)
-- Runs linting and type checks
-- Builds distributions
-- Publishes to PyPI
-- Creates GitHub release with distribution files
-
-**Setup required:**
-
-1. Add PyPI API token as GitHub secret: `PYPI_API_TOKEN`
-2. Update email/author in pyproject.toml
-3. Push tag: `git push origin v1.0.0`
-
-## Verifying Distributions
-
-```bash
-# Check distribution integrity
-twine check dist/*
-
-# List contents
-# For wheel:
-unzip -l dist/pisync-*.whl
-
-# For source:
-tar -tzf dist/pisync-*.tar.gz
-```
-
-## Configuration Update Checklist
-
-Before each release:
-
-- [ ] Update version in `pyproject.toml` and `main.py`
-- [ ] Update `README.md` with new features
-- [ ] Update `CHANGELOG.md` or add release notes
-- [ ] Run all tests: `make test`
-- [ ] Run linting: `make lint`
-- [ ] Build and test locally: `make build && pip install dist/pisync-*.whl`
-- [ ] Create git tag and push
-- [ ] Verify PyPI release at https://pypi.org/project/pisync/
-
-## Troubleshooting
-
-### "ModuleNotFoundError" when installing
-
-- Ensure `include-package-data = true` in pyproject.toml
-- Check MANIFEST.in includes all necessary files
-- Verify file paths in pyproject.toml match your structure
-
-### PyPI upload fails with "Invalid distribution"
-
-```bash
-# Check distribution validity
-twine check dist/*
-
-# Common issues: missing files, version conflicts, encoding problems
-```
-
-### GitHub Actions workflow not running
-
-- Verify PyPI API token is set as secret
-- Check tag format: should be `v*.*.*` (e.g., `v1.0.0`)
-- Ensure workflow file is in default branch
-
-## Version Bumping
-
-Use semantic versioning: MAJOR.MINOR.PATCH
-
-```bash
-# Patch release (bug fix)
-# Update version: 1.0.0 → 1.0.1
-
-# Minor release (new feature)
-# Update version: 1.0.0 → 1.1.0
-
-# Major release (breaking change)
-# Update version: 1.0.0 → 2.0.0
+./scripts/build_exe.sh
+# Output: standalone binary in dist/
 ```
 
 ## Installation Methods
 
-Users can install PiSync via:
-
 ```bash
-# From PyPI (recommended)
-pip install pisync
-
 # From wheel file
-pip install pisync-1.0.0-py3-none-any.whl
+pip install shuttle-1.1.0-py3-none-any.whl
 
-# From source
-pip install pisync-1.0.0.tar.gz
+# From source (development mode)
+pip install -e .
 
-# From source (development)
-pip install -e git+https://github.com/yourusername/pisync.git
-
-# Standalone executable
-# Download from GitHub releases or run: ./pisync
+# Run directly
+python main.py
 ```
 
-## Next Steps
+## Fixing a Failed Release
 
-1. Update author info in `pyproject.toml`
-2. Create GitHub repository if not already done
-3. Add PyPI authentication tokens to GitHub
-4. Test build locally with `make build`
-5. Create first release and push to PyPI
+If the GitHub Actions build fails after you push a tag:
 
-## References
+```bash
+# 1. Fix the issue on dev
+git checkout dev
+# ... make fixes, commit, push ...
 
-- [Python Packaging Guide](https://packaging.python.org/)
-- [PyPI Publishing](https://packaging.python.org/tutorials/packaging-projects/)
-- [setuptools Documentation](https://setuptools.pypa.io/)
-- [Build Tool Documentation](https://python-build.readthedocs.io/)
-- [Twine Documentation](https://twine.readthedocs.io/)
+# 2. Delete the broken tag
+git tag -d vX.Y.Z
+git push origin --delete vX.Y.Z
+
+# 3. Merge fix to main
+git checkout main
+git merge dev
+git push origin main
+
+# 4. Re-tag and push
+git tag vX.Y.Z
+git push origin vX.Y.Z
+
+# 5. Back to dev
+git checkout dev
+```
+
+## Pre-Release Checklist
+
+- [ ] All changes committed and pushed to dev
+- [ ] Version bumped in `pyproject.toml`
+- [ ] App runs locally without errors (`python main.py`)
+- [ ] README updated if there are user-facing changes
+- [ ] Merged dev → main
+- [ ] Tag pushed

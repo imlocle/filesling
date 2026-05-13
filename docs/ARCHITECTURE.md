@@ -29,7 +29,7 @@ src/
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
 │   ├── helper.py                   Path helpers, size formatting
-│   └── logging_signal.py           Qt signal logger + JSON error log
+│   └── logging_signal.py          Qt signal logger + JSON error log
 └── widgets/
     ├── connection_form_widget.py   Reusable SSH/ADB connection form
     ├── file_explorer_widget.py     Remote file browser (tree, drag-drop, search)
