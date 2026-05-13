@@ -19,3 +19,18 @@ PLACEHOLDER_USERNAME = "pi"
 PLACEHOLDER_SSH_KEY = "~/.ssh/id_rsa"
 PLACEHOLDER_BASE_DIR = "/mnt/external or /sdcard"
 PLACEHOLDER_NO_DEVICES = "No devices — plug in via USB"
+
+# Dialog titles
+DIALOG_MOVE_FAILED = "Move Failed"
+DIALOG_DELETION_FAILED = "Deletion Failed"
+DIALOG_RENAME_FAILED = "Rename Failed"
+DIALOG_CREATION_FAILED = "Creation Failed"
+DIALOG_CONNECTION_LOST = "Connection Lost"
+DIALOG_CONNECTION_FAILED = "Connection Failed"
+DIALOG_CONNECTION_ERROR = "Connection Error"
+DIALOG_FILES_ALREADY_EXIST = "Files Already Exist"
+
+# Duplicate detection actions
+DUP_ACTION_OVERWRITE = "overwrite"
+DUP_ACTION_SKIP = "skip"
+DUP_ACTION_CANCEL = "cancel"

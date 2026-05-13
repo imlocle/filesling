@@ -60,6 +60,8 @@ The app supports two connection types behind the same explorer UI:
 ```
 Finder drop → FileExplorerWidget.dropEvent()
   → MainWindow._handle_remote_drop()
+    → Checks for duplicates (sftp.stat per file)
+    → If duplicates found: shows dialog (overwrite / skip / cancel)
     → Calculates size, adds to TransferQueueWidget
     → ManualTransferController.transfer_to_pi()
       → Queues transfer

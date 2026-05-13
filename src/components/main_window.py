@@ -20,7 +20,13 @@ from src.components.settings_window import SettingsWindow
 from src.config.settings import Settings
 from src.controllers.main_window_controller import MainWindowController
 from src.services.connection_manager_service import ConnectionManagerService
-from src.utils.constants import SOFTWARE_NAME
+from src.utils.constants import (
+    DIALOG_FILES_ALREADY_EXIST,
+    DUP_ACTION_CANCEL,
+    DUP_ACTION_OVERWRITE,
+    DUP_ACTION_SKIP,
+    SOFTWARE_NAME,
+)
 from src.utils.logging_signal import logger
 from src.widgets.file_explorer_widget import FileExplorerWidget
 
@@ -340,7 +346,10 @@ class MainWindow(QWidget):
             self.remote_explorer.navigate(items[0])
 
     def _navigate_or_search(self) -> None:
-        """Enter key: if search bar is focused, run search. Otherwise navigate."""
+        """Enter key: if renaming, commit it. If search bar focused, search. Otherwise navigate."""
+        if self.remote_explorer._rename_in_progress:
+            self.remote_explorer._commit_rename()
+            return
         if self.remote_explorer._search_bar.hasFocus():
             self.remote_explorer._execute_search()
         else:
@@ -574,8 +583,36 @@ class MainWindow(QWidget):
         """
         Called when user drags files/folders from Finder onto the remote explorer.
 
-        Adds to visual queue and delegates to ManualTransferController.
+        Checks for duplicates on the remote, prompts user, then adds to queue.
         """
+        # --- Duplicate detection ---
+        duplicates = []
+        sftp = self.remote_explorer.sftp
+        if sftp:
+            for p in local_paths:
+                name = os.path.basename(p)
+                remote_path = os.path.join(remote_dir, name).replace("\\", "/")
+                try:
+                    sftp.stat(remote_path)
+                    duplicates.append(name)
+                except (IOError, OSError):
+                    pass  # File doesn't exist — no conflict
+
+        if duplicates:
+            action = self._show_duplicate_dialog(duplicates)
+            if action == DUP_ACTION_SKIP:
+                # Remove duplicates from the transfer list
+                local_paths = [
+                    p for p in local_paths if os.path.basename(p) not in duplicates
+                ]
+                if not local_paths:
+                    logger.info("Transfer: All files skipped (already exist)")
+                    return
+            elif action == DUP_ACTION_CANCEL:
+                logger.info("Transfer: Cancelled by user")
+                return
+            # action == DUP_ACTION_OVERWRITE → proceed with all files
+
         # Calculate total size for the queue widget
         total_bytes = 0
         for p in local_paths:
@@ -606,3 +643,40 @@ class MainWindow(QWidget):
         self.controller.manual_transfer.transfer_to_pi(
             local_paths=local_paths, remote_destination=remote_dir
         )
+
+    def _show_duplicate_dialog(self, duplicates: list[str]) -> str:
+        """
+        Show a dialog when files already exist on the remote.
+
+        Returns: DUP_ACTION_OVERWRITE, DUP_ACTION_SKIP, or DUP_ACTION_CANCEL
+        """
+        count = len(duplicates)
+        msg = QMessageBox(self)
+        msg.setWindowTitle(DIALOG_FILES_ALREADY_EXIST)
+
+        if count == 1:
+            msg.setText(f"'{duplicates[0]}' already exists on the remote.")
+        else:
+            file_list = "\n".join(f"  • {name}" for name in duplicates[:10])
+            if count > 10:
+                file_list += f"\n  ... and {count - 10} more"
+            msg.setText(f"{count} files already exist on the remote:\n\n{file_list}")
+
+        msg.setInformativeText("What would you like to do?")
+
+        overwrite_btn = msg.addButton(
+            "Overwrite", QMessageBox.ButtonRole.DestructiveRole
+        )
+        skip_btn = msg.addButton("Skip Duplicates", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+
+        msg.setDefaultButton(skip_btn)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if clicked == overwrite_btn:
+            return DUP_ACTION_OVERWRITE
+        elif clicked == skip_btn:
+            return DUP_ACTION_SKIP
+        else:
+            return DUP_ACTION_CANCEL

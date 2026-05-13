@@ -72,6 +72,12 @@
 - [x] Centralized hardcoded strings into constants.py
 - [x] Removed local watch directory / Transfers folder creation
 
+### Duplicate Detection
+
+- [x] Warn before uploading a file that already exists on remote
+- [x] Options: skip, overwrite, cancel
+- [x] Compare by name (stat check on remote)
+
 ---
 
 ## 🚀 Next Up
@@ -93,12 +99,6 @@
 - [ ] Quick-access buttons for frequently used remote directories
 - [ ] Add/remove bookmarks from context menu
 - [ ] Show as sidebar or dropdown above explorer
-
-### Duplicate Detection
-
-- [ ] Warn before uploading a file that already exists on remote
-- [ ] Options: skip, overwrite, rename
-- [ ] Compare by name + size for quick detection
 
 ---
 

@@ -23,6 +23,13 @@ from src.utils.constants import (
     CONN_TYPE_KEY,
     CONN_TYPE_SSH,
     DEFAULT_ADB_BASE_DIR,
+    DIALOG_CONNECTION_ERROR,
+    DIALOG_CONNECTION_FAILED,
+    DIALOG_CONNECTION_LOST,
+    DIALOG_CREATION_FAILED,
+    DIALOG_DELETION_FAILED,
+    DIALOG_MOVE_FAILED,
+    DIALOG_RENAME_FAILED,
 )
 from src.utils.logging_signal import logger
 
@@ -273,7 +280,7 @@ class MainWindowController:
             )
             QMessageBox.warning(
                 self.view,
-                "Connection Failed",
+                DIALOG_CONNECTION_FAILED,
                 f"{e.message}\n\n{e.details if e.details else ''}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -287,7 +294,7 @@ class MainWindowController:
             logger.error(f"Unexpected connection error: {e}")
             QMessageBox.critical(
                 self.view,
-                "Connection Error",
+                DIALOG_CONNECTION_ERROR,
                 f"An unexpected error occurred:\n{str(e)}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -410,7 +417,7 @@ class MainWindowController:
             logger.error(f"Delete failed: Connection lost: {e}")
             QMessageBox.warning(
                 self.view,
-                "Connection Lost",
+                DIALOG_CONNECTION_LOST,
                 f"Connection was lost during deletion.\n\n{e.details if e.details else ''}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -420,7 +427,7 @@ class MainWindowController:
             logger.error(f"Delete failed: {e}")
             QMessageBox.critical(
                 self.view,
-                "Deletion Failed",
+                DIALOG_DELETION_FAILED,
                 f"{e.message}\n\nPath: {e.path}\n\n{e.details if e.details else ''}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -428,7 +435,7 @@ class MainWindowController:
             logger.error(f"Delete failed: {e}")
             QMessageBox.critical(
                 self.view,
-                "Deletion Failed",
+                DIALOG_DELETION_FAILED,
                 f"An unexpected error occurred:\n{str(e)}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -567,7 +574,7 @@ class MainWindowController:
             logger.error(f"Rename failed: {e}")
             QMessageBox.critical(
                 self.view,
-                "Rename Failed",
+                DIALOG_RENAME_FAILED,
                 f"Failed to rename item:\n{str(e)}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -606,7 +613,7 @@ class MainWindowController:
             logger.error(f"Failed to create folder: {e}")
             QMessageBox.critical(
                 self.view,
-                "Creation Failed",
+                DIALOG_CREATION_FAILED,
                 f"Failed to create folder:\n{str(e)}",
                 QMessageBox.StandardButton.Ok,
             )
@@ -629,7 +636,7 @@ class MainWindowController:
             logger.error("Cannot move between local and remote filesystems")
             QMessageBox.critical(
                 self.view,
-                "Move Failed",
+                DIALOG_MOVE_FAILED,
                 "Cannot move between local and remote filesystems.",
                 QMessageBox.StandardButton.Ok,
             )
@@ -640,7 +647,7 @@ class MainWindowController:
             logger.error("Cannot move item into itself")
             QMessageBox.critical(
                 self.view,
-                "Move Failed",
+                DIALOG_MOVE_FAILED,
                 "Cannot move an item into itself or its subdirectories.",
                 QMessageBox.StandardButton.Ok,
             )
@@ -677,7 +684,7 @@ class MainWindowController:
             logger.warn(f"Destination already exists: {dest_path}")
             QMessageBox.warning(
                 self.view,
-                "Move Failed",
+                DIALOG_MOVE_FAILED,
                 "An item with that name already exists at the destination.",
                 QMessageBox.StandardButton.Ok,
             )
@@ -685,7 +692,7 @@ class MainWindowController:
             logger.error(f"Move failed: {e}")
             QMessageBox.critical(
                 self.view,
-                "Move Failed",
+                DIALOG_MOVE_FAILED,
                 f"Failed to move item:\n{str(e)}",
                 QMessageBox.StandardButton.Ok,
             )
