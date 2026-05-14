@@ -5,42 +5,33 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( dirname "$SCRIPT_DIR" )"
-DIST_DIR="$PROJECT_ROOT/dist/standalone"
 
 echo "==================================="
-echo "PiSync PyInstaller Build"
+echo "Shuttle — PyInstaller Build"
 echo "==================================="
 echo ""
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
 # Check if PyInstaller is installed
-echo -e "${YELLOW}Checking for PyInstaller...${NC}"
-if ! pip show pyinstaller > /dev/null; then
+if ! pip show pyinstaller > /dev/null 2>&1; then
     echo "Installing PyInstaller..."
     pip install pyinstaller
 fi
 
 # Build executable
-echo -e "${YELLOW}Building standalone executable...${NC}"
+echo "Building standalone executable..."
 cd "$PROJECT_ROOT"
 
 pyinstaller \
-    --name=pisync \
+    --name=Shuttle \
     --onefile \
     --windowed \
-    --icon=assets/icons/pisync_logo.png \
+    --icon=assets/icons/shuttle_logo.png \
     --add-data="assets:assets" \
-    --add-data="docs:docs" \
     --hidden-import=paramiko \
     --hidden-import=pydantic \
-    --hidden-import=watchdog \
     --hidden-import=PySide6 \
     main.py
 
 echo ""
-echo -e "${GREEN}Build complete!${NC}"
-echo "Executable location: $PROJECT_ROOT/dist/pisync"
+echo "Build complete!"
+echo "Executable: $PROJECT_ROOT/dist/Shuttle"
