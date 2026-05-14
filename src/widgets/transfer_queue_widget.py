@@ -19,6 +19,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.utils.constants import (
+    STATUS_DOWNLOADING,
+    STATUS_FAILED,
+    STATUS_QUEUED,
+    STATUS_UPLOADING,
+)
+
 
 class TransferStatus(Enum):
     PENDING = "pending"
@@ -159,7 +166,7 @@ class TransferItemWidget(QFrame):
         item = self.item
 
         if item.status == TransferStatus.PENDING:
-            self.status_label.setText("⏳ Queued")
+            self.status_label.setText(STATUS_QUEUED)
             self.status_label.setStyleSheet("color: #858585; font-size: 11px;")
             self.progress_bar.setVisible(False)
             self.detail_label.setVisible(False)
@@ -167,7 +174,11 @@ class TransferItemWidget(QFrame):
             self.cancel_btn.setVisible(True)
 
         elif item.status == TransferStatus.IN_PROGRESS:
-            self.status_label.setText("⬆️ Uploading")
+            is_download = item.display_name.startswith("⬇")
+            if is_download:
+                self.status_label.setText(STATUS_DOWNLOADING)
+            else:
+                self.status_label.setText(STATUS_UPLOADING)
             self.status_label.setStyleSheet("color: #0078d4; font-size: 11px;")
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(item.progress_percent)
@@ -206,7 +217,7 @@ class TransferItemWidget(QFrame):
                 self.detail_label.setText("")
 
         elif item.status == TransferStatus.FAILED:
-            self.status_label.setText("❌ Failed")
+            self.status_label.setText(STATUS_FAILED)
             self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
             self.progress_bar.setVisible(False)
             self.detail_label.setVisible(True)
@@ -312,12 +323,17 @@ class TransferQueueWidget(QWidget):
         return index
 
     def set_in_progress(self, index: int) -> None:
-        """Mark a transfer as in-progress."""
+        """Mark a transfer as in-progress and move it to the top of the list."""
         if 0 <= index < len(self._items):
             self._items[index].status = TransferStatus.IN_PROGRESS
             self._items[index].start_time = time.time()
             self._item_widgets[index].update_display()
             self._update_timer.start()
+
+            # Move widget to top of layout
+            widget = self._item_widgets[index]
+            self.items_layout.removeWidget(widget)
+            self.items_layout.insertWidget(0, widget)
 
     def update_progress(self, index: int, transferred: int, total: int) -> None:
         """Update transfer progress."""

@@ -19,6 +19,7 @@ src/
 │   └── settings.py                 Pydantic config model + singleton
 ├── controllers/
 │   ├── main_window_controller.py   Routes UI events → services
+│   ├── download_worker.py          Background SFTP/ADB download worker
 │   └── transfer_worker.py          Background SFTP/ADB upload worker
 ├── models/
 │   └── errors.py                   Custom exception hierarchy
@@ -85,6 +86,20 @@ Navigate/Refresh → FileExplorerWidget.refresh()
   → Disk usage bar updated
 ```
 
+### Download (right-click)
+
+```
+Right-click → "⬇️ Download"
+  → MainWindowController.download_item()
+    → Checks if file exists locally (duplicate detection)
+    → If exists: asks overwrite or skip
+    → Opens dedicated SFTP session
+    → DownloadWorker runs on QThread
+      → sftp.get() or adb pull
+      → Emits progress percentage
+      → Saves to configured download directory
+```
+
 ## Threading
 
 | Thread          | Purpose                                       |
@@ -92,6 +107,7 @@ Navigate/Refresh → FileExplorerWidget.refresh()
 | Main (UI)       | Qt event loop, all widget updates             |
 | DirectoryLoader | Background directory listing (per-navigation) |
 | TransferWorker  | Background file upload (per-transfer)         |
+| DownloadWorker  | Background file download (per-download)       |
 | SearchWorker    | Background recursive search                   |
 
 Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer uses the main SFTP client. They don't share state — no locks needed.

@@ -43,6 +43,7 @@ class SettingsConfig(BaseModel):
 
     # Transfer Behavior
     delete_after_transfer: bool = True
+    download_directory: str = os.path.expanduser("~/Downloads")
     file_extensions: set[str] = Field(
         default_factory=lambda: {
             ".mp4",
@@ -198,6 +199,10 @@ class Settings:
         return self.config.delete_after_transfer
 
     @property
+    def download_directory(self):
+        return self.config.download_directory
+
+    @property
     def file_extensions(self):
         return self.config.file_extensions
 
@@ -313,6 +318,7 @@ class Settings:
             "ssh_port": self.config.ssh_port,
             "remote_base_dir": self.config.remote_base_dir,
             "delete_after_transfer": self.config.delete_after_transfer,
+            "download_directory": self.config.download_directory,
             "file_extensions": list(self.config.file_extensions),
             "skip_patterns": list(self.config.skip_patterns),
             "skip_exit_confirm": self.config.skip_exit_confirm,

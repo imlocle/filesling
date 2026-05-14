@@ -2,6 +2,7 @@
 Settings window with tabbed interface.
 """
 
+import os
 import uuid
 from datetime import datetime
 
@@ -51,7 +52,7 @@ class SettingsWindow(QDialog):
     ):
         super().__init__()
         self.setWindowTitle(f"{SOFTWARE_NAME} - Settings")
-        self.setMinimumSize(500, 500)
+        self.setMinimumSize(500, 450)
 
         self.settings = settings
         self.server_mode = server_mode
@@ -68,40 +69,16 @@ class SettingsWindow(QDialog):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        self._setup_header(main_layout)
-
         # Tabs
         self.tab_widget = QTabWidget()
         self.tab_widget.setDocumentMode(True)
 
         self._setup_connection_tab()
         if not server_mode:
-            self._setup_behavior_tab()
             self._setup_files_tab()
 
         main_layout.addWidget(self.tab_widget, stretch=1)
         self._setup_footer(main_layout)
-
-    # ------------------------------------------------------------------
-    # Header
-    # ------------------------------------------------------------------
-    def _setup_header(self, layout: QVBoxLayout) -> None:
-        header = QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background-color: #252526;
-                border-bottom: 1px solid #3e3e42;
-                padding: 12px 16px;
-            }
-        """)
-        header_layout = QVBoxLayout(header)
-        header_layout.setSpacing(4)
-
-        title = QLabel("Add Server" if self.server_mode else "Settings")
-        title.setStyleSheet("font-size: 16px; font-weight: 600; color: #ffffff;")
-        header_layout.addWidget(title)
-
-        layout.addWidget(header)
 
     # ------------------------------------------------------------------
     # Connection Tab
@@ -139,14 +116,16 @@ class SettingsWindow(QDialog):
         self.tab_widget.addTab(tab, "🔌 Connection")
 
     # ------------------------------------------------------------------
-    # Behavior Tab
     # ------------------------------------------------------------------
-    def _setup_behavior_tab(self) -> None:
+    # Files & Behavior Tab
+    # ------------------------------------------------------------------
+    def _setup_files_tab(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # Transfer behavior
         layout.addWidget(QLabel("Transfer Behavior"))
 
         self.delete_after_transfer_checkbox = QCheckBox("Move to trash after transfer")
@@ -162,18 +141,21 @@ class SettingsWindow(QDialog):
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        layout.addStretch()
-        self.tab_widget.addTab(tab, "⚙️ Behavior")
+        # Download directory
+        layout.addWidget(QLabel("Download Directory"))
+        download_row = QHBoxLayout()
+        download_row.setSpacing(8)
+        self.download_dir_input = QLineEdit(self.settings.download_directory)
+        self.download_dir_input.setPlaceholderText("~/Downloads")
+        download_row.addWidget(self.download_dir_input)
 
-    # ------------------------------------------------------------------
-    # Files Tab
-    # ------------------------------------------------------------------
-    def _setup_files_tab(self) -> None:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        browse_btn = QPushButton("Browse")
+        browse_btn.setMaximumWidth(80)
+        browse_btn.clicked.connect(self._browse_download_dir)
+        download_row.addWidget(browse_btn)
+        layout.addLayout(download_row)
 
+        # File extensions
         layout.addWidget(QLabel("File Extensions to Transfer"))
         self.file_extensions_input = QTextEdit(
             ", ".join(sorted(self.settings.file_extensions))
@@ -201,6 +183,17 @@ class SettingsWindow(QDialog):
         layout.addStretch()
         self.tab_widget.addTab(tab, "📄 Files")
 
+    def _browse_download_dir(self) -> None:
+        """Open folder picker for download directory."""
+        from PySide6.QtWidgets import QFileDialog
+
+        current = self.download_dir_input.text() or os.path.expanduser("~/Downloads")
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Download Folder", current
+        )
+        if folder:
+            self.download_dir_input.setText(folder)
+
     # ------------------------------------------------------------------
     # Footer
     # ------------------------------------------------------------------
@@ -208,13 +201,14 @@ class SettingsWindow(QDialog):
         footer = QFrame()
         footer.setStyleSheet("""
             QFrame {
-                background-color: #252526;
-                border-top: 1px solid #3e3e42;
-                padding: 12px 16px;
+                background-color: transparent;
+                border: none;
+                padding: 8px 16px;
             }
         """)
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
         footer_layout.addStretch()
 
         cancel_btn = QPushButton("Cancel")
@@ -300,6 +294,8 @@ class SettingsWindow(QDialog):
                     "remote_base_dir", DEFAULT_REMOTE_BASE_DIR
                 ),
                 "delete_after_transfer": self.delete_after_transfer_checkbox.isChecked(),
+                "download_directory": self.download_dir_input.text().strip()
+                or os.path.expanduser("~/Downloads"),
                 "file_extensions": [
                     ext.strip()
                     for ext in self.file_extensions_input.toPlainText().split(",")

@@ -1,5 +1,5 @@
 /* ============================================================================
-   PiSync Modern Theme - Updated 2026
+   Shuttle Modern Theme
    A vibrant, modern dark theme with enhanced visual hierarchy and
    contemporary design patterns (cyan/emerald color scheme, rounded edges,
    subtle shadows, better spacing)
@@ -190,8 +190,8 @@ QComboBox::down-arrow {
 
 QComboBox QAbstractItemView {
     background-color: #1e293b;
-    border: none;
-    border-radius: 0px;
+    border: 1px solid #334155;
+    border-radius: 8px;
     color: #f1f5f9;
     padding: 4px;
     outline: none;
@@ -347,6 +347,50 @@ QListWidget::item:selected:!active {
 }
 
 /* ============================================================================
+   TREE WIDGET (File Explorer)
+   ============================================================================ */
+QTreeWidget {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+QTreeWidget::item {
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+QTreeWidget::item:hover {
+    background-color: rgba(14, 165, 233, 0.08);
+}
+
+QTreeWidget::item:selected {
+    background-color: rgba(14, 165, 233, 0.2);
+    color: #ffffff;
+}
+
+QHeaderView::section {
+    background-color: #1e293b;
+    color: #cbd5e1;
+    border: none;
+    border-bottom: 1px solid #334155;
+    padding: 6px 8px;
+    font-weight: 500;
+    font-size: 11px;
+}
+
+/* ============================================================================
+   SCROLL AREA
+   ============================================================================ */
+QScrollArea {
+    border: none;
+    border-radius: 8px;
+    background-color: transparent;
+}
+
+/* ============================================================================
    SPLITTER
    ============================================================================ */
 QSplitter::handle {
@@ -409,10 +453,12 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
    ============================================================================ */
 QDialog {
     background-color: #1e293b;
+    border-radius: 12px;
 }
 
 QMessageBox {
     background-color: #1e293b;
+    border-radius: 12px;
 }
 
 QMessageBox QLabel {
@@ -429,6 +475,7 @@ QMessageBox QCheckBox {
 QMenu {
     background-color: #1e293b;
     border: 1px solid #334155;
+    border-radius: 8px;
     padding: 6px;
 }
 
@@ -452,31 +499,35 @@ QMenu::separator {
    TAB WIDGET
    ============================================================================ */
 QTabWidget::pane {
-    border: 1px solid #334155;
-    border-radius: 8px;
+    border: none;
     background-color: #0f172a;
-    top: -1px;
+    top: 0px;
+}
+
+QTabBar {
+    background-color: transparent;
 }
 
 QTabBar::tab {
-    background-color: #1e293b;
+    background-color: transparent;
     color: #cbd5e1;
     border: none;
     border-bottom: 2px solid transparent;
-    padding: 10px 20px;
-    margin-right: 4px;
-    border-radius: 0px;
+    padding: 8px 18px;
+    margin-right: 2px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
     font-weight: 500;
 }
 
 QTabBar::tab:selected {
-    background-color: #0f172a;
+    background-color: rgba(14, 165, 233, 0.1);
     color: #0ea5e9;
     border-bottom: 2px solid #0ea5e9;
 }
 
 QTabBar::tab:hover:!selected {
-    background-color: #334155;
+    background-color: rgba(255, 255, 255, 0.05);
     color: #f1f5f9;
 }
 
@@ -515,7 +566,7 @@ QToolTip {
     color: #f1f5f9;
     border: 1px solid #334155;
     padding: 3px 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 11px;
 }
 

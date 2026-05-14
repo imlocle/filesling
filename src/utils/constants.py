@@ -29,8 +29,18 @@ DIALOG_CONNECTION_LOST = "Connection Lost"
 DIALOG_CONNECTION_FAILED = "Connection Failed"
 DIALOG_CONNECTION_ERROR = "Connection Error"
 DIALOG_FILES_ALREADY_EXIST = "Files Already Exist"
+DIALOG_FILE_ALREADY_EXISTS = "File Already Exists"
+DIALOG_FOLDER_EXISTS = "Folder Exists"
+DIALOG_SETUP_REQUIRED = "Setup Required"
+DIALOG_SETUP_FAILED = "Setup Failed"
 
 # Duplicate detection actions
 DUP_ACTION_OVERWRITE = "overwrite"
 DUP_ACTION_SKIP = "skip"
 DUP_ACTION_CANCEL = "cancel"
+
+# Transfer queue status labels
+STATUS_QUEUED = "⏳ Queued"
+STATUS_UPLOADING = "⬆️ Uploading"
+STATUS_DOWNLOADING = "⬇️ Downloading"
+STATUS_FAILED = "❌ Failed"

@@ -28,6 +28,8 @@ from src.utils.constants import (
     DIALOG_CONNECTION_LOST,
     DIALOG_CREATION_FAILED,
     DIALOG_DELETION_FAILED,
+    DIALOG_FILE_ALREADY_EXISTS,
+    DIALOG_FOLDER_EXISTS,
     DIALOG_MOVE_FAILED,
     DIALOG_RENAME_FAILED,
 )
@@ -580,6 +582,150 @@ class MainWindowController:
             )
 
     # --------------------------------------------------------------
+    #  DOWNLOAD
+    # --------------------------------------------------------------
+    def download_item(self, remote_path: str) -> None:
+        """
+        Download a file or folder from the remote to the configured download directory.
+        """
+        from src.controllers.download_worker import DownloadWorker
+
+        # Use configured download directory
+        local_dir = self.settings.download_directory
+        os.makedirs(local_dir, exist_ok=True)
+
+        # Check for duplicate locally
+        filename = os.path.basename(remote_path)
+        local_path = os.path.join(local_dir, filename)
+        if os.path.exists(local_path):
+            reply = QMessageBox.question(
+                self.view,
+                DIALOG_FILE_ALREADY_EXISTS,
+                f"'{filename}' already exists in your download folder.\n\nOverwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                logger.info(f"Download: Skipped (already exists): {filename}")
+                return
+
+        # Get file size for progress
+        sftp = self.view.remote_explorer.sftp
+        if not sftp:
+            logger.error("Download: No connection available")
+            return
+
+        total_bytes = 0
+        try:
+            st = sftp.stat(remote_path)
+            if st.st_size:
+                total_bytes = st.st_size
+        except (IOError, OSError):
+            pass
+
+        # Display name
+        display_name = f"⬇ {os.path.basename(remote_path)}"
+
+        # Add to visual queue and immediately mark as in-progress
+        if hasattr(self.view, "transfer_queue"):
+            queue = self.view.transfer_queue
+            index = queue.add_transfer(display_name, total_bytes)
+            queue.set_in_progress(index)
+            self._download_queue_index = index
+
+        # Open a dedicated SFTP session for the download
+        try:
+            download_sftp = self.connection_manager.open_sftp_session()
+            if download_sftp is None:
+                logger.error("Download: Could not open SFTP session")
+                if hasattr(self, "_download_queue_index"):
+                    self.view.transfer_queue.set_failed(
+                        self._download_queue_index, "Could not open SFTP session"
+                    )
+                return
+        except Exception as e:
+            logger.error(f"Download: Failed to open session: {e}")
+            if hasattr(self, "_download_queue_index"):
+                self.view.transfer_queue.set_failed(self._download_queue_index, str(e))
+            return
+
+        # Create thread and worker
+        from PySide6.QtCore import QThread
+
+        self._download_thread = QThread(self.view)
+        self._download_worker = DownloadWorker(
+            sftp=download_sftp,
+            remote_paths=[remote_path],
+            local_destination=local_dir,
+            total_bytes=total_bytes,
+        )
+        self._download_worker.moveToThread(self._download_thread)
+
+        # Connect signals
+        self._download_thread.started.connect(self._download_worker.run)
+        self._download_worker.finished.connect(self._on_download_finished)
+        self._download_worker.error.connect(self._on_download_error)
+        self._download_worker.progress.connect(self._on_download_progress)
+        self._download_thread.finished.connect(self._cleanup_download)
+
+        # Start
+        self._download_thread.start()
+        logger.download(f"Download: {os.path.basename(remote_path)}")
+        logger.info(f"Saving to: {local_dir}")
+
+    def _on_download_progress(self, percent: int) -> None:
+        """Handle download progress update."""
+        if hasattr(self, "_download_queue_index") and hasattr(
+            self.view, "transfer_queue"
+        ):
+            queue = self.view.transfer_queue
+            index = self._download_queue_index
+            if 0 <= index < len(queue._items):
+                item = queue._items[index]
+                item.transferred_bytes = int(item.total_bytes * percent / 100)
+
+    def _on_download_finished(self) -> None:
+        """Handle download completion — defer to main thread via timer."""
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self._complete_download)
+
+    def _complete_download(self) -> None:
+        """Actually mark download complete (runs on main thread)."""
+        if hasattr(self, "_download_queue_index") and hasattr(
+            self.view, "transfer_queue"
+        ):
+            self.view.transfer_queue.set_completed(self._download_queue_index)
+        if hasattr(self, "_download_thread") and self._download_thread:
+            self._download_thread.quit()
+
+    def _on_download_error(self, error_msg: str) -> None:
+        """Handle download failure — defer to main thread via timer."""
+        from PySide6.QtCore import QTimer
+
+        self._download_error_msg = error_msg
+        QTimer.singleShot(0, self._fail_download)
+
+    def _fail_download(self) -> None:
+        """Actually mark download failed (runs on main thread)."""
+        error_msg = getattr(self, "_download_error_msg", "Unknown error")
+        if hasattr(self, "_download_queue_index") and hasattr(
+            self.view, "transfer_queue"
+        ):
+            self.view.transfer_queue.set_failed(self._download_queue_index, error_msg)
+        if hasattr(self, "_download_thread") and self._download_thread:
+            self._download_thread.quit()
+
+    def _cleanup_download(self) -> None:
+        """Clean up download worker and thread after thread has stopped."""
+        if hasattr(self, "_download_worker") and self._download_worker:
+            self._download_worker.deleteLater()
+            self._download_worker = None
+        if hasattr(self, "_download_thread") and self._download_thread:
+            self._download_thread.deleteLater()
+            self._download_thread = None
+
+    # --------------------------------------------------------------
     #  CREATE FOLDER
     # --------------------------------------------------------------
     def create_folder(self, folder_path: str) -> None:
@@ -605,7 +751,7 @@ class MainWindowController:
             logger.warn(f"Folder already exists: {folder_path}")
             QMessageBox.warning(
                 self.view,
-                "Folder Exists",
+                DIALOG_FOLDER_EXISTS,
                 "A folder with this name already exists.",
                 QMessageBox.StandardButton.Ok,
             )

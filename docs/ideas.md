@@ -78,15 +78,17 @@
 - [x] Options: skip, overwrite, cancel
 - [x] Compare by name (stat check on remote)
 
+### Download from Server
+
+- [x] Right-click → "Download" to pull files back to Mac
+- [x] Configurable download directory in Settings → Files tab
+- [x] Download progress in the same queue system
+- [x] Duplicate detection (warns if file already exists locally)
+- [x] Downloads show as "⬇️ Downloading" in transfer queue
+
 ---
 
 ## 🚀 Next Up
-
-### Download from Server
-
-- [ ] Right-click → "Download" to pull files back to Mac
-- [ ] Choose local download destination
-- [ ] Download progress in the same queue system
 
 ### Transfer History
 

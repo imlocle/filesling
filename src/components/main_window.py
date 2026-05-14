@@ -22,6 +22,8 @@ from src.controllers.main_window_controller import MainWindowController
 from src.services.connection_manager_service import ConnectionManagerService
 from src.utils.constants import (
     DIALOG_FILES_ALREADY_EXIST,
+    DIALOG_SETUP_FAILED,
+    DIALOG_SETUP_REQUIRED,
     DUP_ACTION_CANCEL,
     DUP_ACTION_OVERWRITE,
     DUP_ACTION_SKIP,
@@ -147,7 +149,7 @@ class MainWindow(QWidget):
         if settings_window.exec() != QDialog.DialogCode.Accepted:
             QMessageBox.critical(
                 self,
-                "Setup Required",
+                DIALOG_SETUP_REQUIRED,
                 "At least one server must be configured to use Shuttle.",
                 QMessageBox.StandardButton.Ok,
             )
@@ -194,7 +196,7 @@ class MainWindow(QWidget):
         if not self.settings.is_valid():
             QMessageBox.warning(
                 self,
-                "Setup Required",
+                DIALOG_SETUP_REQUIRED,
                 "Please configure your settings first.",
                 QMessageBox.StandardButton.Ok,
             )
@@ -206,7 +208,7 @@ class MainWindow(QWidget):
             ):
                 QMessageBox.critical(
                     self,
-                    "Setup Failed",
+                    DIALOG_SETUP_FAILED,
                     "Settings are required to run Shuttle.",
                     QMessageBox.StandardButton.Ok,
                 )
@@ -287,6 +289,9 @@ class MainWindow(QWidget):
         # Pi explorer
         self.remote_explorer.file_delete_requested.connect(self.controller.delete_item)
         self.remote_explorer.file_rename_requested.connect(self.controller.rename_item)
+        self.remote_explorer.file_download_requested.connect(
+            self.controller.download_item
+        )
         self.remote_explorer.folder_create_requested.connect(
             self.controller.create_folder
         )
@@ -379,8 +384,8 @@ class MainWindow(QWidget):
         toolbar.setObjectName("toolbar")
         toolbar.setStyleSheet("""
             QFrame#toolbar {
-                background-color: #252526;
-                border-bottom: 1px solid #3e3e42;
+                background-color: transparent;
+                border: none;
                 padding: 8px;
             }
         """)
@@ -433,8 +438,9 @@ class MainWindow(QWidget):
         status_bar.setObjectName("status_bar")
         status_bar.setStyleSheet("""
             QFrame#status_bar {
-                background-color: #252526;
-                border-bottom: 1px solid #3e3e42;
+                background-color: rgba(30, 41, 59, 0.5);
+                border: none;
+                border-radius: 8px;
                 padding: 6px 12px;
             }
             QLabel#connection_disconnected {

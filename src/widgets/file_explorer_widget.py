@@ -355,6 +355,7 @@ class FileExplorerWidget(QWidget):
 
     directory_changed = Signal(str)
     file_delete_requested = Signal(str)
+    file_download_requested = Signal(str)  # remote_path
     files_dropped = Signal(
         list, str
     )  # [local_paths], remote_dest_dir (or local dest dir)
@@ -518,13 +519,12 @@ class FileExplorerWidget(QWidget):
         item = self.tree_widget.itemAt(position)
 
         menu = QMenu(self)
-
-        # "New Folder" is available when clicking on empty space or any item
-        new_folder_action = menu.addAction("📁 New Folder")
-        menu.addSeparator()
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         if not item:
-            # No item selected, only show "New Folder"
+            # No item selected — only show "New Folder"
+            new_folder_action = menu.addAction("📁 New Folder")
             action = menu.exec(self.tree_widget.mapToGlobal(position))
             if action == new_folder_action:
                 self._prompt_and_create_folder()
@@ -533,20 +533,26 @@ class FileExplorerWidget(QWidget):
         entry = item.text(0)  # Get name from first column
         full_path = os.path.join(self.current_path, entry)
 
-        delete_action = menu.addAction("🗑️ Delete")
+        new_folder_action = menu.addAction("📁 New Folder")
+        menu.addSeparator()
+        download_action = menu.addAction("⬇️ Download")
         rename_action = menu.addAction("✏️ Rename")
         move_action = menu.addAction("↔️ Move To")
+        menu.addSeparator()
+        delete_action = menu.addAction("🗑️ Delete")
 
         action = menu.exec(self.tree_widget.mapToGlobal(position))
 
-        if action == new_folder_action:
-            self._prompt_and_create_folder()
-        elif action == delete_action:
-            self.file_delete_requested.emit(full_path)
+        if action == download_action:
+            self.file_download_requested.emit(full_path)
         elif action == rename_action:
             self.file_rename_requested.emit(full_path)
         elif action == move_action:
             self._handle_move_item(full_path)
+        elif action == delete_action:
+            self.file_delete_requested.emit(full_path)
+        elif action == new_folder_action:
+            self._prompt_and_create_folder()
 
     def prompt_rename(self, old_path: str) -> Optional[str]:
         basename = os.path.basename(old_path)

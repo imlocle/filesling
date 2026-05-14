@@ -119,6 +119,11 @@ class Logger(QObject):
         formatted = self._format_message("⬆️", msg, "#007acc")
         self.log_signal.emit(formatted)
 
+    def download(self, msg: str):
+        """Log download event."""
+        formatted = self._format_message("⬇️", msg, "#007acc")
+        self.log_signal.emit(formatted)
+
     def trash(self, msg: str):
         """Log deletion event."""
         formatted = self._format_message("🗑️", msg, "#ce9178")
