@@ -26,7 +26,8 @@ src/
 ├── services/
 │   ├── adb_client.py               ADB client (mimics SFTPClient interface)
 │   ├── connection_manager_service.py   SSH/SFTP connection lifecycle
-│   └── file_deletion_service.py    Safe deletion via send2trash
+│   ├── file_deletion_service.py    Safe deletion via send2trash
+│   └── transfer_history_service.py Persistent upload/download log
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
 │   ├── helper.py                   Path helpers, size formatting
@@ -118,6 +119,8 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 - Pydantic `SettingsConfig` model with validation
 - Multi-server support with default server for auto-connect
 - Server configs store connection type, credentials, and base directory
+- Bookmarked folders persisted in config
+- Transfer history stored in `~/.Shuttle/transfer_history.json` (last 200 records)
 
 ## Error Handling
 

@@ -86,21 +86,37 @@
 - [x] Duplicate detection (warns if file already exists locally)
 - [x] Downloads show as "⬇️ Downloading" in transfer queue
 
+### Transfer History
+
+- [x] Persist transfer history between sessions (JSON log)
+- [x] Records uploads and downloads with filename, size, timestamp, server
+- [x] Search history by filename
+- [x] "Did I already upload this?" lookup
+
+### Bookmarked Folders
+
+- [x] Right-click folder → "⭐ Bookmark" to save
+- [x] Bookmark bar above explorer with quick-access buttons
+- [x] Click bookmark to navigate directly
+- [x] Remove bookmark via right-click → "⭐ Remove Bookmark"
+- [x] Persists between sessions
+
+### ADB (Android) Fixes
+
+- [x] Explorer refreshes after upload completes
+- [x] File sizes showing correctly (single-call listdir_attr)
+- [x] Disk usage bar works for Android devices
+- [x] All file operations (create, rename, delete, move, upload) work with ADB
+- [x] No crash when navigating away while a large folder is loading
+
 ---
 
 ## 🚀 Next Up
 
-### Transfer History
+### ADB (Android) Remaining
 
-- [ ] Persist transfer history between sessions (JSON log)
-- [ ] Show history panel: file name, date, size, destination
-- [ ] "Did I already upload this?" search
-
-### Bookmarked Folders
-
-- [ ] Quick-access buttons for frequently used remote directories
-- [ ] Add/remove bookmarks from context menu
-- [ ] Show as sidebar or dropdown above explorer
+- [ ] Auto-connect to USB device when plugged in (prioritize over default server)
+- [ ] Progressive/chunked directory loading for large folders (stream items as they arrive instead of waiting for full listing)
 
 ---
 
@@ -131,26 +147,119 @@
 
 - [ ] Drag a remote file to Finder to download it
 
+### Multi-Select Transfers
+
+- [ ] Select multiple files → right-click → Download all
+- [ ] Select multiple files → right-click → Move all to folder
+- [ ] Shift+click range selection for bulk operations
+
+### Transfer Resilience
+
+- [ ] Resume interrupted transfers (track partial uploads)
+- [ ] Retry failed transfers automatically (configurable: 0-3 retries)
+- [ ] Queue persistence — don't lose queued items if app crashes
+
+### Notifications
+
+- [ ] macOS notification when transfer completes (especially large files)
+- [ ] Sound on completion (optional, toggle in settings)
+- [ ] Badge app icon with pending transfer count
+
+### Drag-and-Drop Improvements
+
+- [ ] Drop onto a folder in the tree to upload directly into it
+- [ ] Visual drop target highlight on specific folders
+- [ ] Drop multiple folders — preserve structure
+
+### Settings & Config
+
+- [ ] Export/import settings (share config between machines)
+- [ ] Per-server file extension filters
+- [ ] Per-server download directory
+
+### Performance
+
+- [ ] Parallel uploads (configurable: 1-4 simultaneous transfers)
+- [ ] Compress before transfer option (zip folder → upload → extract)
+- [ ] Skip unchanged files (compare modified date + size)
+
+### Security
+
+- [ ] SSH key passphrase support (currently only unencrypted keys)
+- [ ] Password-based SSH auth as fallback
+- [ ] Remember last N connected servers securely in keychain
+
 ---
 
 ## 🔮 Future Directions
+
+> Shuttle's architecture (backend abstraction where ADBClient mimics SFTPClient) means
+> new connection types can be added without changing the explorer UI. Each backend just
+> needs: listdir, stat, put, get, rename, mkdir, remove.
+
+### Workflow Automation (Rules Engine)
+
+> The next major feature direction. Deterministic, reliable, no AI needed.
+
+- [ ] **Watch Folders** — monitor a local folder, auto-upload new files to a destination
+  - Example: `~/Movies/OBS/` → auto-upload to NAS `/recordings/`
+- [ ] **Transfer Rules** — pattern-based routing
+  - Example: `*.mp4` → always send to Android tablet `/sdcard/Movies/`
+  - Example: `*.apk` → always send to test device
+- [ ] **Device-Aware Actions** — when a specific device connects, run a rule
+  - Example: when Pixel connects → sync latest screenshots
+- [ ] **Smart Destinations** — remember last upload location per file type
+  - "You sent .blend files to /projects/ last 12 times — use that?"
+- [ ] **Auto-Rename Templates** — rename on transfer using patterns
+  - Example: `IMG_*.jpg` → `{date}_{counter}.jpg` using EXIF data
+- [ ] **Rules UI** — simple list of if/then rules in Settings
+
+### AI-Assisted Suggestions (Phase 3 — Later)
+
+> Built on top of TransferHistoryService data. Minimal, assistive, deterministic.
+
+- [ ] Suggest rules based on repeated transfer patterns
+  - "You've uploaded OBS recordings to Media NAS 12 times. Create a rule?"
+- [ ] Suggest destinations based on file type + history
+- [ ] Flag potential duplicates using filename similarity
+- [ ] NOT a chatbot, NOT semantic search, NOT an assistant sidebar
+
+### Additional Backends
+
+- [ ] **SMB/CIFS** — Connect to Windows PCs and NAS devices (pysmb / smbprotocol)
+- [ ] **WebDAV** — Connect to Nextcloud, Synology, Box, etc.
+- [ ] **S3** — Browse and transfer to AWS S3 buckets (boto3)
+- [ ] **MTP** — Android without Developer Mode (libmtp, flaky on macOS)
+- [ ] **SCP/rsync** — Faster bulk transfers for SSH servers
 
 ### Multi-Server Dashboard
 
 - [ ] Show all servers at a glance with connection status
 - [ ] Quick-switch between servers without dialog
-
-### MTP Support (Android — No Setup)
-
-- [ ] MTP transport backend via libmtp / pymtp
-- [ ] No Developer Mode needed — just plug in USB
-- [ ] True Android File Transfer replacement
-- [ ] Challenge: MTP protocol is flaky on macOS
+- [ ] Split-pane: two servers side by side for server-to-server transfers
 
 ### Plugin System
 
 - [ ] Post-transfer hooks (run a script after upload)
 - [ ] Notification integrations (Slack, Discord)
+- [ ] Custom transfer rules (auto-sort by file type on remote)
+
+### macOS Native Polish
+
+- [ ] Menu bar icon with quick-transfer drop zone
+- [ ] Finder extension (right-click → "Send with Shuttle")
+- [ ] Spotlight integration for transfer history search
+- [ ] Touch Bar support (if applicable)
+- [ ] Native macOS share sheet integration
+
+### Positioning
+
+Shuttle isn't just "Android File Transfer replacement" — it's a native macOS transfer
+hub for devices and servers. The unified backend abstraction means it can grow into:
+
+- Dev/homelab tool (SSH servers, Docker, Raspberry Pi)
+- Creator workflow (camera → phone → NAS → cloud)
+- Power-user file manager (multi-protocol, queue-based)
 
 ---
 

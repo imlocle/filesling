@@ -102,3 +102,8 @@ make build
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature Ideas](docs/ideas.md)
+
+## Support
+
+If Shuttle is useful to you, consider buying me a coffee ☕
+[buymeacoffee.com/imlocle](https://buymeacoffee.com/imlocle)
