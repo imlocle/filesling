@@ -23,7 +23,6 @@ cd "$PROJECT_ROOT"
 
 pyinstaller \
     --name=Shuttle \
-    --onefile \
     --windowed \
     --icon=assets/icons/shuttle_logo.png \
     --add-data="assets:assets" \
@@ -34,4 +33,4 @@ pyinstaller \
 
 echo ""
 echo "Build complete!"
-echo "Executable: $PROJECT_ROOT/dist/Shuttle"
+echo "Executable: $PROJECT_ROOT/dist/Shuttle.app"
