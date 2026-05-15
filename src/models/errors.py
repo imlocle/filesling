@@ -9,8 +9,8 @@ from typing import Optional
 # ============================================================================
 
 
-class PiSyncError(Exception):
-    """Base exception for all PiSync errors."""
+class ShuttleError(Exception):
+    """Base exception for all Shuttle errors."""
 
     def __init__(self, message: str, details: Optional[str] = None):
         self.message = message
@@ -28,7 +28,7 @@ class PiSyncError(Exception):
 # ============================================================================
 
 
-class ConnectionError(PiSyncError):
+class ConnectionError(ShuttleError):
     """Base exception for connection-related errors."""
 
 
@@ -53,7 +53,7 @@ class AuthenticationError(ConnectionError):
 # ============================================================================
 
 
-class TransferError(PiSyncError):
+class TransferError(ShuttleError):
     """Base exception for transfer operations."""
 
     def __init__(
@@ -89,7 +89,7 @@ class TransferVerificationError(TransferError):
 # ============================================================================
 
 
-class ConfigurationError(PiSyncError):
+class ConfigurationError(ShuttleError):
     """Base exception for configuration-related errors."""
 
 
@@ -116,7 +116,7 @@ class ConfigurationSaveError(ConfigurationError):
 # ============================================================================
 
 
-class FileSystemError(PiSyncError):
+class FileSystemError(ShuttleError):
     """Base exception for file system operations."""
 
     def __init__(
@@ -145,7 +145,7 @@ class FileDeletionError(FileSystemError):
 # ============================================================================
 
 
-class ValidationError(PiSyncError):
+class ValidationError(ShuttleError):
     """Base exception for validation errors."""
 
 

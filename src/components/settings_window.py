@@ -93,7 +93,7 @@ class SettingsWindow(QDialog):
         if self.server_mode:
             layout.addWidget(QLabel("Name"))
             self.server_name_input = QLineEdit(self.server_config.get("name", ""))
-            self.server_name_input.setPlaceholderText("e.g., Living Room Pi")
+            self.server_name_input.setPlaceholderText("e.g., Living Room Server")
             layout.addWidget(self.server_name_input)
 
         # Connection form widget (handles SSH/ADB fields + test)
@@ -155,17 +155,7 @@ class SettingsWindow(QDialog):
         download_row.addWidget(browse_btn)
         layout.addLayout(download_row)
 
-        # File extensions
-        layout.addWidget(QLabel("File Extensions to Transfer"))
-        self.file_extensions_input = QTextEdit(
-            ", ".join(sorted(self.settings.file_extensions))
-        )
-        self.file_extensions_input.setMaximumHeight(80)
-        self.file_extensions_input.setAcceptRichText(False)
-        self.file_extensions_input.setWordWrapMode(QTextOption.WrapMode.WordWrap)
-        self.file_extensions_input.setPlaceholderText(".mkv, .mp4, .avi, .srt")
-        layout.addWidget(self.file_extensions_input)
-
+        # Skip patterns
         layout.addWidget(QLabel("Skip Patterns"))
         self.skip_patterns_input = QTextEdit(
             ", ".join(sorted(self.settings.skip_patterns))
@@ -253,7 +243,6 @@ class SettingsWindow(QDialog):
                 SettingsConfig.from_json(
                     {
                         **config,
-                        "file_extensions": list(self.settings.file_extensions),
                         "skip_patterns": list(self.settings.skip_patterns),
                     }
                 )
@@ -296,11 +285,6 @@ class SettingsWindow(QDialog):
                 "delete_after_transfer": self.delete_after_transfer_checkbox.isChecked(),
                 "download_directory": self.download_dir_input.text().strip()
                 or os.path.expanduser("~/Downloads"),
-                "file_extensions": [
-                    ext.strip()
-                    for ext in self.file_extensions_input.toPlainText().split(",")
-                    if ext.strip()
-                ],
                 "skip_patterns": [
                     f.strip()
                     for f in self.skip_patterns_input.toPlainText().split(",")

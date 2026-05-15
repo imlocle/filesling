@@ -15,7 +15,7 @@ DEFAULT_ADB_BASE_DIR = "/sdcard"
 
 # Placeholders
 PLACEHOLDER_HOST = "192.168.1.100"
-PLACEHOLDER_USERNAME = "pi"
+PLACEHOLDER_USERNAME = "user"
 PLACEHOLDER_SSH_KEY = "~/.ssh/id_rsa"
 PLACEHOLDER_BASE_DIR = "/mnt/external or /sdcard"
 PLACEHOLDER_NO_DEVICES = "No devices — plug in via USB"
