@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from src.config.settings import Settings
 from src.controllers.transfer_worker import TransferWorker
 from src.services.connection_manager_service import ConnectionManagerService
+from src.services.transfer_history_service import TransferHistoryService
 from src.utils.logging_signal import logger
 
 
@@ -30,7 +31,7 @@ class QueuedTransfer:
 
     def __post_init__(self):
         if not self.display_name:
-            names = [os.path.basename(p) for p in self.local_paths]
+            names = [os.path.basename(p.rstrip("/")) for p in self.local_paths]
             self.display_name = ", ".join(names[:3])
             if len(names) > 3:
                 self.display_name += f" (+{len(names) - 3} more)"
@@ -78,6 +79,7 @@ class ManualTransferController(QObject):
         super().__init__(parent)
         self.settings = settings
         self.connection_manager = connection_manager
+        self.history = TransferHistoryService()
 
         # Queue state
         self._queue: List[QueuedTransfer] = []
@@ -97,7 +99,7 @@ class ManualTransferController(QObject):
         """Number of pending transfers (not including current)."""
         return len(self._queue)
 
-    def transfer_to_pi(
+    def queue_transfer(
         self,
         local_paths: List[str],
         remote_destination: Optional[str] = None,
@@ -159,27 +161,56 @@ class ManualTransferController(QObject):
         self._current_transfer = self._queue.pop(0)
         transfer = self._current_transfer
 
-        # Ensure connection
-        if not self.connection_manager.is_connected():
-            if not self.connection_manager.connect():
-                logger.error("Transfer: Connection failed")
-                self.transfer_failed.emit(transfer.local_paths[0], "Connection failed")
-                # Try next item
-                QTimer.singleShot(100, self._process_next)
-                return
+        # Determine connection type
+        server_config = self.settings.get_server(
+            self.settings.config.current_server_id
+        )
+        connection_type = (
+            server_config.get("connection_type", "ssh") if server_config else "ssh"
+        )
 
-        # Open a dedicated SFTP session for this transfer
-        try:
-            sftp = self.connection_manager.open_sftp_session()
-            if sftp is None:
-                logger.error("Transfer: Could not open SFTP session")
+        # Get the appropriate client
+        sftp = None
+        if connection_type == "adb":
+            # For ADB, use the client already on the explorer (no session needed)
+            view = self.parent()
+            if view and hasattr(view, "remote_explorer") and view.remote_explorer.sftp:
+                sftp = view.remote_explorer.sftp
+            else:
+                logger.error("Transfer: No ADB connection available")
                 self.transfer_failed.emit(
-                    transfer.local_paths[0], "Could not open SFTP session"
+                    transfer.local_paths[0], "No ADB connection"
                 )
                 QTimer.singleShot(100, self._process_next)
                 return
+        else:
+            # For SSH, ensure connection and open dedicated session
+            if not self.connection_manager.is_connected():
+                if not self.connection_manager.connect():
+                    logger.error("Transfer: Connection failed")
+                    self.transfer_failed.emit(
+                        transfer.local_paths[0], "Connection failed"
+                    )
+                    QTimer.singleShot(100, self._process_next)
+                    return
 
-            # Create thread and worker
+            try:
+                sftp = self.connection_manager.open_sftp_session()
+                if sftp is None:
+                    logger.error("Transfer: Could not open SFTP session")
+                    self.transfer_failed.emit(
+                        transfer.local_paths[0], "Could not open SFTP session"
+                    )
+                    QTimer.singleShot(100, self._process_next)
+                    return
+            except Exception as e:
+                logger.error(f"Transfer: Failed to start: {e}")
+                self.transfer_failed.emit(transfer.local_paths[0], str(e))
+                QTimer.singleShot(100, self._process_next)
+                return
+
+        # Create thread and worker
+        try:
             self._active_thread = QThread(self)
             self._active_worker = TransferWorker(
                 sftp=sftp,
@@ -223,6 +254,18 @@ class ManualTransferController(QObject):
 
         transfer = self._current_transfer
         logger.success(f"Transfer: Complete: {transfer.display_name}")
+
+        # Record in history
+        for path in transfer.local_paths:
+            self.history.add(
+                filename=os.path.basename(path.rstrip("/")),
+                direction="upload",
+                source=path,
+                destination=transfer.remote_destination,
+                size_bytes=transfer.total_bytes,
+                server_name=self.settings.config.current_server_id,
+            )
+
         # Delete local files if configured
         if transfer.delete_after:
             from src.services.file_deletion_service import FileDeletionService

@@ -50,7 +50,7 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(SOFTWARE_NAME)
-        self.setMinimumSize(700, 850)
+        self.setMinimumSize(700, 900)
 
         # Connection retry tracking
         self.connection_attempts = 0
@@ -286,7 +286,7 @@ class MainWindow(QWidget):
         self.settings_btn.clicked.connect(self.controller.open_settings)
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
 
-        # Pi explorer
+        # Explorer
         self.remote_explorer.file_delete_requested.connect(self.controller.delete_item)
         self.remote_explorer.file_rename_requested.connect(self.controller.rename_item)
         self.remote_explorer.file_download_requested.connect(
@@ -467,7 +467,7 @@ class MainWindow(QWidget):
         layout.addWidget(status_bar)
 
     def _setup_content_area(self, layout: QVBoxLayout) -> None:
-        """Create main content area with Pi file explorer."""
+        """Create main content area with file explorer."""
         content_container = QWidget()
         content_layout = QVBoxLayout(content_container)
         content_layout.setContentsMargins(12, 12, 12, 12)
@@ -591,11 +591,13 @@ class MainWindow(QWidget):
 
         Checks for duplicates on the remote, prompts user, then adds to queue.
         """
-        # --- Duplicate detection ---
+        # --- Duplicate detection (files only, not folders) ---
         duplicates = []
         sftp = self.remote_explorer.sftp
         if sftp:
             for p in local_paths:
+                if os.path.isdir(p):
+                    continue  # Folders merge, not duplicate
                 name = os.path.basename(p)
                 remote_path = os.path.join(remote_dir, name).replace("\\", "/")
                 try:
@@ -637,7 +639,7 @@ class MainWindow(QWidget):
                     pass
 
         # Build display name
-        names = [os.path.basename(p) for p in local_paths]
+        names = [os.path.basename(p.rstrip("/")) for p in local_paths]
         display_name = ", ".join(names[:2])
         if len(names) > 2:
             display_name += f" (+{len(names) - 2})"
@@ -646,7 +648,7 @@ class MainWindow(QWidget):
         self.transfer_queue.add_transfer(display_name, total_bytes)
 
         # Start the transfer
-        self.controller.manual_transfer.transfer_to_pi(
+        self.controller.manual_transfer.queue_transfer(
             local_paths=local_paths, remote_destination=remote_dir
         )
 

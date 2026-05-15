@@ -108,15 +108,12 @@
 - [x] Disk usage bar works for Android devices
 - [x] All file operations (create, rename, delete, move, upload) work with ADB
 - [x] No crash when navigating away while a large folder is loading
+- [x] Auto-connect to USB device when plugged in (prioritizes over default server)
+- [x] Progressive/chunked directory loading for large folders (streams items in batches of 50)
 
 ---
 
 ## 🚀 Next Up
-
-### ADB (Android) Remaining
-
-- [ ] Auto-connect to USB device when plugged in (prioritize over default server)
-- [ ] Progressive/chunked directory loading for large folders (stream items as they arrive instead of waiting for full listing)
 
 ---
 
