@@ -31,7 +31,7 @@ class ServerSelectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"{SOFTWARE_NAME} - Select Server")
-        self.setMinimumSize(500, 400)
+        self.setMinimumSize(450, 350)
         self.setModal(True)
 
         self.settings = Settings()
@@ -73,21 +73,22 @@ class ServerSelectionDialog(QDialog):
         header = QFrame()
         header.setStyleSheet("""
             QFrame {
-                background-color: #252526;
-                border-bottom: 1px solid #3e3e42;
-                padding: 16px;
+                background-color: transparent;
+                border: none;
+                padding: 12px 16px 4px 16px;
             }
         """)
 
         header_layout = QVBoxLayout(header)
-        header_layout.setSpacing(8)
+        header_layout.setSpacing(4)
+        header_layout.setContentsMargins(0, 0, 0, 0)
 
         title = QLabel("Select Server")
-        title.setStyleSheet("font-size: 18px; font-weight: 600; color: #ffffff;")
+        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #ffffff;")
         header_layout.addWidget(title)
 
         subtitle = QLabel("Choose a server to connect to, or add a new one")
-        subtitle.setStyleSheet("color: #858585; font-size: 12px;")
+        subtitle.setStyleSheet("color: #858585; font-size: 11px;")
         header_layout.addWidget(subtitle)
 
         layout.addWidget(header)
@@ -95,29 +96,30 @@ class ServerSelectionDialog(QDialog):
     def _setup_server_list(self, layout: QVBoxLayout):
         """Create server list section."""
         list_container = QFrame()
-        list_container.setStyleSheet("padding: 16px;")
+        list_container.setStyleSheet("padding: 8px 16px;")
         list_layout = QVBoxLayout(list_container)
-        list_layout.setSpacing(12)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(8)
 
         # List widget
         self.server_list = QListWidget()
         self.server_list.setStyleSheet("""
             QListWidget {
-                background-color: #1e1e1e;
-                border: 1px solid #3e3e42;
-                border-radius: 6px;
-                padding: 8px;
+                background-color: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                padding: 6px;
             }
             QListWidget::item {
-                padding: 12px;
-                border-radius: 4px;
+                padding: 10px;
+                border-radius: 6px;
                 margin: 2px 0;
             }
             QListWidget::item:hover {
-                background-color: #2a2d2e;
+                background-color: rgba(14, 165, 233, 0.08);
             }
             QListWidget::item:selected {
-                background-color: #094771;
+                background-color: rgba(14, 165, 233, 0.2);
                 color: #ffffff;
             }
         """)
@@ -128,25 +130,21 @@ class ServerSelectionDialog(QDialog):
 
         # Action buttons
         action_layout = QHBoxLayout()
-        action_layout.setSpacing(8)
+        action_layout.setSpacing(6)
 
-        self.add_btn = QPushButton("➕ Add New Server")
-        self.add_btn.setMinimumHeight(36)
+        self.add_btn = QPushButton("➕ Add")
         self.add_btn.clicked.connect(self._add_new_server)
 
-        self.edit_btn = QPushButton("✏️ Edit Server")
-        self.edit_btn.setMinimumHeight(36)
+        self.edit_btn = QPushButton("✏️ Edit")
         self.edit_btn.setEnabled(False)
         self.edit_btn.clicked.connect(self._edit_server)
 
-        self.default_btn = QPushButton("⭐ Set as Default")
-        self.default_btn.setMinimumHeight(36)
+        self.default_btn = QPushButton("⭐ Default")
         self.default_btn.setEnabled(False)
         self.default_btn.setToolTip("Auto-connect to this server on launch")
         self.default_btn.clicked.connect(self._set_as_default)
 
-        self.delete_btn = QPushButton("🗑 Delete Server")
-        self.delete_btn.setMinimumHeight(36)
+        self.delete_btn = QPushButton("🗑 Delete")
         self.delete_btn.setEnabled(False)
         self.delete_btn.clicked.connect(self._delete_server)
 
@@ -164,25 +162,22 @@ class ServerSelectionDialog(QDialog):
         footer = QFrame()
         footer.setStyleSheet("""
             QFrame {
-                background-color: #252526;
-                border-top: 1px solid #3e3e42;
-                padding: 16px;
+                background-color: transparent;
+                border: none;
+                padding: 8px 16px;
             }
         """)
 
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
         footer_layout.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setMinimumHeight(36)
-        self.cancel_btn.setMinimumWidth(100)
         self.cancel_btn.clicked.connect(self.reject)
 
         self.connect_btn = QPushButton("🔌 Connect")
         self.connect_btn.setObjectName("primary_btn")
-        self.connect_btn.setMinimumHeight(36)
-        self.connect_btn.setMinimumWidth(120)
         self.connect_btn.setEnabled(False)
         self.connect_btn.clicked.connect(self._connect_to_server)
 
@@ -216,11 +211,17 @@ class ServerSelectionDialog(QDialog):
     def _format_server_display(self, server_id: str, config: dict) -> str:
         """Format server information for display."""
         name = config.get("name", server_id)
-        user = config.get("username", "")
-        ip = config.get("host", "")
+        conn_type = config.get("connection_type", "ssh")
         is_default = self.settings.config.default_server_id == server_id
         prefix = "⭐ " if is_default else ""
-        return f"{prefix}{name}\n{user}@{ip}"
+
+        if conn_type == "adb":
+            device_id = config.get("device_id", "")
+            return f"{prefix}{name}\n📱 USB ({device_id})"
+        else:
+            user = config.get("username", "")
+            ip = config.get("host", "")
+            return f"{prefix}{name}\n🖥 {user}@{ip}"
 
     def _on_selection_changed(self):
         """Handle server selection change."""
