@@ -3,12 +3,19 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut, QShowEvent
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QKeySequence,
+    QShortcut,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMainWindow,
     QMessageBox,
     QPushButton,
     QTextEdit,
@@ -28,12 +35,13 @@ from src.utils.constants import (
     DUP_ACTION_OVERWRITE,
     DUP_ACTION_SKIP,
     SOFTWARE_NAME,
+    VERSION,
 )
 from src.utils.logging_signal import logger
 from src.widgets.file_explorer_widget import FileExplorerWidget
 
 
-class MainWindow(QWidget):
+class MainWindow(QMainWindow):
     """
     Main window for Shuttle — a remote file manager.
 
@@ -81,11 +89,14 @@ class MainWindow(QWidget):
         self._setup_activity_log(main_layout)
         self._setup_progress_bar(main_layout)
 
-        self.setLayout(main_layout)
+        container = QWidget()
+        container.setLayout(main_layout)
+        self.setCentralWidget(container)
 
         # === 3. Wire Signals ===
         self._setup_connections()
         self._setup_shortcuts()
+        self._setup_menu_bar()
 
         # === 4. Connect logger ===
         logger.log_signal.connect(self.log)
@@ -311,12 +322,12 @@ class MainWindow(QWidget):
     def _setup_shortcuts(self) -> None:
         """Set up keyboard shortcuts."""
         # ⌘+Backspace — Delete selected items
-        QShortcut(QKeySequence("Ctrl+Backspace"), self).activated.connect(
+        QShortcut(QKeySequence("Meta+Backspace"), self).activated.connect(
             self.controller.delete_selected_item
         )
 
         # ⌘+R — Refresh explorer
-        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(
+        QShortcut(QKeySequence("Meta+R"), self).activated.connect(
             self.controller.refresh_explorers
         )
 
@@ -325,17 +336,17 @@ class MainWindow(QWidget):
         self._enter_shortcut.activated.connect(self._navigate_or_search)
 
         # ⌘+Up — Go back / up one directory
-        QShortcut(QKeySequence("Ctrl+Up"), self).activated.connect(
+        QShortcut(QKeySequence("Meta+Up"), self).activated.connect(
             self.remote_explorer.go_back
         )
 
         # ⌘+N — New folder
-        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(
+        QShortcut(QKeySequence("Meta+N"), self).activated.connect(
             self._create_folder_shortcut
         )
 
         # ⌘+F — Focus search/filter
-        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(
+        QShortcut(QKeySequence("Meta+F"), self).activated.connect(
             self.remote_explorer.show_search
         )
 
@@ -343,6 +354,121 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self).activated.connect(
             self._handle_escape
         )
+
+    # ------------------------------------------------------------------
+    # Menu Bar
+    # ------------------------------------------------------------------
+    def _setup_menu_bar(self) -> None:
+        """Create native macOS menu bar."""
+        menu_bar = self.menuBar()
+
+        # --- File Menu ---
+        file_menu = menu_bar.addMenu("File")
+
+        connect_action = QAction("Connect", self)
+        connect_action.setShortcut(QKeySequence("Meta+Shift+C"))
+        connect_action.triggered.connect(self.controller.connect)
+        file_menu.addAction(connect_action)
+
+        change_server_action = QAction("Change Server...", self)
+        change_server_action.triggered.connect(self.change_server)
+        file_menu.addAction(change_server_action)
+
+        file_menu.addSeparator()
+
+        settings_action = QAction("Settings...", self)
+        settings_action.setShortcut(QKeySequence.StandardKey.Preferences)
+        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)
+        settings_action.triggered.connect(self.controller.open_settings)
+        file_menu.addAction(settings_action)
+
+        file_menu.addSeparator()
+
+        quit_action = QAction("Quit Shuttle", self)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_action.setMenuRole(QAction.MenuRole.QuitRole)
+        quit_action.triggered.connect(self.close)
+        file_menu.addAction(quit_action)
+
+        # --- Edit Menu ---
+        edit_menu = menu_bar.addMenu("Edit")
+
+        refresh_action = QAction("Refresh", self)
+        refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)
+        refresh_action.triggered.connect(self.controller.refresh_explorers)
+        edit_menu.addAction(refresh_action)
+
+        new_folder_action = QAction("New Folder", self)
+        new_folder_action.setShortcut(QKeySequence.StandardKey.New)
+        new_folder_action.triggered.connect(
+            self.remote_explorer._prompt_and_create_folder
+        )
+        edit_menu.addAction(new_folder_action)
+
+        edit_menu.addSeparator()
+
+        delete_action = QAction("Delete Selected", self)
+        delete_action.setShortcut(QKeySequence("Meta+Backspace"))
+        delete_action.triggered.connect(self.controller.delete_selected_item)
+        edit_menu.addAction(delete_action)
+
+        # --- View Menu ---
+        view_menu = menu_bar.addMenu("View")
+
+        search_action = QAction("Search", self)
+        search_action.setShortcut(QKeySequence.StandardKey.Find)
+        search_action.triggered.connect(self.remote_explorer.show_search)
+        view_menu.addAction(search_action)
+
+        back_action = QAction("Go Back", self)
+        back_action.setShortcut(QKeySequence("Meta+Up"))
+        back_action.triggered.connect(self.remote_explorer.go_back)
+        view_menu.addAction(back_action)
+
+        # --- Help Menu ---
+        help_menu = menu_bar.addMenu("Help")
+
+        about_action = QAction("About Shuttle", self)
+        about_action.setMenuRole(QAction.MenuRole.AboutRole)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+        github_action = QAction("GitHub Repository", self)
+        github_action.triggered.connect(
+            lambda: __import__("webbrowser").open("https://github.com/imlocle/shuttle")
+        )
+        help_menu.addAction(github_action)
+
+        shortcuts_action = QAction("Keyboard Shortcuts", self)
+        shortcuts_action.triggered.connect(self._show_shortcuts)
+        help_menu.addAction(shortcuts_action)
+
+    def _show_about(self) -> None:
+        """Show About dialog."""
+        QMessageBox.about(
+            self,
+            "About Shuttle",
+            (
+                f"Shuttle v{VERSION}\n\n"
+                "A native macOS transfer hub for devices and servers.\n\n"
+                "Built with Python, PySide6, and Paramiko.\n"
+                "https://github.com/imlocle/shuttle"
+            ),
+        )
+
+    def _show_shortcuts(self) -> None:
+        """Show keyboard shortcuts dialog."""
+        shortcuts = (
+            "⌘R — Refresh\n"
+            "⌘N — New Folder\n"
+            "⌘F — Search\n"
+            "⌘Delete — Delete Selected\n"
+            "⌘↑ — Go Back\n"
+            "Enter — Navigate / Search\n"
+            "Escape — Clear Search / Deselect\n"
+        )
+
+        QMessageBox.information(self, "Keyboard Shortcuts", shortcuts)
 
     def _navigate_selected(self) -> None:
         """Navigate into the selected folder."""

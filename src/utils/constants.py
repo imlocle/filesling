@@ -1,6 +1,7 @@
 # App
 SOFTWARE_NAME = "Shuttle"
 CONFIG_JSON = "config.json"
+VERSION = "2.0.2"
 
 # Connection types
 CONN_TYPE_SSH = "ssh"

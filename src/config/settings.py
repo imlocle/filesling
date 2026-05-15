@@ -132,7 +132,7 @@ class Settings:
                 config_data = cls._load_config(local_config_path)
             else:
                 if getattr(sys, "_MEIPASS", None):
-                    base_path = Path(sys._MEIPASS)
+                    base_path = Path(sys._MEIPASS)  # type: ignore
                     config_path = base_path / f"src/config/{CONFIG_JSON}"
                 else:
                     config_path = Path(__file__).parent / CONFIG_JSON
