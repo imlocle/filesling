@@ -181,7 +181,14 @@ class TransferItemWidget(QFrame):
                 self.status_label.setText(STATUS_UPLOADING)
             self.status_label.setStyleSheet("color: #0078d4; font-size: 11px;")
             self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(item.progress_percent)
+
+            # If no progress data yet, show indeterminate (pulsing) bar
+            if item.progress_percent == 0 and item.transferred_bytes == 0:
+                self.progress_bar.setRange(0, 0)  # indeterminate
+            else:
+                self.progress_bar.setRange(0, 100)
+                self.progress_bar.setValue(item.progress_percent)
+
             self.detail_label.setVisible(True)
             self.retry_btn.setVisible(False)
             self.cancel_btn.setVisible(False)

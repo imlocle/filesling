@@ -81,6 +81,7 @@ class TransferWorker(QObject):
     def _verify_upload(self, local_path: str, remote_path: str) -> bool:
         """
         Verify file was uploaded successfully by comparing sizes.
+        Skipped for ADB connections (adb push handles its own verification).
 
         Args:
             local_path: Local file path
@@ -92,6 +93,13 @@ class TransferWorker(QObject):
         Raises:
             TransferVerificationError: If verification fails
         """
+        # Skip verification for ADB — adb push validates internally
+        # and stat() may return 0 before filesystem syncs
+        from src.services.adb_client import ADBClient
+
+        if isinstance(self.sftp, ADBClient):
+            return True
+
         try:
             local_size = os.path.getsize(local_path)
             remote_stat = self.sftp.stat(remote_path)

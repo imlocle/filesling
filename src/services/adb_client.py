@@ -74,6 +74,26 @@ class ADBClient:
         """Run a shell command on the device."""
         return self._run(["shell", command], timeout=timeout)
 
+    def _shell_stream(self, command: str, timeout: int = 60):
+        """Run a shell command and yield stdout lines as they arrive."""
+        cmd = self._adb_prefix + ["shell", command]
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            for line in proc.stdout:
+                yield line
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        except FileNotFoundError:
+            raise IOError(
+                "adb not found. Install with: brew install android-platform-tools"
+            )
+
     # -------------------------------------------------------------------------
     # SFTPClient-compatible interface
     # -------------------------------------------------------------------------
@@ -87,28 +107,54 @@ class ADBClient:
 
     def listdir_attr(self, path: str) -> List[ADBStat]:
         """List directory with attributes (name, size, type)."""
-        # Use ls -la for detailed listing
-        output = self._shell(f'ls -la "{path}"')
         results = []
-        for line in output.splitlines():
+        for batch in self.listdir_attr_stream(path, batch_size=9999):
+            results.extend(batch)
+        return results
+
+    def listdir_attr_stream(self, path: str, batch_size: int = 50):
+        """
+        Stream directory listing in batches.
+
+        Yields lists of ADBStat objects, `batch_size` items at a time.
+        """
+        batch = []
+        for line in self._shell_stream(f'ls -la "{path}"'):
+            line = line.rstrip("\n\r")
             parts = line.split()
             if len(parts) < 7:
                 continue
-            # Skip "total" line
             if parts[0] == "total":
                 continue
 
             perms = parts[0]
-            try:
-                size = int(parts[3]) if len(parts) >= 5 else 0
-            except (ValueError, IndexError):
-                size = 0
 
-            # Determine name (last field, may contain spaces)
-            # Format: permissions links owner group size date time name
-            name = " ".join(parts[6:]) if len(parts) > 6 else parts[-1]
+            # Find size: first numeric field after owner/group
+            size = 0
+            size_idx = None
+            for i in range(2, min(len(parts), 6)):
+                try:
+                    size = int(parts[i])
+                    size_idx = i
+                    break
+                except ValueError:
+                    continue
 
-            # Remove trailing / or -> symlink targets
+            if size_idx is None:
+                try:
+                    size = int(parts[4])
+                    size_idx = 4
+                except (ValueError, IndexError):
+                    size = 0
+                    size_idx = 4
+
+            # Name is everything after date+time fields
+            name_start = size_idx + 3
+            if name_start < len(parts):
+                name = " ".join(parts[name_start:])
+            else:
+                name = parts[-1]
+
             if " -> " in name:
                 name = name.split(" -> ")[0]
             name = name.rstrip("/")
@@ -121,9 +167,14 @@ class ADBClient:
 
             stat = ADBStat(st_mode=mode, st_size=size)
             stat.filename = name
-            results.append(stat)
+            batch.append(stat)
 
-        return results
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
 
     def stat(self, path: str) -> ADBStat:
         """Get file/directory info."""
@@ -246,9 +297,34 @@ class ADBSession:
         self._output = ""
 
     def exec_command(self, command: str) -> None:
-        """Execute a command on the device."""
-        # Extract the path from df command if present
-        self._output = self._client._shell(command)
+        """Execute a command on the device, adapting for Android."""
+        # Android's df doesn't support -B1, adapt the command
+        if "df -B1" in command:
+            # Extract path from command like "df -B1 /sdcard | tail -1"
+            parts = command.split("|")[0].strip().split()
+            path = parts[-1] if len(parts) > 2 else "/sdcard"
+            # Use Android-compatible df with -k (kilobytes)
+            adb_command = f"df {path} | tail -1"
+            raw_output = self._client._shell(adb_command)
+            # Android df output: /path  size  used  avail  use%  mounted
+            # Convert to bytes format expected by the caller
+            line_parts = raw_output.strip().split()
+            if len(line_parts) >= 4:
+                try:
+                    # Android df outputs in 1K blocks
+                    total_kb = int(line_parts[1])
+                    used_kb = int(line_parts[2])
+                    # Return in same format as df -B1: fs total used avail
+                    self._output = (
+                        f"{line_parts[0]} {total_kb * 1024} "
+                        f"{used_kb * 1024} {int(line_parts[3]) * 1024}"
+                    )
+                    return
+                except (ValueError, IndexError):
+                    pass
+            self._output = raw_output
+        else:
+            self._output = self._client._shell(command)
 
     def recv(self, size: int) -> bytes:
         """Get command output."""

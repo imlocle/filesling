@@ -227,6 +227,7 @@ class DirectoryLoader(QObject):
     """Background worker that loads directory entries via SFTP or local filesystem."""
 
     finished = Signal(list)  # list of (entry, icon_hint, size_str, size_bytes)
+    batch_ready = Signal(list)  # partial results for progressive loading
     error = Signal(str)
 
     def __init__(
@@ -250,6 +251,71 @@ class DirectoryLoader(QObject):
                 if not self.sftp:
                     self.error.emit("SFTP connection not available")
                     return
+
+                # Use listdir_attr to get names + sizes in one call
+                # (avoids per-file stat calls, critical for ADB performance)
+                if hasattr(self.sftp, "listdir_attr"):
+                    # Check if streaming is available (ADB)
+                    if hasattr(self.sftp, "listdir_attr_stream"):
+                        all_results = []
+                        for batch in self.sftp.listdir_attr_stream(
+                            self.path, batch_size=50
+                        ):
+                            batch_results = []
+                            for attr in batch:
+                                if (
+                                    attr.filename.startswith(".")
+                                    or attr.filename.startswith("._")
+                                    or attr.filename in self.settings.skip_files
+                                ):
+                                    continue
+                                is_dir = (
+                                    S_ISDIR(attr.st_mode) if attr.st_mode else False
+                                )
+                                size_bytes = -1 if is_dir else (attr.st_size or 0)
+                                size_str = (
+                                    self._format_size(size_bytes)
+                                    if size_bytes >= 0
+                                    else "—"
+                                )
+                                batch_results.append(
+                                    (attr.filename, is_dir, size_str, size_bytes)
+                                )
+                            if batch_results:
+                                self.batch_ready.emit(batch_results)
+                                all_results.extend(batch_results)
+
+                        # Sort final results and emit finished
+                        all_results.sort(key=lambda r: r[0].lower())
+                        self.finished.emit(all_results)
+                        return
+
+                    # Non-streaming fallback (Paramiko SFTP)
+                    attrs = self.sftp.listdir_attr(self.path)
+                    filtered = [
+                        a
+                        for a in attrs
+                        if not (
+                            a.filename.startswith(".")
+                            or a.filename.startswith("._")
+                            or a.filename in self.settings.skip_files
+                        )
+                    ]
+                    filtered.sort(key=lambda a: a.filename.lower())
+
+                    results = []
+                    for attr in filtered:
+                        is_dir = S_ISDIR(attr.st_mode) if attr.st_mode else False
+                        size_bytes = -1 if is_dir else (attr.st_size or 0)
+                        size_str = (
+                            self._format_size(size_bytes) if size_bytes >= 0 else "—"
+                        )
+                        results.append((attr.filename, is_dir, size_str, size_bytes))
+
+                    self.finished.emit(results)
+                    return
+
+                # Fallback: listdir + individual stat calls
                 entries = self.sftp.listdir(self.path)
             else:
                 entries = os.listdir(self.path)
@@ -445,6 +511,18 @@ class FileExplorerWidget(QWidget):
         layout.addWidget(self._search_bar)
 
         # ------------------------------------------------------------------
+        # Bookmarks bar
+        # ------------------------------------------------------------------
+        self._bookmarks_container = QWidget()
+        self._bookmarks_layout = QHBoxLayout(self._bookmarks_container)
+        self._bookmarks_layout.setContentsMargins(0, 4, 0, 4)
+        self._bookmarks_layout.setSpacing(4)
+        self._bookmarks_layout.addStretch()
+        self._bookmarks_container.setVisible(False)
+        layout.addWidget(self._bookmarks_container)
+        self._refresh_bookmarks()
+
+        # ------------------------------------------------------------------
         # Tree widget with columns
         # ------------------------------------------------------------------
         self.tree_widget: DragDropTreeWidget = DragDropTreeWidget()
@@ -538,6 +616,17 @@ class FileExplorerWidget(QWidget):
         download_action = menu.addAction("⬇️ Download")
         rename_action = menu.addAction("✏️ Rename")
         move_action = menu.addAction("↔️ Move To")
+
+        # Bookmark option for folders
+        bookmark_action = None
+        is_dir = self._is_remote_directory(full_path) if self.is_remote else os.path.isdir(full_path)
+        if is_dir:
+            menu.addSeparator()
+            if full_path in self.settings.config.bookmarks:
+                bookmark_action = menu.addAction("⭐ Remove Bookmark")
+            else:
+                bookmark_action = menu.addAction("⭐ Bookmark")
+
         menu.addSeparator()
         delete_action = menu.addAction("🗑️ Delete")
 
@@ -553,6 +642,8 @@ class FileExplorerWidget(QWidget):
             self.file_delete_requested.emit(full_path)
         elif action == new_folder_action:
             self._prompt_and_create_folder()
+        elif bookmark_action and action == bookmark_action:
+            self._toggle_bookmark(full_path)
 
     def prompt_rename(self, old_path: str) -> Optional[str]:
         basename = os.path.basename(old_path)
@@ -565,6 +656,62 @@ class FileExplorerWidget(QWidget):
         if ok and new_name.strip():
             return new_name.strip()
         return None
+
+    # ------------------------------------------------------------------
+    #  Bookmarks
+    # ------------------------------------------------------------------
+    def _toggle_bookmark(self, path: str) -> None:
+        """Add or remove a bookmark."""
+        bookmarks = self.settings.config.bookmarks
+        if path in bookmarks:
+            bookmarks.remove(path)
+        else:
+            bookmarks.append(path)
+        self.settings.save_config(self.settings._config_to_dict())
+        self._refresh_bookmarks()
+
+    def _refresh_bookmarks(self) -> None:
+        """Rebuild the bookmarks bar from settings."""
+        # Clear existing buttons (except the stretch)
+        while self._bookmarks_layout.count() > 1:
+            item = self._bookmarks_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        bookmarks = self.settings.config.bookmarks
+        if not bookmarks:
+            self._bookmarks_container.setVisible(False)
+            return
+
+        for path in bookmarks:
+            name = os.path.basename(path.rstrip("/")) or path
+            btn = QPushButton(f"📁 {name}")
+            btn.setMaximumHeight(24)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(14, 165, 233, 0.1);
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                    color: #cbd5e1;
+                }
+                QPushButton:hover {
+                    background-color: rgba(14, 165, 233, 0.2);
+                    border-color: #0ea5e9;
+                }
+            """)
+            btn.clicked.connect(lambda checked, p=path: self._navigate_to_bookmark(p))
+            self._bookmarks_layout.insertWidget(
+                self._bookmarks_layout.count() - 1, btn
+            )
+
+        self._bookmarks_container.setVisible(True)
+
+    def _navigate_to_bookmark(self, path: str) -> None:
+        """Navigate to a bookmarked folder."""
+        self.current_path = path
+        self.refresh()
 
     def _prompt_and_create_folder(self) -> None:
         """Prompt user for new folder name and create it."""
@@ -736,19 +883,26 @@ class FileExplorerWidget(QWidget):
         if not self.sftp:
             return
 
-        # Wait for any existing load to finish before starting a new one
+        # Cancel any existing load — disconnect signals and let it finish silently
         if self._loader_thread is not None:
             if self._loader_thread.isRunning():
+                # Disconnect all signals so the old worker doesn't update UI
+                try:
+                    self._loader_worker.finished.disconnect()
+                    self._loader_worker.error.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+                # Let the thread finish on its own and clean up
                 self._loader_thread.quit()
-                self._loader_thread.wait(3000)
-            # Clean up the old thread safely (it's finished now)
-            self._loader_thread.deleteLater()
+                self._loader_thread.finished.connect(self._loader_thread.deleteLater)
+            else:
+                self._loader_thread.deleteLater()
             self._loader_thread = None
         if self._loader_worker is not None:
-            self._loader_worker.deleteLater()
             self._loader_worker = None
 
-        # Show spinner
+        # Show spinner and clear tree for fresh load
+        self.tree_widget.clear()
         self._spinner.resize(self.tree_widget.size())
         self._spinner.start()
 
@@ -764,6 +918,7 @@ class FileExplorerWidget(QWidget):
 
         # Connect signals
         self._loader_thread.started.connect(self._loader_worker.run)
+        self._loader_worker.batch_ready.connect(self._on_batch_ready)
         self._loader_worker.finished.connect(self._on_load_finished)
         self._loader_worker.error.connect(self._on_load_error)
         self._loader_worker.finished.connect(self._loader_thread.quit)
@@ -771,9 +926,44 @@ class FileExplorerWidget(QWidget):
 
         self._loader_thread.start()
 
+    def _on_batch_ready(self, batch: list) -> None:
+        """Handle a batch of items arriving progressively."""
+        # Stop spinner on first batch
+        self._spinner.stop()
+
+        for entry, is_dir, size_str, size_bytes in batch:
+            icon = (
+                QIcon.fromTheme("folder")
+                if is_dir
+                else QIcon.fromTheme("text-x-generic")
+            )
+            item = SortableTreeWidgetItem([entry, size_str])
+            item.setIcon(0, icon)
+            item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
+            self.tree_widget.addTopLevelItem(item)
+
     def _on_load_finished(self, results: list) -> None:
         """Handle background load completion."""
         self._spinner.stop()
+
+        # If batches were used, tree is already populated — just sort and update
+        if self.tree_widget.topLevelItemCount() > 0 and results:
+            # Re-sort after all items are in
+            self.tree_widget.sortItems(
+                self.tree_widget.sortColumn(),
+                self.tree_widget.header().sortIndicatorOrder(),
+            )
+            # Update title and disk bar
+            title_text = f"{self.title} ({self.current_path})"
+            self.title_label.setText(title_text)
+            if self.is_remote and self.sftp:
+                try:
+                    self._get_disk_usage()
+                except Exception:
+                    pass
+            return
+
+        # Non-streaming path (SSH/local) — clear and rebuild
         self.tree_widget.clear()
 
         # Update title

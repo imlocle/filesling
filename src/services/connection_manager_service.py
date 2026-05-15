@@ -100,7 +100,7 @@ class ConnectionManagerService:
                 last_error = e
                 logger.error(
                     f"Connection: Authentication Failed: {e}\n"
-                    f"Please check your SSH key and Pi credentials"
+                    f"Please check your SSH key and server credentials"
                 )
                 # Don't retry authentication errors
                 self.ssh_client = None

@@ -137,6 +137,25 @@ class MainWindowController:
     # --------------------------------------------------------------
     def connect(self) -> None:
         """Establish connection to remote server with error handling."""
+        from src.services.adb_client import get_connected_devices
+
+        # Auto-detect: if a USB device is plugged in, prioritize it
+        # over the default SSH server
+        devices = get_connected_devices()
+        if devices:
+            # Check if we have a saved ADB server config for any connected device
+            for server_id, server_config in self.settings.config.servers.items():
+                if server_config.get(CONN_TYPE_KEY) == CONN_TYPE_ADB:
+                    device_id = server_config.get("device_id")
+                    if any(d["id"] == device_id for d in devices):
+                        # Found a matching saved device — connect to it
+                        self.settings.load_server(server_id)
+                        self._connect_adb(server_config)
+                        return
+
+            # No saved config matches, but a device is connected
+            # Fall through to default server behavior
+
         # Check if this is an ADB (USB) connection
         server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
@@ -322,7 +341,10 @@ class MainWindowController:
     # --------------------------------------------------------------
     def refresh_explorers(self) -> None:
         """Refresh the remote file explorer."""
-        if (
+        # If explorer has an active connection (SSH or ADB), just refresh
+        if self.view.remote_explorer.sftp:
+            self.view.remote_explorer.refresh()
+        elif (
             self.connection_manager.is_connected()
             and self.connection_manager.sftp_client
         ):
@@ -443,10 +465,11 @@ class MainWindowController:
             )
 
     def _is_remote_dir(self, path: str) -> bool:
-        if not self.connection_manager.sftp_client:
+        sftp = self.view.remote_explorer.sftp
+        if not sftp:
             return False
         try:
-            self.connection_manager.sftp_client.listdir(path)
+            sftp.listdir(path)
             return True
         except Exception:
             return False
@@ -462,9 +485,9 @@ class MainWindowController:
             ConnectionLostError: If connection is lost
             FileDeletionError: If deletion fails
         """
-        sftp = self.connection_manager.sftp_client
+        sftp = self.view.remote_explorer.sftp
         if not sftp:
-            raise ConnectionLostError("No SFTP connection available")
+            raise ConnectionLostError("No connection available")
 
         try:
             if self._is_remote_dir(path):
@@ -564,9 +587,10 @@ class MainWindowController:
 
         try:
             if old_path.startswith(self.settings.remote_base_dir):
-                if not self.connection_manager.sftp_client:
-                    raise RuntimeError("No SFTP connection")
-                self.connection_manager.sftp_client.rename(old_path, new_path)
+                sftp = self.view.remote_explorer.sftp
+                if not sftp:
+                    raise RuntimeError("No connection available")
+                sftp.rename(old_path, new_path)
                 self.view.remote_explorer.refresh()
             else:
                 os.rename(old_path, new_path)
@@ -670,6 +694,9 @@ class MainWindowController:
 
         # Start
         self._download_thread.start()
+        self._download_remote_path = remote_path
+        self._download_local_dir = local_dir
+        self._download_total_bytes = total_bytes
         logger.download(f"Download: {os.path.basename(remote_path)}")
         logger.info(f"Saving to: {local_dir}")
 
@@ -696,6 +723,20 @@ class MainWindowController:
             self.view, "transfer_queue"
         ):
             self.view.transfer_queue.set_completed(self._download_queue_index)
+
+        # Record in transfer history
+        if hasattr(self, "_download_remote_path") and hasattr(
+            self, "_download_local_dir"
+        ):
+            self.manual_transfer.history.add(
+                filename=os.path.basename(self._download_remote_path),
+                direction="download",
+                source=self._download_remote_path,
+                destination=self._download_local_dir,
+                size_bytes=getattr(self, "_download_total_bytes", 0),
+                server_name=self.settings.config.current_server_id,
+            )
+
         if hasattr(self, "_download_thread") and self._download_thread:
             self._download_thread.quit()
 
@@ -739,9 +780,10 @@ class MainWindowController:
 
         try:
             if is_remote:
-                if not self.connection_manager.sftp_client:
-                    raise RuntimeError("No SFTP connection")
-                self.connection_manager.sftp_client.mkdir(folder_path)
+                sftp = self.view.remote_explorer.sftp
+                if not sftp:
+                    raise RuntimeError("No connection available")
+                sftp.mkdir(folder_path)
                 self.view.remote_explorer.refresh()
             else:
                 os.makedirs(folder_path, exist_ok=True)
@@ -812,9 +854,10 @@ class MainWindowController:
 
         try:
             if is_remote:
-                if not self.connection_manager.sftp_client:
-                    raise RuntimeError("No SFTP connection")
-                self.connection_manager.sftp_client.rename(src_path, dest_path)
+                sftp = self.view.remote_explorer.sftp
+                if not sftp:
+                    raise RuntimeError("No connection available")
+                sftp.rename(src_path, dest_path)
                 self.view.remote_explorer.refresh()
             else:
                 # Create destination directory if it doesn't exist
