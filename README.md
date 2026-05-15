@@ -23,6 +23,20 @@ Built with Python, PySide6, and Paramiko.
 
 ## Quick Start
 
+### Download the app
+
+Grab `Shuttle.dmg` from the [latest release](https://github.com/imlocle/shuttle/releases/latest), open it, and drag `Shuttle.app` to Applications.
+
+**First launch on macOS:** Apple blocks unsigned apps by default. Run this once in Terminal to allow it:
+
+```bash
+xattr -cr /Applications/Shuttle.app
+```
+
+Then open Shuttle normally.
+
+### Run from source
+
 ```bash
 pip install -r requirements.txt
 python main.py

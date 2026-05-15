@@ -1,5 +1,4 @@
 import sys
-from importlib.metadata import version
 
 from PySide6.QtWidgets import QApplication
 
@@ -8,10 +7,20 @@ from src.components.splash_screen import SplashScreen
 from src.utils.helper import get_path, rounded_icon
 
 
+def _get_version() -> str:
+    """Get version from package metadata, fallback for PyInstaller bundles."""
+    try:
+        from importlib.metadata import version
+
+        return version("shuttle")
+    except Exception:
+        return "2.0.2"
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Shuttle")
-    app.setApplicationVersion(version("shuttle"))
+    app.setApplicationVersion(_get_version())
 
     # ---- STYLESHEET ----
     stylesheet_path = get_path("assets/styles/modern_theme.qss")
