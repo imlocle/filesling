@@ -162,9 +162,7 @@ class ManualTransferController(QObject):
         transfer = self._current_transfer
 
         # Determine connection type
-        server_config = self.settings.get_server(
-            self.settings.config.current_server_id
-        )
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
             server_config.get("connection_type", "ssh") if server_config else "ssh"
         )
@@ -178,9 +176,7 @@ class ManualTransferController(QObject):
                 sftp = view.remote_explorer.sftp
             else:
                 logger.error("Transfer: No ADB connection available")
-                self.transfer_failed.emit(
-                    transfer.local_paths[0], "No ADB connection"
-                )
+                self.transfer_failed.emit(transfer.local_paths[0], "No ADB connection")
                 QTimer.singleShot(100, self._process_next)
                 return
         else:

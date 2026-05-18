@@ -287,6 +287,42 @@ class Settings:
         self.config.current_server_id = server_id
         return True
 
+    def get_bookmarks(self) -> list[str]:
+        """Return bookmarks for the active server, falling back to legacy globals."""
+        server_config = self.get_server(self.config.current_server_id)
+        if server_config is None:
+            return list(self.config.bookmarks)
+
+        bookmarks = server_config.get("bookmarks")
+        if bookmarks is None:
+            bookmarks = list(self.config.bookmarks)
+            server_config["bookmarks"] = bookmarks
+        return list(bookmarks)
+
+    def set_bookmarks(self, bookmarks: list[str]) -> None:
+        """Persist bookmarks on the active server configuration."""
+        server_config = self.get_server(self.config.current_server_id)
+        if server_config is None:
+            self.config.bookmarks = bookmarks
+        else:
+            server_config["bookmarks"] = bookmarks
+        self.save_config(self._config_to_dict())
+
+    def get_default_bookmark(self) -> str:
+        """Return the default bookmark for the active server."""
+        server_config = self.get_server(self.config.current_server_id)
+        if server_config is None:
+            return ""
+        return server_config.get("default_bookmark", "")
+
+    def set_default_bookmark(self, bookmark: str) -> None:
+        """Persist the default bookmark on the active server configuration."""
+        server_config = self.get_server(self.config.current_server_id)
+        if server_config is None:
+            return
+        server_config["default_bookmark"] = bookmark
+        self.save_config(self._config_to_dict())
+
     def _config_to_dict(self) -> dict:
         """Convert current config to dictionary for saving."""
         return {

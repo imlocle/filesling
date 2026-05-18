@@ -9,6 +9,7 @@ and USB Debugging enabled on the Android device.
 """
 
 import os
+import shlex
 import subprocess
 from dataclasses import dataclass
 from stat import S_IFDIR, S_IFREG
@@ -301,10 +302,10 @@ class ADBSession:
         # Android's df doesn't support -B1, adapt the command
         if "df -B1" in command:
             # Extract path from command like "df -B1 /sdcard | tail -1"
-            parts = command.split("|")[0].strip().split()
+            parts = shlex.split(command.split("|")[0].strip())
             path = parts[-1] if len(parts) > 2 else "/sdcard"
             # Use Android-compatible df with -k (kilobytes)
-            adb_command = f"df {path} | tail -1"
+            adb_command = f"df {shlex.quote(path)} | tail -1"
             raw_output = self._client._shell(adb_command)
             # Android df output: /path  size  used  avail  use%  mounted
             # Convert to bytes format expected by the caller

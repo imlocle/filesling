@@ -237,6 +237,9 @@ class SettingsWindow(QDialog):
         try:
             config = self.connection_form.get_config()
             config["name"] = server_name
+            existing_config = self.settings.get_server(self.server_id) or {}
+            config["bookmarks"] = existing_config.get("bookmarks", [])
+            config["default_bookmark"] = existing_config.get("default_bookmark", "")
 
             # Validate SSH config
             if config.get(CONN_TYPE_KEY) == CONN_TYPE_SSH:

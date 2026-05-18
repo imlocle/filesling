@@ -62,7 +62,7 @@ Stored at `~/.Shuttle/config.json`:
       "host": "192.168.1.100",
       "ssh_key_path": "~/.ssh/id_rsa",
       "ssh_port": 22,
-      "remote_base_dir": "/mnt/external"
+      "remote_base_dir": "/"
     },
     "my-phone": {
       "name": "My Phone",
@@ -116,6 +116,7 @@ make build
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature Ideas](docs/ideas.md)
+- [Case Study](https://imlocle.com/#/work/case-study/shuttle)
 
 ## Support
 

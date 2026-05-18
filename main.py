@@ -4,8 +4,8 @@ from PySide6.QtWidgets import QApplication
 
 from src.components.main_window import MainWindow
 from src.components.splash_screen import SplashScreen
-from src.utils.helper import get_path, rounded_icon
 from src.utils.constants import VERSION
+from src.utils.helper import get_path, rounded_icon
 
 
 def _get_version() -> str:

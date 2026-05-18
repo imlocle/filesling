@@ -135,6 +135,10 @@ class MainWindowController:
     # --------------------------------------------------------------
     #  CONNECTION MANAGEMENT
     # --------------------------------------------------------------
+    def _get_initial_explorer_path(self, root_path: str) -> str:
+        """Choose the first path shown after connecting to the current server."""
+        return self.settings.get_default_bookmark() or root_path
+
     def connect(self) -> None:
         """Establish connection to remote server with error handling."""
         from src.services.adb_client import get_connected_devices
@@ -163,7 +167,7 @@ class MainWindowController:
         )
 
         if connection_type == CONN_TYPE_ADB:
-            self._connect_adb(server_config)
+            self._connect_adb(server_config)  # type: ignore
             return
 
         self._connect_ssh()
@@ -203,17 +207,17 @@ class MainWindowController:
 
             # Success — bind to explorer
             self.view.connection_status_label.setText(
-                f"● Connected to {device_name} (USB)"
+                f"● Connected: {device_name} (USB)"
             )
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.setStyleSheet(
                 "color: #4ec9b0; font-weight: 500;"
             )
 
+            start_path = self._get_initial_explorer_path(root_path)
             self.view.remote_explorer.root_path = root_path
-            self.view.remote_explorer.current_path = root_path
             self.view.remote_explorer.set_sftp(client)
-            self.view.remote_explorer.refresh()
+            self.view.remote_explorer.refresh(start_path)
 
             logger.success(f"Connected: {device_name} (USB)")
 
@@ -251,11 +255,11 @@ class MainWindowController:
 
             if server_name:
                 self.view.connection_status_label.setText(
-                    f"● Connected to {server_name} ({self.settings.host})"
+                    f"● Connected: {server_name} ({self.settings.host})"
                 )
             else:
                 self.view.connection_status_label.setText(
-                    f"● Connected to {self.settings.host}"
+                    f"● Connected: {self.settings.host}"
                 )
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.setStyleSheet(
@@ -264,8 +268,12 @@ class MainWindowController:
 
             # bind sftp to remote explorer
             if self.connection_manager.sftp_client:
+                start_path = self._get_initial_explorer_path(
+                    self.settings.remote_base_dir
+                )
+                self.view.remote_explorer.root_path = self.settings.remote_base_dir
                 self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
-                self.view.remote_explorer.refresh()
+                self.view.remote_explorer.refresh(start_path)
 
         except AuthenticationError as e:
             self.view.connection_status_label.setText("● Authentication Failed")

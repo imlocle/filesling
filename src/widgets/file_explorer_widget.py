@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 from stat import S_ISDIR
 from typing import List, Optional
@@ -462,24 +463,9 @@ class FileExplorerWidget(QWidget):
         self._loader_worker: Optional[DirectoryLoader] = None
 
         # ------------------------------------------------------------------
-        # Layout / Header
+        # Layout
         # ------------------------------------------------------------------
         layout: QVBoxLayout = QVBoxLayout(self)
-        header_layout: QHBoxLayout = QHBoxLayout()
-
-        self.back_btn: QPushButton = QPushButton("←")
-        self.back_btn.setObjectName("icon_btn")
-        self.back_btn.setToolTip("Go back")
-        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.title_label: QLabel = QLabel(f"{self.title} ({self.current_path})")
-        self.title_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-
-        header_layout.addWidget(self.back_btn)
-        header_layout.addWidget(self.title_label)
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
 
         # ------------------------------------------------------------------
         # Search / Filter bar
@@ -511,14 +497,20 @@ class FileExplorerWidget(QWidget):
         layout.addWidget(self._search_bar)
 
         # ------------------------------------------------------------------
-        # Bookmarks bar
+        # Navigation / Bookmarks bar
         # ------------------------------------------------------------------
         self._bookmarks_container = QWidget()
         self._bookmarks_layout = QHBoxLayout(self._bookmarks_container)
         self._bookmarks_layout.setContentsMargins(0, 4, 0, 4)
         self._bookmarks_layout.setSpacing(4)
+
+        self.back_btn: QPushButton = QPushButton("←")
+        self.back_btn.setObjectName("icon_btn")
+        self.back_btn.setToolTip("Go back")
+        self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self._bookmarks_layout.addWidget(self.back_btn)
         self._bookmarks_layout.addStretch()
-        self._bookmarks_container.setVisible(False)
         layout.addWidget(self._bookmarks_container)
         self._refresh_bookmarks()
 
@@ -534,6 +526,13 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.setSortingEnabled(True)
         self.tree_widget.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         layout.addWidget(self.tree_widget)
+
+        self.breadcrumb_label: QLabel = QLabel()
+        self.breadcrumb_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.breadcrumb_label.setStyleSheet("color: #858585; font-size: 11px;")
+        layout.addWidget(self.breadcrumb_label)
 
         # ------------------------------------------------------------------
         # Loading spinner (overlays the tree widget)
@@ -590,6 +589,10 @@ class FileExplorerWidget(QWidget):
 
         self.refresh()
 
+    def _update_breadcrumb(self) -> None:
+        """Update bottom breadcrumb text."""
+        self.breadcrumb_label.setText(self.current_path)
+
     # ------------------------------------------------------------------
     #  Context menu (create / delete / rename / move)
     # ------------------------------------------------------------------
@@ -619,13 +622,22 @@ class FileExplorerWidget(QWidget):
 
         # Bookmark option for folders
         bookmark_action = None
-        is_dir = self._is_remote_directory(full_path) if self.is_remote else os.path.isdir(full_path)
+        default_bookmark_action = None
+        is_dir = (
+            self._is_remote_directory(full_path)
+            if self.is_remote
+            else os.path.isdir(full_path)
+        )
         if is_dir:
             menu.addSeparator()
-            if full_path in self.settings.config.bookmarks:
+            if full_path in self.settings.get_bookmarks():
                 bookmark_action = menu.addAction("⭐ Remove Bookmark")
             else:
                 bookmark_action = menu.addAction("⭐ Bookmark")
+            if full_path == self.settings.get_default_bookmark():
+                default_bookmark_action = menu.addAction("🏠 Clear Default Bookmark")
+            else:
+                default_bookmark_action = menu.addAction("🏠 Set as Default Bookmark")
 
         menu.addSeparator()
         delete_action = menu.addAction("🗑️ Delete")
@@ -644,6 +656,8 @@ class FileExplorerWidget(QWidget):
             self._prompt_and_create_folder()
         elif bookmark_action and action == bookmark_action:
             self._toggle_bookmark(full_path)
+        elif default_bookmark_action and action == default_bookmark_action:
+            self._toggle_default_bookmark(full_path)
 
     def prompt_rename(self, old_path: str) -> Optional[str]:
         basename = os.path.basename(old_path)
@@ -662,30 +676,44 @@ class FileExplorerWidget(QWidget):
     # ------------------------------------------------------------------
     def _toggle_bookmark(self, path: str) -> None:
         """Add or remove a bookmark."""
-        bookmarks = self.settings.config.bookmarks
+        bookmarks = self.settings.get_bookmarks()
         if path in bookmarks:
             bookmarks.remove(path)
+            if path == self.settings.get_default_bookmark():
+                self.settings.set_default_bookmark("")
         else:
             bookmarks.append(path)
-        self.settings.save_config(self.settings._config_to_dict())
+        self.settings.set_bookmarks(bookmarks)
+        self._refresh_bookmarks()
+
+    def _toggle_default_bookmark(self, path: str) -> None:
+        """Set or clear the default bookmark for this server."""
+        if path == self.settings.get_default_bookmark():
+            self.settings.set_default_bookmark("")
+        else:
+            bookmarks = self.settings.get_bookmarks()
+            if path not in bookmarks:
+                bookmarks.append(path)
+                self.settings.set_bookmarks(bookmarks)
+            self.settings.set_default_bookmark(path)
         self._refresh_bookmarks()
 
     def _refresh_bookmarks(self) -> None:
         """Rebuild the bookmarks bar from settings."""
-        # Clear existing buttons (except the stretch)
-        while self._bookmarks_layout.count() > 1:
-            item = self._bookmarks_layout.takeAt(0)
+        # Clear existing bookmark buttons (keep back button + stretch)
+        while self._bookmarks_layout.count() > 2:
+            item = self._bookmarks_layout.takeAt(1)
             if item.widget():
                 item.widget().deleteLater()
 
-        bookmarks = self.settings.config.bookmarks
+        bookmarks = self.settings.get_bookmarks()
         if not bookmarks:
-            self._bookmarks_container.setVisible(False)
             return
 
         for path in bookmarks:
             name = os.path.basename(path.rstrip("/")) or path
-            btn = QPushButton(f"📁 {name}")
+            prefix = "🏠" if path == self.settings.get_default_bookmark() else "📁"
+            btn = QPushButton(f"{prefix} {name}")
             btn.setMaximumHeight(24)
             btn.setStyleSheet("""
                 QPushButton {
@@ -705,8 +733,6 @@ class FileExplorerWidget(QWidget):
             self._bookmarks_layout.insertWidget(
                 self._bookmarks_layout.count() - 1, btn
             )
-
-        self._bookmarks_container.setVisible(True)
 
     def _navigate_to_bookmark(self, path: str) -> None:
         """Navigate to a bookmarked folder."""
@@ -866,9 +892,8 @@ class FileExplorerWidget(QWidget):
 
         self.tree_widget.clear()
 
-        # Update title with disk usage for remote explorer
-        title_text = f"{self.title} ({self.current_path})"
-        self.title_label.setText(title_text)
+        self._update_breadcrumb()
+        self._refresh_bookmarks()
 
         if self.is_remote:
             # Load asynchronously for remote (SFTP is slow)
@@ -953,9 +978,7 @@ class FileExplorerWidget(QWidget):
                 self.tree_widget.sortColumn(),
                 self.tree_widget.header().sortIndicatorOrder(),
             )
-            # Update title and disk bar
-            title_text = f"{self.title} ({self.current_path})"
-            self.title_label.setText(title_text)
+            self._update_breadcrumb()
             if self.is_remote and self.sftp:
                 try:
                     self._get_disk_usage()
@@ -966,9 +989,7 @@ class FileExplorerWidget(QWidget):
         # Non-streaming path (SSH/local) — clear and rebuild
         self.tree_widget.clear()
 
-        # Update title
-        title_text = f"{self.title} ({self.current_path})"
-        self.title_label.setText(title_text)
+        self._update_breadcrumb()
 
         # Update disk space bar
         if self.is_remote and self.sftp:
@@ -1040,7 +1061,7 @@ class FileExplorerWidget(QWidget):
         """
         # Reset UI path to root (don't call listdir again here)
         self.current_path = self.root_path
-        self.title_label.setText(f"{self.title} ({self.current_path})")
+        self._update_breadcrumb()
 
         # Drop the dead client (important: prevents repeated "Socket is closed")
         self.sftp = None
@@ -1502,10 +1523,11 @@ class FileExplorerWidget(QWidget):
             if not transport:
                 return None
 
-            # Execute df command to get disk usage
+            # Execute df command against the current path so mounted drives show
+            # their own filesystem capacity instead of the server base path.
             # -B1 gives output in bytes for accurate calculation
             session = transport.open_session()
-            session.exec_command(f"df -B1 {self.root_path} | tail -1")
+            session.exec_command(f"df -B1 {shlex.quote(self.current_path)} | tail -1")
 
             # Read output
             output = session.recv(1024).decode("utf-8").strip()
