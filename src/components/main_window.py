@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         self._setup_toolbar(main_layout)
         self._setup_status_bar(main_layout)
         self._setup_content_area(main_layout)
-        self._setup_activity_log(main_layout)
+        self._setup_diagnostics_log()
         self._setup_progress_bar(main_layout)
 
         container = QWidget()
@@ -426,6 +426,12 @@ class MainWindow(QMainWindow):
         back_action.triggered.connect(self.remote_explorer.go_back)
         view_menu.addAction(back_action)
 
+        view_menu.addSeparator()
+
+        diagnostics_action = QAction("Diagnostics Log...", self)
+        diagnostics_action.triggered.connect(self._show_diagnostics_log)
+        view_menu.addAction(diagnostics_action)
+
         # --- Help Menu ---
         help_menu = menu_bar.addMenu("Help")
 
@@ -608,37 +614,13 @@ class MainWindow(QMainWindow):
         )
 
         content_layout.addWidget(self.remote_explorer)
-        layout.addWidget(content_container, stretch=1)
+        layout.addWidget(content_container, stretch=3)
 
-    def _setup_activity_log(self, layout: QVBoxLayout) -> None:
-        """Create activity log section."""
-        log_container = QWidget()
-        log_layout = QVBoxLayout(log_container)
-        log_layout.setContentsMargins(12, 0, 12, 12)
-        log_layout.setSpacing(6)
-
-        # Log header
-        log_header = QLabel("Activity Log")
-        log_header.setObjectName("section_header")
-        log_layout.addWidget(log_header)
-
-        # Log text box
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        self.log_box.setMaximumHeight(180)
-        self.log_box.setStyleSheet("""
-            QTextEdit {
-                background-color: #1e1e1e;
-                border: 1px solid #3e3e42;
-                border-radius: 6px;
-                padding: 8px;
-                font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-                font-size: 12px;
-            }
-        """)
-        log_layout.addWidget(self.log_box)
-
-        layout.addWidget(log_container)
+    def _setup_diagnostics_log(self) -> None:
+        """Keep diagnostics logs available without showing them in the main UI."""
+        self._log_messages: list[str] = []
+        self._diagnostics_dialog: QDialog | None = None
+        self._diagnostics_log_box: QTextEdit | None = None
 
     def _setup_progress_bar(self, layout: QVBoxLayout) -> None:
         """Create transfer queue panel."""
@@ -651,17 +633,63 @@ class MainWindow(QMainWindow):
         self.transfer_queue = TransferQueueWidget()
         queue_layout.addWidget(self.transfer_queue)
 
-        layout.addWidget(queue_container)
+        layout.addWidget(queue_container, stretch=1)
 
     # ------------------------------------------------------------------
     # Logging & Progress
     # ------------------------------------------------------------------
     def log(self, message: str) -> None:
-        """Append message to activity log."""
-        self.log_box.append(message)
-        # Auto-scroll to bottom
-        scrollbar = self.log_box.verticalScrollBar()
+        """Record diagnostics logs and update the diagnostics dialog if open."""
+        self._log_messages.append(message)
+        if len(self._log_messages) > 1000:
+            self._log_messages = self._log_messages[-1000:]
+
+        if self._diagnostics_log_box:
+            self._diagnostics_log_box.append(message)
+            scrollbar = self._diagnostics_log_box.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _show_diagnostics_log(self) -> None:
+        """Show the diagnostics log in a separate window."""
+        if self._diagnostics_dialog:
+            self._diagnostics_dialog.raise_()
+            self._diagnostics_dialog.activateWindow()
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Diagnostics Log")
+        dialog.setMinimumSize(720, 420)
+        dialog.finished.connect(self._clear_diagnostics_dialog)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        self._diagnostics_log_box = QTextEdit()
+        self._diagnostics_log_box.setReadOnly(True)
+        self._diagnostics_log_box.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                border: 1px solid #3e3e42;
+                border-radius: 6px;
+                padding: 8px;
+                font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+                font-size: 12px;
+            }
+        """)
+        for message in self._log_messages:
+            self._diagnostics_log_box.append(message)
+        layout.addWidget(self._diagnostics_log_box)
+
+        self._diagnostics_dialog = dialog
+        dialog.show()
+
+        scrollbar = self._diagnostics_log_box.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    def _clear_diagnostics_dialog(self, *args) -> None:
+        """Forget diagnostics dialog widgets after the window closes."""
+        self._diagnostics_dialog = None
+        self._diagnostics_log_box = None
 
     def update_progress(self, value: int) -> None:
         """Update progress (legacy — now handled by queue widget)."""

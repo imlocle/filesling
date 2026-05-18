@@ -280,7 +280,7 @@ class TransferQueueWidget(QWidget):
         # Scroll area for items
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setMaximumHeight(200)
+        self.scroll_area.setMinimumHeight(220)
         self.scroll_area.setStyleSheet("""
             QScrollArea {
                 background-color: transparent;
