@@ -12,7 +12,7 @@ CONN_TYPE_KEY = "connection_type"
 DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_KEY_PATH = "~/.ssh/id_rsa"
 DEFAULT_REMOTE_BASE_DIR = "/"
-DEFAULT_ADB_BASE_DIR = "/sdcard"
+DEFAULT_ADB_BASE_DIR = "/"
 
 # Placeholders
 PLACEHOLDER_HOST = "192.168.1.100"

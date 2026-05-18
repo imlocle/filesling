@@ -5,6 +5,7 @@ Used by both the "Add Server" dialog and the main Settings window.
 """
 
 import os
+from typing import Optional
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -48,7 +49,7 @@ class ConnectionFormWidget(QWidget):
 
     connection_tested = Signal(bool)  # True if test succeeded
 
-    def __init__(self, config: dict = None, parent=None):
+    def __init__(self, config: Optional[dict] = None, parent=None):
         """
         Args:
             config: Existing server config dict to populate fields (or None for defaults)

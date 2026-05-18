@@ -10,10 +10,13 @@ and USB Debugging enabled on the Android device.
 
 import os
 import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
-from stat import S_IFDIR, S_IFREG
+from stat import S_IFDIR, S_IFREG, S_ISDIR
 from typing import List, Optional
+
+from src.utils.logging_signal import logger
 
 
 @dataclass
@@ -22,10 +25,7 @@ class ADBStat:
 
     st_mode: int
     st_size: int
-
-    @property
-    def filename(self) -> str:
-        return ""
+    filename: str = ""
 
 
 class ADBClient:
@@ -45,9 +45,10 @@ class ADBClient:
                       If None, uses the only connected device.
         """
         self.device_id = device_id
-        self._adb_prefix = ["adb"]
+        adb_path = get_adb_path()
+        self._adb_prefix = [adb_path]
         if device_id:
-            self._adb_prefix = ["adb", "-s", device_id]
+            self._adb_prefix = [adb_path, "-s", device_id]
 
     def _run(self, args: List[str], timeout: int = 10) -> str:
         """Run an adb command and return stdout."""
@@ -85,7 +86,7 @@ class ADBClient:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            for line in proc.stdout:
+            for line in proc.stdout:  # type: ignore
                 yield line
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -94,6 +95,15 @@ class ADBClient:
             raise IOError(
                 "adb not found. Install with: brew install android-platform-tools"
             )
+
+    def _normalize_remote_path(self, path: str) -> str:
+        """Normalize malformed remote paths before sending to adb."""
+        # logger.info(path)
+        path = path.strip()
+        while "//" in path:
+            path = path.replace("//", "/")
+
+        return path
 
     # -------------------------------------------------------------------------
     # SFTPClient-compatible interface
@@ -159,6 +169,7 @@ class ADBClient:
             if " -> " in name:
                 name = name.split(" -> ")[0]
             name = name.rstrip("/")
+            name = os.path.basename(name)
 
             if not name or name in (".", ".."):
                 continue
@@ -178,49 +189,66 @@ class ADBClient:
             yield batch
 
     def stat(self, path: str) -> ADBStat:
-        """Get file/directory info."""
-        output = self._shell(f'stat -c "%F %s" "{path}" 2>/dev/null || echo "error"')
-        output = output.strip()
+        """Get file/directory info (robust Android-safe version)."""
 
-        if "error" in output or not output:
-            # Fallback: try ls -ld
-            output = self._shell(f'ls -ld "{path}"')
-            if output.strip():
-                parts = output.split()
-                is_dir = parts[0].startswith("d") if parts else False
-                try:
-                    size = int(parts[3]) if len(parts) >= 4 else 0
-                except (ValueError, IndexError):
-                    size = 0
-                mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
-                return ADBStat(st_mode=mode, st_size=size)
-            raise IOError(f"Cannot stat: {path}")
+        path = self._normalize_remote_path(path)
+        # First verify the path actually exists
+        exists_result = self._shell(
+            f'[ -e "{path}" ] && echo exists || echo missing'
+        ).strip()
 
-        parts = output.split()
-        file_type = parts[0] if parts else ""
+        if exists_result != "exists":
+            raise FileNotFoundError(f"Remote path does not exist: {path}")
+
+        # Determine if this is a directory
+        is_dir_result = self._shell(f'[ -d "{path}" ] && echo dir || echo file').strip()
+
+        is_dir = is_dir_result == "dir"
+
+        # Try to get size safely (optional)
+        size = 0
         try:
-            size = int(parts[1]) if len(parts) > 1 else 0
-        except ValueError:
-            size = 0
+            size_out = self._shell(f'stat -c %s "{path}" 2>/dev/null')
+            size = int(size_out.strip())
+        except Exception:
+            pass
 
-        is_dir = "directory" in file_type.lower()
         mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
         return ADBStat(st_mode=mode, st_size=size)
 
     def rename(self, old_path: str, new_path: str) -> None:
         """Rename/move a file or directory."""
+        old_path = self._normalize_remote_path(old_path)
+        new_path = self._normalize_remote_path(new_path)
         self._shell(f'mv "{old_path}" "{new_path}"')
 
     def remove(self, path: str) -> None:
         """Delete a file."""
-        self._shell(f'rm -f "{path}"')
+        path = self._normalize_remote_path(path)
+        quoted = shlex.quote(path)
+        self._shell(f"rm -f {quoted}")
 
     def rmdir(self, path: str) -> None:
-        """Delete a directory (recursively)."""
-        self._shell(f'rm -rf "{path}"')
+        """Delete a directory recursively."""
+        path = self._normalize_remote_path(path)
+        # Some callers may accidentally route file deletions here.
+        # Detect the type first so Android rm errors do not occur.
+        try:
+            stat = self.stat(path)
+            is_dir = S_ISDIR(stat.st_mode)
+        except FileNotFoundError:
+            return
+
+        quoted = shlex.quote(path)
+
+        if is_dir:
+            self._shell(f"rm -rf {quoted}")
+        else:
+            self._shell(f"rm -f {quoted}")
 
     def mkdir(self, path: str) -> None:
         """Create a directory."""
+        path = self._normalize_remote_path(path)
         self._shell(f'mkdir -p "{path}"')
 
     def put(self, local_path: str, remote_path: str, callback=None) -> None:
@@ -239,6 +267,7 @@ class ADBClient:
         if callback:
             callback(0, total_size)
 
+        remote_path = self._normalize_remote_path(remote_path)
         self._run(
             ["push", local_path, remote_path],
             timeout=600,  # 10 min timeout for large files
@@ -266,6 +295,7 @@ class ADBClient:
         if callback:
             callback(0, total_size)
 
+        remote_path = self._normalize_remote_path(remote_path)
         self._run(
             ["pull", remote_path, local_path],
             timeout=600,
@@ -301,9 +331,9 @@ class ADBSession:
         """Execute a command on the device, adapting for Android."""
         # Android's df doesn't support -B1, adapt the command
         if "df -B1" in command:
-            # Extract path from command like "df -B1 /sdcard | tail -1"
+            # Extract path from command like "df -B1 /storage/emulated/0 | tail -1"
             parts = shlex.split(command.split("|")[0].strip())
-            path = parts[-1] if len(parts) > 2 else "/sdcard"
+            path = parts[-1] if len(parts) > 2 else "/storage/emulated/0"
             # Use Android-compatible df with -k (kilobytes)
             adb_command = f"df {shlex.quote(path)} | tail -1"
             raw_output = self._client._shell(adb_command)
@@ -349,8 +379,9 @@ def get_connected_devices() -> List[dict]:
         Example: [{"id": "ABCD1234", "status": "device", "model": "Pixel 6"}]
     """
     try:
+        adb_path = get_adb_path()
         result = subprocess.run(
-            ["adb", "devices", "-l"],
+            [adb_path, "devices", "-l"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -382,7 +413,7 @@ def is_adb_available() -> bool:
     """Check if adb is installed and accessible."""
     try:
         result = subprocess.run(
-            ["adb", "version"],
+            [get_adb_path(), "version"],
             capture_output=True,
             text=True,
             timeout=3,
@@ -390,3 +421,19 @@ def is_adb_available() -> bool:
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+
+
+def get_adb_path() -> str:
+    adb_path = shutil.which("adb")
+
+    if not adb_path:
+        for candidate in [
+            "/opt/homebrew/bin/adb",
+            "/usr/local/bin/adb",
+        ]:
+            if os.path.exists(candidate):
+                adb_path = candidate
+                break
+    if not adb_path:
+        raise IOError("abd path error")
+    return adb_path

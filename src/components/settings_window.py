@@ -218,7 +218,7 @@ class SettingsWindow(QDialog):
         footer = QFrame()
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
-        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setContentsMargins(16, 8, 16, 12)
         footer_layout.addStretch()
 
         cancel_btn = QPushButton("Cancel")

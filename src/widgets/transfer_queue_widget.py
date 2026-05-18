@@ -239,7 +239,7 @@ class TransferQueueWidget(QWidget):
         self.header_label.setObjectName("section_header")
 
         self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setMaximumWidth(50)
+        self.clear_btn.setMaximumWidth(60)
         self.clear_btn.setMaximumHeight(20)
         self.clear_btn.clicked.connect(self.clear_completed)
         self.clear_btn.setVisible(False)

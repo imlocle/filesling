@@ -216,7 +216,7 @@
 - [ ] **Watch Folders** — monitor a local folder, auto-upload new files to a destination
   - Example: `~/Movies/OBS/` → auto-upload to NAS `/recordings/`
 - [ ] **Transfer Rules** — pattern-based routing
-  - Example: `*.mp4` → always send to Android tablet `/sdcard/Movies/`
+  - Example: `*.mp4` → always send to Android tablet `"/storage/emulated/0/Movies/`
   - Example: `*.apk` → always send to test device
 - [ ] **Device-Aware Actions** — when a specific device connects, run a rule
   - Example: when Pixel connects → sync latest screenshots

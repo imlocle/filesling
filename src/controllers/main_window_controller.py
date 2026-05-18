@@ -165,25 +165,6 @@ class MainWindowController:
 
     def connect(self) -> None:
         """Establish connection to remote server with error handling."""
-        from src.services.adb_client import get_connected_devices
-
-        # Auto-detect: if a USB device is plugged in, prioritize it
-        # over the default SSH server
-        devices = get_connected_devices()
-        if devices:
-            # Check if we have a saved ADB server config for any connected device
-            for server_id, server_config in self.settings.config.servers.items():
-                if server_config.get(CONN_TYPE_KEY) == CONN_TYPE_ADB:
-                    device_id = server_config.get("device_id")
-                    if any(d["id"] == device_id for d in devices):
-                        # Found a matching saved device — connect to it
-                        self.settings.load_server(server_id)
-                        self._connect_adb(server_config)
-                        return
-
-            # No saved config matches, but a device is connected
-            # Fall through to default server behavior
-
         # Check if this is an ADB (USB) connection
         server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
@@ -553,7 +534,9 @@ class MainWindowController:
         """
         try:
             for item in sftp.listdir(path):
-                item_path = f"{path}/{item}"
+                item_path = os.path.join(path, os.path.basename(item)).replace(
+                    "\\", "/"
+                )
                 if self._is_remote_dir(item_path):
                     self._delete_remote_dir(item_path, sftp)
                 else:
@@ -930,7 +913,7 @@ class MainWindowController:
             self.manual_transfer.settings = self.settings
             app = QApplication.instance()
             if app:
-                apply_theme(app, self.settings.config.theme_mode)
+                apply_theme(app, self.settings.config.theme_mode)  # type: ignore
             self.refresh_explorers()
 
     # --------------------------------------------------------------

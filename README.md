@@ -73,9 +73,9 @@ Stored at `~/.Shuttle/config.json`:
       "name": "My Phone",
       "connection_type": "adb",
       "device_id": "DEVICE_SERIAL",
-      "remote_base_dir": "/sdcard",
-      "bookmarks": ["/sdcard/Download"],
-      "default_bookmark": "/sdcard/Download"
+      "remote_base_dir": "/storage/emulated/0",
+      "bookmarks": ["/storage/emulated/0/Download"],
+      "default_bookmark": "/storage/emulated/0/Download"
     }
   },
   "default_server_id": "my-server",
