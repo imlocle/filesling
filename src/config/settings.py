@@ -52,6 +52,7 @@ class SettingsConfig(BaseModel):
     last_modified: str = ""
     skip_exit_confirm: bool = False
     bookmarks: list[str] = Field(default_factory=list)
+    theme_mode: str = "system"
 
     @field_validator("host")
     @classmethod
@@ -92,6 +93,14 @@ class SettingsConfig(BaseModel):
                     f"Remote base directory must be an absolute path: {v}",
                     details="Path should start with /",
                 )
+        return v
+
+    @field_validator("theme_mode")
+    @classmethod
+    def validate_theme_mode(cls, v: str) -> str:
+        """Validate appearance preference."""
+        if v not in ("system", "light", "dark"):
+            return "system"
         return v
 
     @classmethod
@@ -340,4 +349,5 @@ class Settings:
             "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,
             "bookmarks": self.config.bookmarks,
+            "theme_mode": self.config.theme_mode,
         }

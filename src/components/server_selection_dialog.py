@@ -71,24 +71,17 @@ class ServerSelectionDialog(QDialog):
     def _setup_header(self, layout: QVBoxLayout):
         """Create header section."""
         header = QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background-color: transparent;
-                border: none;
-                padding: 12px 16px 4px 16px;
-            }
-        """)
 
         header_layout = QVBoxLayout(header)
         header_layout.setSpacing(4)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setContentsMargins(16, 12, 16, 4)
 
         title = QLabel("Select Server")
-        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #ffffff;")
+        title.setObjectName("section_header")
         header_layout.addWidget(title)
 
         subtitle = QLabel("Choose a server to connect to, or add a new one")
-        subtitle.setStyleSheet("color: #858585; font-size: 11px;")
+        subtitle.setObjectName("secondary_label")
         header_layout.addWidget(subtitle)
 
         layout.addWidget(header)
@@ -96,33 +89,12 @@ class ServerSelectionDialog(QDialog):
     def _setup_server_list(self, layout: QVBoxLayout):
         """Create server list section."""
         list_container = QFrame()
-        list_container.setStyleSheet("padding: 8px 16px;")
         list_layout = QVBoxLayout(list_container)
-        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setContentsMargins(16, 8, 16, 8)
         list_layout.setSpacing(8)
 
         # List widget
         self.server_list = QListWidget()
-        self.server_list.setStyleSheet("""
-            QListWidget {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                padding: 6px;
-            }
-            QListWidget::item {
-                padding: 10px;
-                border-radius: 6px;
-                margin: 2px 0;
-            }
-            QListWidget::item:hover {
-                background-color: rgba(14, 165, 233, 0.08);
-            }
-            QListWidget::item:selected {
-                background-color: rgba(14, 165, 233, 0.2);
-                color: #ffffff;
-            }
-        """)
         self.server_list.itemDoubleClicked.connect(self._on_server_double_clicked)
         self.server_list.itemSelectionChanged.connect(self._on_selection_changed)
 
@@ -132,19 +104,19 @@ class ServerSelectionDialog(QDialog):
         action_layout = QHBoxLayout()
         action_layout.setSpacing(6)
 
-        self.add_btn = QPushButton("➕ Add")
+        self.add_btn = QPushButton("Add")
         self.add_btn.clicked.connect(self._add_new_server)
 
-        self.edit_btn = QPushButton("✏️ Edit")
+        self.edit_btn = QPushButton("Edit")
         self.edit_btn.setEnabled(False)
         self.edit_btn.clicked.connect(self._edit_server)
 
-        self.default_btn = QPushButton("⭐ Default")
+        self.default_btn = QPushButton("Default")
         self.default_btn.setEnabled(False)
         self.default_btn.setToolTip("Auto-connect to this server on launch")
         self.default_btn.clicked.connect(self._set_as_default)
 
-        self.delete_btn = QPushButton("🗑 Delete")
+        self.delete_btn = QPushButton("Delete")
         self.delete_btn.setEnabled(False)
         self.delete_btn.clicked.connect(self._delete_server)
 
@@ -160,23 +132,16 @@ class ServerSelectionDialog(QDialog):
     def _setup_footer(self, layout: QVBoxLayout):
         """Create footer with action buttons."""
         footer = QFrame()
-        footer.setStyleSheet("""
-            QFrame {
-                background-color: transparent;
-                border: none;
-                padding: 8px 16px;
-            }
-        """)
 
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
-        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setContentsMargins(16, 8, 16, 12)
         footer_layout.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
 
-        self.connect_btn = QPushButton("🔌 Connect")
+        self.connect_btn = QPushButton("Connect")
         self.connect_btn.setObjectName("primary_btn")
         self.connect_btn.setEnabled(False)
         self.connect_btn.clicked.connect(self._connect_to_server)

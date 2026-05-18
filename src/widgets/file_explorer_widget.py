@@ -31,6 +31,7 @@ from PySide6.QtGui import (
     QPen,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -259,7 +260,7 @@ class DirectoryLoader(QObject):
                     # Check if streaming is available (ADB)
                     if hasattr(self.sftp, "listdir_attr_stream"):
                         all_results = []
-                        for batch in self.sftp.listdir_attr_stream(
+                        for batch in self.sftp.listdir_attr_stream(  # type: ignore
                             self.path, batch_size=50
                         ):
                             batch_results = []
@@ -476,19 +477,6 @@ class FileExplorerWidget(QWidget):
         self._search_bar.setPlaceholderText("🔍 Filter...")
         self._search_bar.setClearButtonEnabled(True)
         self._search_bar.setMaximumHeight(28)
-        self._search_bar.setStyleSheet("""
-            QLineEdit {
-                background-color: #1e1e1e;
-                border: 1px solid #3e3e42;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 12px;
-                color: #cccccc;
-            }
-            QLineEdit:focus {
-                border-color: #0078d4;
-            }
-        """)
         self._search_bar.returnPressed.connect(self._execute_search)
         self._search_bar.textChanged.connect(self._on_search_cleared)
         self._is_searching = False
@@ -531,7 +519,7 @@ class FileExplorerWidget(QWidget):
         self.breadcrumb_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.breadcrumb_label.setStyleSheet("color: #858585; font-size: 11px;")
+        self.breadcrumb_label.setObjectName("secondary_label")
         layout.addWidget(self.breadcrumb_label)
 
         # ------------------------------------------------------------------
@@ -552,20 +540,9 @@ class FileExplorerWidget(QWidget):
         self._disk_bar.setValue(0)
         self._disk_bar.setMaximumHeight(16)
         self._disk_bar.setTextVisible(False)
-        self._disk_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #1e1e1e;
-                border: 1px solid #3e3e42;
-                border-radius: 4px;
-            }
-            QProgressBar::chunk {
-                background-color: #0078d4;
-                border-radius: 3px;
-            }
-        """)
 
         self._disk_label = QLabel("")
-        self._disk_label.setStyleSheet("color: #858585; font-size: 11px;")
+        self._disk_label.setObjectName("secondary_label")
         self._disk_label.setMinimumWidth(140)
 
         disk_bar_layout.addWidget(self._disk_bar, stretch=1)
@@ -703,8 +680,8 @@ class FileExplorerWidget(QWidget):
         # Clear existing bookmark buttons (keep back button + stretch)
         while self._bookmarks_layout.count() > 2:
             item = self._bookmarks_layout.takeAt(1)
-            if item.widget():
-                item.widget().deleteLater()
+            if item.widget():  # type: ignore
+                item.widget().deleteLater()  # type: ignore
 
         bookmarks = self.settings.get_bookmarks()
         if not bookmarks:
@@ -714,21 +691,8 @@ class FileExplorerWidget(QWidget):
             name = os.path.basename(path.rstrip("/")) or path
             prefix = "🏠" if path == self.settings.get_default_bookmark() else "📁"
             btn = QPushButton(f"{prefix} {name}")
+            btn.setObjectName("bookmark_btn")
             btn.setMaximumHeight(24)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(14, 165, 233, 0.1);
-                    border: 1px solid #334155;
-                    border-radius: 4px;
-                    padding: 2px 8px;
-                    font-size: 11px;
-                    color: #cbd5e1;
-                }
-                QPushButton:hover {
-                    background-color: rgba(14, 165, 233, 0.2);
-                    border-color: #0ea5e9;
-                }
-            """)
             btn.clicked.connect(lambda checked, p=path: self._navigate_to_bookmark(p))
             self._bookmarks_layout.insertWidget(self._bookmarks_layout.count() - 1, btn)
 
@@ -768,27 +732,12 @@ class FileExplorerWidget(QWidget):
         dialog_layout = QVBoxLayout(dialog)
 
         label = QLabel(f"Select destination folder for '{basename}':")
-        label.setStyleSheet("color: #cccccc; padding: 4px;")
         dialog_layout.addWidget(label)
 
         # Folder tree
         tree = QTreeWidget()
         tree.setHeaderHidden(True)
         tree.setRootIsDecorated(True)
-        tree.setStyleSheet("""
-            QTreeWidget {
-                background-color: #1e1e1e;
-                border: 1px solid #3e3e42;
-                border-radius: 4px;
-                padding: 4px;
-            }
-            QTreeWidget::item {
-                padding: 4px;
-            }
-            QTreeWidget::item:selected {
-                background-color: #094771;
-            }
-        """)
         dialog_layout.addWidget(tree)
 
         # Populate tree with remote folders
@@ -911,8 +860,8 @@ class FileExplorerWidget(QWidget):
             if self._loader_thread.isRunning():
                 # Disconnect all signals so the old worker doesn't update UI
                 try:
-                    self._loader_worker.finished.disconnect()
-                    self._loader_worker.error.disconnect()
+                    self._loader_worker.finished.disconnect()  # type: ignore
+                    self._loader_worker.error.disconnect()  # type: ignore
                 except (RuntimeError, TypeError):
                     pass
                 # Let the thread finish on its own and clean up
@@ -1142,7 +1091,7 @@ class FileExplorerWidget(QWidget):
         if not query:
             # No filter — show normal directory listing
             for i in range(self.tree_widget.topLevelItemCount()):
-                self.tree_widget.topLevelItem(i).setHidden(False)
+                self.tree_widget.topLevelItem(i).setHidden(False)  # type: ignore
             # If we were showing search results, refresh to restore normal view
             if hasattr(self, "_is_searching") and self._is_searching:
                 self._is_searching = False
@@ -1230,14 +1179,14 @@ class FileExplorerWidget(QWidget):
                 else:
                     return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
-        self._loader_worker = SearchWorker(self.sftp, self.current_path, query)
-        self._loader_worker.moveToThread(self._loader_thread)
+        self._loader_worker = SearchWorker(self.sftp, self.current_path, query)  # type: ignore
+        self._loader_worker.moveToThread(self._loader_thread)  # type: ignore
 
-        self._loader_thread.started.connect(self._loader_worker.run)
-        self._loader_worker.finished.connect(self._on_search_finished)
-        self._loader_worker.error.connect(self._on_search_error)
-        self._loader_worker.finished.connect(self._loader_thread.quit)
-        self._loader_worker.error.connect(self._loader_thread.quit)
+        self._loader_thread.started.connect(self._loader_worker.run)  # type: ignore
+        self._loader_worker.finished.connect(self._on_search_finished)  # type: ignore
+        self._loader_worker.error.connect(self._on_search_error)  # type: ignore
+        self._loader_worker.finished.connect(self._loader_thread.quit)  # type: ignore
+        self._loader_worker.error.connect(self._loader_thread.quit)  # type: ignore
 
         self._loader_thread.start()
 
@@ -1336,16 +1285,6 @@ class FileExplorerWidget(QWidget):
             rect.width() - 24,
             rect.height(),
         )
-        self._rename_editor.setStyleSheet("""
-            QLineEdit {
-                background-color: #1e1e1e;
-                color: #ffffff;
-                border: 1px solid #0078d4;
-                border-radius: 2px;
-                padding: 2px 4px;
-                font-size: 12px;
-            }
-        """)
         self._rename_editor.show()
         self._rename_editor.setFocus()
 
@@ -1389,7 +1328,7 @@ class FileExplorerWidget(QWidget):
 
             # Update the item text directly
             self.tree_widget.blockSignals(True)
-            item.setText(0, new_name)
+            item.setText(0, new_name)  # type: ignore
             self.tree_widget.blockSignals(False)
             logger.success(f"Renamed: {old_name} → {new_name}")
         except Exception as e:
@@ -1554,15 +1493,20 @@ class FileExplorerWidget(QWidget):
 
                 # Color the bar based on usage
                 if percent >= 90:
-                    color = "#f48771"  # Red
+                    color = "#ff453a"  # Red
                 elif percent >= 75:
-                    color = "#ce9178"  # Orange
+                    color = "#ff9f0a"  # Orange
                 else:
-                    color = "#0078d4"  # Blue
+                    color = "#0a84ff"  # Blue
+
+                app = QApplication.instance()
+                is_light = app is not None and app.property("shuttle_theme") == "light"
+                background = "#e8e8ed" if is_light else "#2b2c30"
+                border = "#d2d2d7" if is_light else "#3d3e44"
                 self._disk_bar.setStyleSheet(f"""
                     QProgressBar {{
-                        background-color: #1e1e1e;
-                        border: 1px solid #3e3e42;
+                        background-color: {background};
+                        border: 1px solid {border};
                         border-radius: 4px;
                     }}
                     QProgressBar::chunk {{

@@ -8,6 +8,7 @@ from enum import Enum
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -81,15 +82,6 @@ class TransferItemWidget(QFrame):
         self.index = index
         self.item = item
         self.setObjectName("transfer_item")
-        self.setStyleSheet("""
-            QFrame#transfer_item {
-                background-color: #2d2d2d;
-                border: 1px solid #3e3e42;
-                border-radius: 4px;
-                padding: 6px;
-                margin: 2px 0;
-            }
-        """)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
@@ -100,9 +92,9 @@ class TransferItemWidget(QFrame):
         top_row.setSpacing(8)
 
         self.name_label = QLabel(item.display_name)
-        self.name_label.setStyleSheet(
-            "color: #cccccc; font-size: 12px; font-weight: 500;"
-        )
+        name_font = QFont()
+        name_font.setWeight(QFont.Weight.Medium)
+        self.name_label.setFont(name_font)
         self.name_label.setMaximumWidth(400)
         self.name_label.setWordWrap(False)
 
@@ -113,9 +105,6 @@ class TransferItemWidget(QFrame):
         self.cancel_btn.setMaximumWidth(22)
         self.cancel_btn.setMaximumHeight(22)
         self.cancel_btn.setToolTip("Cancel")
-        self.cancel_btn.setStyleSheet(
-            "font-size: 11px; padding: 0; color: #858585; border: none;"
-        )
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.index))
         self.cancel_btn.setVisible(False)
@@ -132,17 +121,6 @@ class TransferItemWidget(QFrame):
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximumHeight(14)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #1e1e1e;
-                border: none;
-                border-radius: 3px;
-            }
-            QProgressBar::chunk {
-                background-color: #0078d4;
-                border-radius: 3px;
-            }
-        """)
         layout.addWidget(self.progress_bar)
 
         # Bottom row: speed + ETA or error
@@ -154,7 +132,6 @@ class TransferItemWidget(QFrame):
         self.retry_btn = QPushButton("↻ Retry")
         self.retry_btn.setMaximumWidth(60)
         self.retry_btn.setMaximumHeight(22)
-        self.retry_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
         self.retry_btn.setVisible(False)
         self.retry_btn.clicked.connect(lambda: self.retry_requested.emit(self.index))
         layout.addWidget(self.retry_btn)
@@ -259,16 +236,11 @@ class TransferQueueWidget(QWidget):
         header_layout.setSpacing(8)
 
         self.header_label = QLabel("Transfers")
-        self.header_label.setStyleSheet(
-            "color: #cccccc; font-size: 12px; font-weight: 600;"
-        )
+        self.header_label.setObjectName("section_header")
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setMaximumWidth(50)
         self.clear_btn.setMaximumHeight(20)
-        self.clear_btn.setStyleSheet(
-            "font-size: 10px; padding: 2px 6px; color: #858585;"
-        )
         self.clear_btn.clicked.connect(self.clear_completed)
         self.clear_btn.setVisible(False)
 
@@ -281,12 +253,6 @@ class TransferQueueWidget(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setMinimumHeight(220)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: transparent;
-                border: none;
-            }
-        """)
 
         self.items_container = QWidget()
         self.items_layout = QVBoxLayout(self.items_container)
@@ -299,9 +265,7 @@ class TransferQueueWidget(QWidget):
 
         # Empty state
         self.empty_label = QLabel("No transfers")
-        self.empty_label.setStyleSheet(
-            "color: #858585; font-size: 11px; padding: 12px;"
-        )
+        self.empty_label.setObjectName("secondary_label")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_label)
 

@@ -67,7 +67,21 @@ Use semantic versioning: `MAJOR.MINOR.PATCH`
 
 - Fixed a crash when disconnecting → **PATCH**
 - Added Android USB support → **MINOR**
+- Added upload retry, queue persistence, per-server default bookmarks, and UI layout updates → **MINOR**
 - Renamed app from PiSync to Shuttle, new config format → **MAJOR**
+
+## Suggested 2.2.0 Release Notes
+
+Use these as a starting point for the next GitHub Release:
+
+- Added per-server bookmarks and per-server default start folders
+- Added upload queue persistence so queued uploads can recover after restart
+- Added automatic upload retry with up to 3 attempts
+- Updated disk usage bar to follow the currently browsed filesystem, including mounted drives
+- Made the Transfers panel larger and expandable
+- Moved Activity Log out of the main screen into `View → Diagnostics Log...`
+- Removed duplicate explorer title from the main window
+- Kept partial byte-level resume and download queue persistence as future work
 
 ## Building Locally
 
@@ -89,7 +103,7 @@ python -m build
 
 ```bash
 # From wheel file
-pip install shuttle-1.1.0-py3-none-any.whl
+pip install shuttle-X.Y.Z-py3-none-any.whl
 
 # From source (development mode)
 pip install -e .
@@ -128,6 +142,7 @@ git checkout dev
 
 - [ ] All changes committed and pushed to dev
 - [ ] Version bumped in `pyproject.toml`
+- [ ] Version bumped in `src/utils/constants.py`
 - [ ] App runs locally without errors (`python main.py`)
 - [ ] README updated if there are user-facing changes
 - [ ] Merged dev → main

@@ -4,8 +4,10 @@ from PySide6.QtWidgets import QApplication
 
 from src.components.main_window import MainWindow
 from src.components.splash_screen import SplashScreen
+from src.config.settings import Settings
 from src.utils.constants import VERSION
 from src.utils.helper import get_path, rounded_icon
+from src.utils.theme import apply_theme
 
 
 def _get_version() -> str:
@@ -24,12 +26,8 @@ def main():
     app.setApplicationVersion(_get_version())
 
     # ---- STYLESHEET ----
-    stylesheet_path = get_path("assets/styles/modern_theme.qss")
-    try:
-        with open(stylesheet_path, "r") as f:
-            app.setStyleSheet(f.read())
-    except FileNotFoundError:
-        print("No stylesheet found — using default theme.")
+    settings = Settings()
+    apply_theme(app, settings.config.theme_mode)
 
     # ---- SPLASH ----
     logo_path = get_path("assets/icons/shuttle_logo.png")

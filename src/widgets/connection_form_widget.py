@@ -123,7 +123,7 @@ class ConnectionFormWidget(QWidget):
         self.adb_device_combo.setView(QListView())
         self.adb_device_combo.setPlaceholderText(PLACEHOLDER_NO_DEVICES)
         self._refresh_adb_devices()
-        self.adb_refresh_btn = QPushButton("🔃")
+        self.adb_refresh_btn = QPushButton("↻")
         self.adb_refresh_btn.setObjectName("icon_btn")
         self.adb_refresh_btn.setToolTip("Refresh devices")
         self.adb_refresh_btn.clicked.connect(self._refresh_adb_devices)
@@ -151,7 +151,7 @@ class ConnectionFormWidget(QWidget):
         self.ssh_group.setVisible(current_type == CONN_TYPE_SSH)
 
         # Test connection
-        test_btn = QPushButton("🔌 Test Connection")
+        test_btn = QPushButton("Test Connection")
         test_btn.setObjectName("primary_btn")
         test_btn.clicked.connect(self.test_connection)
         layout.addWidget(test_btn)
@@ -242,7 +242,7 @@ class ConnectionFormWidget(QWidget):
         try:
             temp_config = SettingsConfig.from_json(config)
             temp_settings = TempSettings(temp_config)
-            cms = ConnectionManagerService(temp_settings)
+            cms = ConnectionManagerService(temp_settings)  # type: ignore
         except Exception:
             self.status_label.setText("● Invalid configuration")
             self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")

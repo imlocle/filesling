@@ -11,7 +11,7 @@ src/
 ├── application/                    Business logic
 │   └── manual_transfer_controller.py   Transfer queue (queues, processes, retries)
 ├── components/                     UI windows
-│   ├── main_window.py              Main app window (toolbar, explorer, log, queue)
+│   ├── main_window.py              Main app window (toolbar, explorer, diagnostics, queue)
 │   ├── server_selection_dialog.py  Server picker on launch
 │   ├── settings_window.py          Settings editor (connection, behavior, files)
 │   └── splash_screen.py            Startup splash
@@ -65,12 +65,14 @@ Finder drop → FileExplorerWidget.dropEvent()
     → Checks for duplicates (sftp.stat per file)
     → If duplicates found: shows dialog (overwrite / skip / cancel)
     → Calculates size, adds to TransferQueueWidget
-    → ManualTransferController.transfer_to_pi()
+    → ManualTransferController.queue_transfer()
       → Queues transfer
+      → Persists active/pending queue to ~/.Shuttle/transfer_queue.json
       → Processes sequentially:
         → Opens dedicated SFTP session (or uses ADB)
         → TransferWorker runs on QThread
         → Emits progress percentage
+        → Retries failed uploads up to 3 times
         → On success: deletes local file (if configured)
         → Moves to next queued item
 ```
@@ -84,7 +86,7 @@ Navigate/Refresh → FileExplorerWidget.refresh()
     → SFTP: sftp.listdir() + sftp.stat()
     → ADB: adb shell ls -la
   → Results displayed in tree widget
-  → Disk usage bar updated
+  → Disk usage bar updated for current path filesystem
 ```
 
 ### Download (right-click)
@@ -119,14 +121,24 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 - Pydantic `SettingsConfig` model with validation
 - Multi-server support with default server for auto-connect
 - Server configs store connection type, credentials, and base directory
-- Bookmarked folders persisted in config
+- Bookmarked folders and default start folder are stored per server
 - Transfer history stored in `~/.Shuttle/transfer_history.json` (last 200 records)
+- Pending and in-progress upload queue recovery stored in `~/.Shuttle/transfer_queue.json`
+
+## Main Window UI
+
+- Explorer remains the primary workspace
+- Transfer queue is a first-class bottom panel and expands with the window
+- Diagnostics logs are hidden by default and available from `View → Diagnostics Log...`
+- Connection status lives in the status bar instead of duplicating the explorer title
 
 ## Error Handling
 
 - Custom exception hierarchy in `errors.py`
 - Errors logged to `logs/errors.json` (last 500 entries)
 - Transfer failures don't delete local files
+- Failed uploads are retried automatically before being marked failed
+- Interrupted queued uploads are restored on next launch and restarted from the beginning
 - Connection failures show server selection dialog
 
 ## Dependencies

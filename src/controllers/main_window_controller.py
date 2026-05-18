@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from src.application.manual_transfer_controller import ManualTransferController
 from src.components.settings_window import SettingsWindow
@@ -35,6 +35,7 @@ from src.utils.constants import (
     DIALOG_RENAME_FAILED,
 )
 from src.utils.logging_signal import logger
+from src.utils.theme import apply_theme
 
 if TYPE_CHECKING:
     from src.components.main_window import MainWindow  # noqa: F401
@@ -208,8 +209,8 @@ class MainWindowController:
         if not devices:
             self.view.connection_status_label.setText("● No device found")
             self.view.connection_status_label.setObjectName("connection_disconnected")
-            self.view.connection_status_label.setStyleSheet(
-                "color: #f48771; font-weight: 500;"
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
             )
             logger.error("ADB: No Android device connected")
             return
@@ -233,8 +234,8 @@ class MainWindowController:
                 f"● Connected: {device_name} (USB)"
             )
             self.view.connection_status_label.setObjectName("connection_connected")
-            self.view.connection_status_label.setStyleSheet(
-                "color: #4ec9b0; font-weight: 500;"
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
             )
 
             start_path = self._get_initial_explorer_path(root_path)
@@ -247,8 +248,8 @@ class MainWindowController:
         except Exception as e:
             self.view.connection_status_label.setText("● ADB Error")
             self.view.connection_status_label.setObjectName("connection_disconnected")
-            self.view.connection_status_label.setStyleSheet(
-                "color: #f48771; font-weight: 500;"
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
             )
             logger.error(f"ADB connection failed: {e}")
 
@@ -285,8 +286,8 @@ class MainWindowController:
                     f"● Connected: {self.settings.host}"
                 )
             self.view.connection_status_label.setObjectName("connection_connected")
-            self.view.connection_status_label.setStyleSheet(
-                "color: #4ec9b0; font-weight: 500;"
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
             )
 
             # bind sftp to remote explorer
@@ -926,6 +927,10 @@ class MainWindowController:
             # Reload settings since the singleton was reset during save
             self.settings = Settings()
             self.view.settings = self.settings
+            self.manual_transfer.settings = self.settings
+            app = QApplication.instance()
+            if app:
+                apply_theme(app, self.settings.config.theme_mode)
             self.refresh_explorers()
 
     # --------------------------------------------------------------

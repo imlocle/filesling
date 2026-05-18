@@ -27,6 +27,7 @@
 
 - [x] Visual bar below explorer showing used/total
 - [x] Color-coded: blue → orange (75%) → red (90%)
+- [x] Updates for the current browsed filesystem, including mounted drives
 
 ### Search & Filter
 
@@ -99,7 +100,22 @@
 - [x] Bookmark bar above explorer with quick-access buttons
 - [x] Click bookmark to navigate directly
 - [x] Remove bookmark via right-click → "⭐ Remove Bookmark"
-- [x] Persists between sessions
+- [x] Persists per server between sessions
+- [x] Set a bookmarked folder as the default start folder for that server
+
+### Transfer Resilience
+
+- [x] Retry failed uploads automatically (3 attempts)
+- [x] Queue persistence — don't lose queued upload items if app crashes
+
+### UI/Diagnostics
+
+- [x] Removed duplicate explorer title
+- [x] Made Transfers panel larger and expandable
+- [x] Hid diagnostics logs from the main screen
+- [x] Diagnostics log available from View menu
+- [x] Added macOS-style light/dark themes with a Follow System option
+- [x] Reduced custom dark widget styling so themes can apply consistently
 
 ### ADB (Android) Fixes
 
@@ -110,6 +126,11 @@
 - [x] No crash when navigating away while a large folder is loading
 - [x] Auto-connect to USB device when plugged in (prioritizes over default server)
 - [x] Progressive/chunked directory loading for large folders (streams items in batches of 50)
+
+### Theme Support
+
+- [x] Light mode option
+- [x] Follow system appearance (dark/light)
 
 ---
 
@@ -130,11 +151,6 @@
 - [ ] Show file type icons (video, subtitle, image, etc.)
 - [ ] File info tooltip on hover (full path, modified date, size)
 
-### Theme Support
-
-- [ ] Light mode option
-- [ ] Follow system appearance (dark/light)
-
 ### Batch Rename
 
 - [ ] Select multiple files → batch rename with pattern
@@ -153,8 +169,7 @@
 ### Transfer Resilience
 
 - [ ] Resume interrupted transfers (track partial uploads)
-- [x] Retry failed uploads automatically (3 attempts)
-- [x] Queue persistence — don't lose queued upload items if app crashes
+- [ ] Extend retry/persistence behavior to downloads
 
 ### Notifications
 

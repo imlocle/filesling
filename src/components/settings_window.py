@@ -9,6 +9,7 @@ from datetime import datetime
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -76,6 +77,7 @@ class SettingsWindow(QDialog):
         self._setup_connection_tab()
         if not server_mode:
             self._setup_files_tab()
+            self._setup_appearance_tab()
 
         main_layout.addWidget(self.tab_widget, stretch=1)
         self._setup_footer(main_layout)
@@ -113,7 +115,7 @@ class SettingsWindow(QDialog):
         layout.addWidget(self.connection_form)
 
         layout.addStretch()
-        self.tab_widget.addTab(tab, "🔌 Connection")
+        self.tab_widget.addTab(tab, "Connection")
 
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------
@@ -137,7 +139,7 @@ class SettingsWindow(QDialog):
         info = QLabel(
             "When enabled, local files are moved to the Trash after a successful upload."
         )
-        info.setStyleSheet("color: #858585; font-size: 11px; padding: 4px;")
+        info.setObjectName("secondary_label")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -167,11 +169,36 @@ class SettingsWindow(QDialog):
         layout.addWidget(self.skip_patterns_input)
 
         info = QLabel("Hidden files (starting with .) are automatically skipped.")
-        info.setStyleSheet("color: #858585; font-size: 11px; padding: 4px;")
+        info.setObjectName("secondary_label")
         layout.addWidget(info)
 
         layout.addStretch()
-        self.tab_widget.addTab(tab, "📄 Files")
+        self.tab_widget.addTab(tab, "Files")
+
+    def _setup_appearance_tab(self) -> None:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        layout.addWidget(QLabel("Appearance"))
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Follow System", "system")
+        self.theme_combo.addItem("Light", "light")
+        self.theme_combo.addItem("Dark", "dark")
+
+        current_theme = self.settings.config.theme_mode
+        index = self.theme_combo.findData(current_theme)
+        self.theme_combo.setCurrentIndex(index if index >= 0 else 0)
+        layout.addWidget(self.theme_combo)
+
+        info = QLabel("Theme changes apply after saving settings.")
+        info.setObjectName("secondary_label")
+        layout.addWidget(info)
+
+        layout.addStretch()
+        self.tab_widget.addTab(tab, "Appearance")
 
     def _browse_download_dir(self) -> None:
         """Open folder picker for download directory."""
@@ -189,13 +216,6 @@ class SettingsWindow(QDialog):
     # ------------------------------------------------------------------
     def _setup_footer(self, layout: QVBoxLayout) -> None:
         footer = QFrame()
-        footer.setStyleSheet("""
-            QFrame {
-                background-color: transparent;
-                border: none;
-                padding: 8px 16px;
-            }
-        """)
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
         footer_layout.setContentsMargins(0, 0, 0, 0)
@@ -204,7 +224,7 @@ class SettingsWindow(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
 
-        save_btn = QPushButton("💾 Save")
+        save_btn = QPushButton("Save")
         save_btn.setObjectName("primary_btn")
         save_btn.clicked.connect(self.save_settings)
 
@@ -288,11 +308,14 @@ class SettingsWindow(QDialog):
                 "delete_after_transfer": self.delete_after_transfer_checkbox.isChecked(),
                 "download_directory": self.download_dir_input.text().strip()
                 or os.path.expanduser("~/Downloads"),
+                "skip_exit_confirm": self.settings.config.skip_exit_confirm,
+                "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [
                     f.strip()
                     for f in self.skip_patterns_input.toPlainText().split(",")
                     if f.strip()
                 ],
+                "theme_mode": self.theme_combo.currentData(),
                 "last_modified": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
             }
 

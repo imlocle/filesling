@@ -36,11 +36,11 @@ make run
 ### Release commands
 
 ```bash
-# 1. On dev branch, bump version in pyproject.toml
-#    Edit: version = "X.Y.Z"
+# 1. On dev branch, bump version in pyproject.toml and src/utils/constants.py
+#    Edit: version = "X.Y.Z" and VERSION = "X.Y.Z"
 
 # 2. Commit and push
-git add pyproject.toml
+git add pyproject.toml src/utils/constants.py
 git commit -m "bump version to X.Y.Z"
 git push origin dev
 

@@ -515,25 +515,18 @@ class MainWindow(QMainWindow):
         """Create modern toolbar with icon buttons."""
         toolbar = QFrame()
         toolbar.setObjectName("toolbar")
-        toolbar.setStyleSheet("""
-            QFrame#toolbar {
-                background-color: transparent;
-                border: none;
-                padding: 8px;
-            }
-        """)
 
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(12, 8, 12, 8)
         toolbar_layout.setSpacing(8)
 
         # Left side buttons
-        self.connect_btn = QPushButton("🔌")
+        self.connect_btn = QPushButton("⏻")
         self.connect_btn.setObjectName("icon_btn")
         self.connect_btn.setToolTip("Connect")
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.change_server_btn = QPushButton("🔄")
+        self.change_server_btn = QPushButton("⇄")
         self.change_server_btn.setObjectName("icon_btn")
         self.change_server_btn.setToolTip("Change Server")
         self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -543,18 +536,18 @@ class MainWindow(QMainWindow):
         toolbar_layout.addStretch()
 
         # Right side buttons
-        self.refresh_btn = QPushButton("🔃")
+        self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setObjectName("icon_btn")
         self.refresh_btn.setToolTip("Refresh")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.delete_btn = QPushButton("🗑")
+        self.delete_btn = QPushButton("⌫")
         self.delete_btn.setObjectName("icon_btn")
         self.delete_btn.setToolTip("Delete Selected Item")
         self.delete_btn.setEnabled(False)
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn = QPushButton("⚙")
         self.settings_btn.setObjectName("icon_btn")
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -569,22 +562,6 @@ class MainWindow(QMainWindow):
         """Create status bar with connection and monitoring status."""
         status_bar = QFrame()
         status_bar.setObjectName("status_bar")
-        status_bar.setStyleSheet("""
-            QFrame#status_bar {
-                background-color: rgba(30, 41, 59, 0.5);
-                border: none;
-                border-radius: 8px;
-                padding: 6px 12px;
-            }
-            QLabel#connection_disconnected {
-                color: #858585;
-                font-weight: 500;
-            }
-            QLabel#connection_connected {
-                color: #4ec9b0;
-                font-weight: 500;
-            }
-        """)
 
         status_layout = QHBoxLayout(status_bar)
         status_layout.setContentsMargins(12, 6, 12, 6)
@@ -666,16 +643,6 @@ class MainWindow(QMainWindow):
 
         self._diagnostics_log_box = QTextEdit()
         self._diagnostics_log_box.setReadOnly(True)
-        self._diagnostics_log_box.setStyleSheet("""
-            QTextEdit {
-                background-color: #1e1e1e;
-                border: 1px solid #3e3e42;
-                border-radius: 6px;
-                padding: 8px;
-                font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-                font-size: 12px;
-            }
-        """)
         for message in self._log_messages:
             self._diagnostics_log_box.append(message)
         layout.addWidget(self._diagnostics_log_box)

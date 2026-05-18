@@ -1,7 +1,7 @@
 # Production Standards
 
 > **Last updated:** May 2026
-> **Version:** 1.1.0
+> **Version:** 2.2.0
 
 ---
 
@@ -13,7 +13,7 @@
 | Packaging & Distribution    | ✅ Complete  | pyproject.toml, CI/CD, GitHub Releases     |
 | Dependency Management       | ✅ Complete  | pip-tools with locked versions             |
 | CI/CD Automation            | ✅ Basic     | Build + release on tag push                |
-| Documentation               | ✅ Good      | Architecture, ideas, internal guides       |
+| Documentation               | ✅ Good      | Architecture, roadmap, internal guides     |
 | Testing & QA                | ❌ Missing   | No test suite yet                          |
 | Code Quality Tools          | ⚠️ Available | Configured in pyproject.toml, not enforced |
 | Release Management          | ✅ Manual    | Semver tags, GitHub Releases               |
@@ -60,7 +60,15 @@ Infrastructure (Paramiko SFTP, ADB subprocess, Filesystem)
 - Pydantic model with validation
 - Multi-server support
 - Auto-connect to default server
+- Per-server bookmarks and default start folders
 - Config stored at `~/.Shuttle/config.json`
+
+### Transfer Reliability
+
+- Upload queue persists active and pending items to `~/.Shuttle/transfer_queue.json`
+- Failed uploads retry automatically up to 3 times
+- Restored uploads restart from the beginning after app crash or quit
+- Partial byte-level resume is still future work
 
 ---
 
