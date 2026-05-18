@@ -8,7 +8,7 @@ Shuttle is distributed via GitHub Releases. When you push a version tag, the CI/
 
 ### How It Works
 
-1. You bump the version in `pyproject.toml`
+1. You bump the version in `pyproject.toml` and `/src/utils/constants.py`
 2. You merge `dev` → `main`
 3. You push a `v*` tag
 4. GitHub Actions builds the distribution and creates a release
@@ -20,11 +20,12 @@ Shuttle is distributed via GitHub Releases. When you push a version tag, the CI/
 git checkout dev
 git status  # should be clean
 
-# 2. Bump version in pyproject.toml
+# 2. Bump version in pyproject.toml and constants.py
 # Edit: version = "X.Y.Z"
 
 # 3. Commit the version bump
 git add pyproject.toml
+git add constants.py
 git commit -m "bump version to X.Y.Z"
 git push origin dev
 

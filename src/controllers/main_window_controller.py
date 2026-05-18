@@ -5,6 +5,7 @@ import shutil
 from typing import TYPE_CHECKING, Optional
 
 from paramiko import SFTPClient
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from src.application.manual_transfer_controller import ManualTransferController
@@ -64,6 +65,7 @@ class MainWindowController:
         self.manual_transfer = ManualTransferController(
             self.settings, self.connection_manager, parent=view
         )
+        self._queue_signals_connected = False
 
         # Connect controller signals to UI updates
         self._connect_controller_signals()
@@ -83,8 +85,29 @@ class MainWindowController:
         self.manual_transfer.queue_changed.connect(self._on_queue_changed)
 
         # Queue widget signals
-        if hasattr(self.view, "transfer_queue"):
-            self.view.transfer_queue.cancel_transfer.connect(self._on_cancel_transfer)
+        self._connect_queue_signals()
+
+    def _connect_queue_signals(self) -> None:
+        """Connect transfer queue UI signals once the widget exists."""
+        if self._queue_signals_connected or not hasattr(self.view, "transfer_queue"):
+            return
+        self.view.transfer_queue.cancel_transfer.connect(self._on_cancel_transfer)
+        self._queue_signals_connected = True
+
+    def initialize_transfer_queue(self) -> None:
+        """Connect queue UI controls and restore persisted uploads."""
+        if not hasattr(self.view, "transfer_queue"):
+            return
+
+        queue = self.view.transfer_queue
+        self._connect_queue_signals()
+
+        restored = self.manual_transfer.restore_persisted_queue()
+        for transfer in restored:
+            queue.add_transfer(transfer.display_name, transfer.total_bytes)
+
+        if restored:
+            QTimer.singleShot(500, self.manual_transfer.start_processing)
 
     # --------------------------------------------------------------
     #  SIGNAL HANDLERS

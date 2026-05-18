@@ -95,6 +95,7 @@ class MainWindow(QMainWindow):
 
         # === 3. Wire Signals ===
         self._setup_connections()
+        self.controller.initialize_transfer_queue()
         self._setup_shortcuts()
         self._setup_menu_bar()
 

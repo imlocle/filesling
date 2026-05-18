@@ -153,8 +153,8 @@
 ### Transfer Resilience
 
 - [ ] Resume interrupted transfers (track partial uploads)
-- [ ] Retry failed transfers automatically (configurable: 0-3 retries)
-- [ ] Queue persistence — don't lose queued items if app crashes
+- [x] Retry failed uploads automatically (3 attempts)
+- [x] Queue persistence — don't lose queued upload items if app crashes
 
 ### Notifications
 

@@ -730,9 +730,7 @@ class FileExplorerWidget(QWidget):
                 }
             """)
             btn.clicked.connect(lambda checked, p=path: self._navigate_to_bookmark(p))
-            self._bookmarks_layout.insertWidget(
-                self._bookmarks_layout.count() - 1, btn
-            )
+            self._bookmarks_layout.insertWidget(self._bookmarks_layout.count() - 1, btn)
 
     def _navigate_to_bookmark(self, path: str) -> None:
         """Navigate to a bookmarked folder."""
