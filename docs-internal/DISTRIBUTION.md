@@ -46,12 +46,22 @@ git checkout dev
 
 The `.github/workflows/publish.yml` workflow triggers on `v*` tags and:
 
-1. Checks out the code
-2. Builds a source distribution (`.tar.gz`) and wheel (`.whl`)
-3. Creates a GitHub Release with auto-generated release notes
-4. Attaches the build artifacts to the release
+1. **build-python** (Ubuntu) — builds `.tar.gz` and `.whl` packages
+2. **build-macos** (macOS runner) — builds `Shuttle.app` via PyInstaller, wraps in `Shuttle.dmg`
+3. **release** — creates a GitHub Release with all artifacts attached:
+   - `Shuttle.dmg` — double-click installer for macOS users
+   - `shuttle-X.Y.Z-py3-none-any.whl` — pip-installable package
+   - `shuttle-X.Y.Z.tar.gz` — source distribution
 
 No PyPI publishing — Shuttle is a desktop app, not a library.
+
+### First Launch Note
+
+Users downloading `Shuttle.dmg` will need to run this once (unsigned app):
+
+```bash
+xattr -cr /Applications/Shuttle.app
+```
 
 ## Version Numbering
 

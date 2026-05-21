@@ -123,6 +123,7 @@ make build
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [System Diagram](docs/SYSTEM_DIAGRAM.md)
 - [Roadmap](docs-internal/ROADMAP.md)
 - [Case Study](https://imlocle.com/#/work/case-study/shuttle)
 

@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from stat import S_IFDIR, S_IFREG, S_ISDIR
 from typing import List, Optional
 
-from src.utils.logging_signal import logger
-
 
 @dataclass
 class ADBStat:
@@ -177,8 +175,7 @@ class ADBClient:
             is_dir = perms.startswith("d")
             mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
 
-            stat = ADBStat(st_mode=mode, st_size=size)
-            stat.filename = name
+            stat = ADBStat(st_mode=mode, st_size=size, filename=name)
             batch.append(stat)
 
             if len(batch) >= batch_size:
@@ -192,29 +189,47 @@ class ADBClient:
         """Get file/directory info (robust Android-safe version)."""
 
         path = self._normalize_remote_path(path)
-        # First verify the path actually exists
-        exists_result = self._shell(
-            f'[ -e "{path}" ] && echo exists || echo missing'
+
+        output = self._shell(
+            f'if [ -d "{path}" ]; then echo "dir"; '
+            f'elif [ -f "{path}" ]; then stat -c "%s" "{path}" 2>/dev/null || echo "0"; '
+            f'else echo "missing"; fi'
         ).strip()
 
-        if exists_result != "exists":
+        if output == "missing":
             raise FileNotFoundError(f"Remote path does not exist: {path}")
 
-        # Determine if this is a directory
-        is_dir_result = self._shell(f'[ -d "{path}" ] && echo dir || echo file').strip()
+        if output == "dir":
+            return ADBStat(st_mode=S_IFDIR | 0o755, st_size=0)
 
-        is_dir = is_dir_result == "dir"
-
-        # Try to get size safely (optional)
-        size = 0
         try:
-            size_out = self._shell(f'stat -c %s "{path}" 2>/dev/null')
-            size = int(size_out.strip())
-        except Exception:
-            pass
+            size = int(output)
+        except ValueError:
+            size = 0
+        return ADBStat(st_mode=S_IFREG | 0o644, st_size=size)
+        # First verify the path actually exists
+        # exists_result = self._shell(
+        #     f'[ -e "{path}" ] && echo exists || echo missing'
+        # ).strip()
 
-        mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
-        return ADBStat(st_mode=mode, st_size=size)
+        # if exists_result != "exists":
+        #     raise FileNotFoundError(f"Remote path does not exist: {path}")
+
+        # # Determine if this is a directory
+        # is_dir_result = self._shell(f'[ -d "{path}" ] && echo dir || echo file').strip()
+
+        # is_dir = is_dir_result == "dir"
+
+        # # Try to get size safely (optional)
+        # size = 0
+        # try:
+        #     size_out = self._shell(f'stat -c %s "{path}" 2>/dev/null')
+        #     size = int(size_out.strip())
+        # except Exception:
+        #     pass
+
+        # mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
+        # return ADBStat(st_mode=mode, st_size=size)
 
     def rename(self, old_path: str, new_path: str) -> None:
         """Rename/move a file or directory."""
@@ -251,6 +266,10 @@ class ADBClient:
         path = self._normalize_remote_path(path)
         self._shell(f'mkdir -p "{path}"')
 
+    def get(self, remote_path: str, local_path: str, callback=None) -> None:
+        """Alias for pull() — matches Paramiko SFTPClient interface."""
+        self.pull(remote_path, local_path, callback)
+
     def put(self, local_path: str, remote_path: str, callback=None) -> None:
         """
         Upload a file to the device.
@@ -285,6 +304,8 @@ class ADBClient:
             local_path: Local destination path
             callback: Progress callback(transferred, total)
         """
+        remote_path = self._normalize_remote_path(remote_path)
+
         # Get file size first
         try:
             stat = self.stat(remote_path)
@@ -295,7 +316,6 @@ class ADBClient:
         if callback:
             callback(0, total_size)
 
-        remote_path = self._normalize_remote_path(remote_path)
         self._run(
             ["pull", remote_path, local_path],
             timeout=600,

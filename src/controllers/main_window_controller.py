@@ -179,7 +179,14 @@ class MainWindowController:
 
     def _connect_adb(self, server_config: dict) -> None:
         """Connect to an Android device via ADB."""
+        import shutil
+
         from src.services.adb_client import ADBClient, get_connected_devices
+
+        # Check if ADB is installed
+        if not shutil.which("adb"):
+            self._prompt_install_adb()
+            return
 
         device_id = server_config.get("device_id")
         device_name = server_config.get("name", "Android Device")
@@ -233,6 +240,87 @@ class MainWindowController:
                 self.view.connection_status_label
             )
             logger.error(f"ADB connection failed: {e}")
+
+    def _prompt_install_adb(self) -> None:
+        """Show dialog to help user install ADB."""
+        import shutil
+        import webbrowser
+
+        has_brew = shutil.which("brew") is not None
+
+        msg = QMessageBox(self.view)
+        msg.setWindowTitle("ADB Not Found")
+        msg.setText(
+            "ADB (Android Debug Bridge) is required to connect to Android devices.\n\n"
+            "It is not currently installed on this Mac."
+        )
+
+        if has_brew:
+            msg.setInformativeText("Install it via Homebrew?")
+            install_btn = msg.addButton(
+                "Install via Homebrew", QMessageBox.ButtonRole.AcceptRole
+            )
+            msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+
+            if msg.clickedButton() == install_btn:
+                self._install_adb_via_brew()
+        else:
+            msg.setInformativeText(
+                "You can download it from Google's Android Platform Tools page."
+            )
+            download_btn = msg.addButton(
+                "Open Download Page", QMessageBox.ButtonRole.AcceptRole
+            )
+            msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+
+            if msg.clickedButton() == download_btn:
+                webbrowser.open(
+                    "https://developer.android.com/tools/releases/platform-tools"
+                )
+
+    def _install_adb_via_brew(self) -> None:
+        """Run brew install android-platform-tools with progress feedback."""
+        import subprocess
+
+        logger.info("Installing ADB via Homebrew...")
+        self.view.connection_status_label.setText("● Installing ADB...")
+
+        try:
+            result = subprocess.run(
+                ["brew", "install", "android-platform-tools"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                logger.success("ADB installed successfully. Connect your device and try again.")
+                QMessageBox.information(
+                    self.view,
+                    "ADB Installed",
+                    "ADB was installed successfully.\n\n"
+                    "Connect your Android device via USB and try connecting again.",
+                )
+            else:
+                logger.error(f"Homebrew install failed: {result.stderr}")
+                QMessageBox.critical(
+                    self.view,
+                    "Installation Failed",
+                    f"Failed to install ADB:\n{result.stderr[:200]}",
+                )
+        except subprocess.TimeoutExpired:
+            logger.error("ADB installation timed out")
+            QMessageBox.critical(
+                self.view,
+                "Installation Timeout",
+                "The installation took too long. Try running manually:\n\n"
+                "brew install android-platform-tools",
+            )
+        except Exception as e:
+            logger.error(f"ADB installation error: {e}")
+
+        self.view.connection_status_label.setText("● Disconnected")
 
     def _connect_ssh(self) -> None:
         """Establish SSH/SFTP connection."""
@@ -482,8 +570,11 @@ class MainWindowController:
         if not sftp:
             return False
         try:
-            sftp.listdir(path)
-            return True
+            from stat import S_ISDIR
+
+            return S_ISDIR(sftp.stat(path).st_mode)
+            # sftp.listdir(path)
+            # return True
         except Exception:
             return False
 
@@ -503,6 +594,13 @@ class MainWindowController:
             raise ConnectionLostError("No connection available")
 
         try:
+            # For ADB, rmdir handles both files and directories (rm -rf)
+            from src.services.adb_client import ADBClient
+
+            if isinstance(sftp, ADBClient):
+                sftp.rmdir(path)
+                return
+
             if self._is_remote_dir(path):
                 self._delete_remote_dir(path, sftp)
             else:
@@ -672,21 +770,33 @@ class MainWindowController:
             queue.set_in_progress(index)
             self._download_queue_index = index
 
-        # Open a dedicated SFTP session for the download
-        try:
-            download_sftp = self.connection_manager.open_sftp_session()
-            if download_sftp is None:
-                logger.error("Download: Could not open SFTP session")
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        connection_type = (
+            server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
+            if server_config
+            else CONN_TYPE_SSH
+        )
+
+        if connection_type == CONN_TYPE_ADB:
+            download_sftp = sftp
+        else:
+            # Open a dedicated SFTP session for the download
+            try:
+                download_sftp = self.connection_manager.open_sftp_session()
+                if download_sftp is None:
+                    logger.error("Download: Could not open SFTP session")
+                    if hasattr(self, "_download_queue_index"):
+                        self.view.transfer_queue.set_failed(
+                            self._download_queue_index, "Could not open SFTP session"
+                        )
+                    return
+            except Exception as e:
+                logger.error(f"Download: Failed to open session: {e}")
                 if hasattr(self, "_download_queue_index"):
                     self.view.transfer_queue.set_failed(
-                        self._download_queue_index, "Could not open SFTP session"
+                        self._download_queue_index, str(e)
                     )
                 return
-        except Exception as e:
-            logger.error(f"Download: Failed to open session: {e}")
-            if hasattr(self, "_download_queue_index"):
-                self.view.transfer_queue.set_failed(self._download_queue_index, str(e))
-            return
 
         # Create thread and worker
         from PySide6.QtCore import QThread

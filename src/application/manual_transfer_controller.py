@@ -474,7 +474,7 @@ class ManualTransferController(QObject):
             logger.info(f"Transfer: Cleared {count} queued item(s)")
         self.queue_changed.emit(1 if self._is_processing else 0)
 
-    def cancel_queued_item(self, queue_index: int) -> None:
+    def cancel_queued_item(self, visual_index: int) -> None:
         """
         Cancel a pending item by its position in the internal queue.
 
@@ -484,8 +484,8 @@ class ManualTransferController(QObject):
         # The visual queue index includes completed/in-progress items,
         # but the internal queue only has pending items.
         # We need to map: count how many pending items precede this visual index.
-        if 0 <= queue_index < len(self._queue):
-            removed = self._queue.pop(queue_index)
+        if 0 <= visual_index < len(self._queue):
+            removed = self._queue.pop(visual_index)
             self._persist_queue()
             logger.info(f"Transfer: Cancelled: {removed.display_name}")
             self.queue_changed.emit(

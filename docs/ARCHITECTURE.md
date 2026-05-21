@@ -4,6 +4,8 @@
 
 Shuttle is a macOS file manager that sends files to connected devices (SSH servers, Android phones/tablets) through drag-and-drop. Built with Python and PySide6.
 
+For visual diagrams of the system, see [System Diagram](SYSTEM_DIAGRAM.md).
+
 ## Project Structure
 
 ```

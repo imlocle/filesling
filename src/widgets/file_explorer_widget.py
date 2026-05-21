@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.settings import Settings
+from src.services.adb_client import ADBClient
 from src.utils.logging_signal import logger
 
 
@@ -745,29 +746,28 @@ class FileExplorerWidget(QWidget):
             """Load subfolders into tree item."""
             try:
                 if self.is_remote and self.sftp:
-                    entries = self.sftp.listdir(path)
+                    attrs = self.sftp.listdir_attr(path)
+                    folders = sorted(
+                        [
+                            a.filename
+                            for a in attrs
+                            if not a.filename.startswith(".")
+                            and a.st_mode is not None
+                            and S_ISDIR(a.st_mode)
+                        ],
+                        key=str.lower,
+                    )
                 else:
                     entries = os.listdir(path)
-
-                folders = sorted(
-                    [
-                        e
-                        for e in entries
-                        if not e.startswith(".")
-                        and (
-                            (
-                                self.is_remote
-                                and self._is_remote_directory(os.path.join(path, e))
-                            )
-                            or (
-                                not self.is_remote
-                                and os.path.isdir(os.path.join(path, e))
-                            )
-                        )
-                    ],
-                    key=str.lower,
-                )
-
+                    folders = sorted(
+                        [
+                            e
+                            for e in entries
+                            if not e.startswith(".")
+                            and os.path.isdir(os.path.join(path, e))
+                        ],
+                        key=str.lower,
+                    )
                 for folder in folders:
                     child = QTreeWidgetItem([folder])
                     child.setData(
@@ -776,6 +776,38 @@ class FileExplorerWidget(QWidget):
                     parent_item.addChild(child)
             except Exception:
                 pass
+            #     if self.is_remote and self.sftp:
+            #         entries = self.sftp.listdir(path)
+            #     else:
+            #         entries = os.listdir(path)
+
+            #     folders = sorted(
+            #         [
+            #             e
+            #             for e in entries
+            #             if not e.startswith(".")
+            #             and (
+            #                 (
+            #                     self.is_remote
+            #                     and self._is_remote_directory(os.path.join(path, e))
+            #                 )
+            #                 or (
+            #                     not self.is_remote
+            #                     and os.path.isdir(os.path.join(path, e))
+            #                 )
+            #             )
+            #         ],
+            #         key=str.lower,
+            #     )
+
+            #     for folder in folders:
+            #         child = QTreeWidgetItem([folder])
+            #         child.setData(
+            #             0, Qt.ItemDataRole.UserRole, os.path.join(path, folder)
+            #         )
+            #         parent_item.addChild(child)
+            # except Exception:
+            #     pass
 
         def _on_item_expanded(item):
             """Lazy-load subfolders when expanded."""
@@ -928,7 +960,10 @@ class FileExplorerWidget(QWidget):
             self._update_breadcrumb()
             if self.is_remote and self.sftp:
                 try:
-                    self._get_disk_usage()
+                    if isinstance(self.sftp, ADBClient):
+                        pass
+                    else:
+                        self._get_disk_usage()
                 except Exception:
                     pass
             return
@@ -941,7 +976,10 @@ class FileExplorerWidget(QWidget):
         # Update disk space bar
         if self.is_remote and self.sftp:
             try:
-                self._get_disk_usage()
+                if isinstance(self.sftp, ADBClient):
+                    pass
+                else:
+                    self._get_disk_usage()
             except Exception:
                 pass
 

@@ -21,6 +21,19 @@ def _get_version() -> str:
 
 
 def main():
+    # On macOS, ensure the app is recognized as a GUI application
+    # so the menu bar shows when running from Terminal
+    if sys.platform == "darwin":
+        try:
+            from Foundation import NSBundle
+
+            bundle = NSBundle.mainBundle()
+            info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+            if info:
+                info["LSUIElement"] = "0"
+        except ImportError:
+            pass
+
     app = QApplication(sys.argv)
     app.setApplicationName("Shuttle")
     app.setApplicationVersion(_get_version())
