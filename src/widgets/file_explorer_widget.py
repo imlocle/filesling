@@ -49,6 +49,20 @@ from src.services.adb_client import ADBClient
 from src.utils.logging_signal import logger
 
 
+def _get_file_icon(is_dir: bool) -> QIcon:
+    """Get a reliable file/folder icon that works in both light and dark mode."""
+    from PySide6.QtWidgets import QStyle
+
+    app = QApplication.instance()
+    if app:
+        style = app.style()
+        if is_dir:
+            return style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+        else:
+            return style.standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+    return QIcon()
+
+
 class DragDropTreeWidget(QTreeWidget):
     """Custom QTreeWidget that supports drag-drop, multi-select, and slow-click rename."""
 
@@ -776,38 +790,6 @@ class FileExplorerWidget(QWidget):
                     parent_item.addChild(child)
             except Exception:
                 pass
-            #     if self.is_remote and self.sftp:
-            #         entries = self.sftp.listdir(path)
-            #     else:
-            #         entries = os.listdir(path)
-
-            #     folders = sorted(
-            #         [
-            #             e
-            #             for e in entries
-            #             if not e.startswith(".")
-            #             and (
-            #                 (
-            #                     self.is_remote
-            #                     and self._is_remote_directory(os.path.join(path, e))
-            #                 )
-            #                 or (
-            #                     not self.is_remote
-            #                     and os.path.isdir(os.path.join(path, e))
-            #                 )
-            #             )
-            #         ],
-            #         key=str.lower,
-            #     )
-
-            #     for folder in folders:
-            #         child = QTreeWidgetItem([folder])
-            #         child.setData(
-            #             0, Qt.ItemDataRole.UserRole, os.path.join(path, folder)
-            #         )
-            #         parent_item.addChild(child)
-            # except Exception:
-            #     pass
 
         def _on_item_expanded(item):
             """Lazy-load subfolders when expanded."""
@@ -936,11 +918,7 @@ class FileExplorerWidget(QWidget):
         self._spinner.stop()
 
         for entry, is_dir, size_str, size_bytes in batch:
-            icon = (
-                QIcon.fromTheme("folder")
-                if is_dir
-                else QIcon.fromTheme("text-x-generic")
-            )
+            icon = _get_file_icon(is_dir)
             item = SortableTreeWidgetItem([entry, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
@@ -984,11 +962,7 @@ class FileExplorerWidget(QWidget):
                 pass
 
         for entry, is_dir, size_str, size_bytes in results:
-            icon = (
-                QIcon.fromTheme("folder")
-                if is_dir
-                else QIcon.fromTheme("text-x-generic")
-            )
+            icon = _get_file_icon(is_dir)
 
             item = SortableTreeWidgetItem([entry, size_str])
             item.setIcon(0, icon)
@@ -1234,11 +1208,7 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.clear()
 
         for rel_path, is_dir, size_str in results:
-            icon = (
-                QIcon.fromTheme("folder")
-                if is_dir
-                else QIcon.fromTheme("text-x-generic")
-            )
+            icon = _get_file_icon(is_dir)
             item = SortableTreeWidgetItem([rel_path, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, 0)
@@ -1286,11 +1256,7 @@ class FileExplorerWidget(QWidget):
         from src.widgets.file_explorer_widget import SortableTreeWidgetItem
 
         for rel_path, is_dir, size_str in results:
-            icon = (
-                QIcon.fromTheme("folder")
-                if is_dir
-                else QIcon.fromTheme("text-x-generic")
-            )
+            icon = _get_file_icon(is_dir)
             item = SortableTreeWidgetItem([rel_path, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, 0)
@@ -1372,9 +1338,6 @@ class FileExplorerWidget(QWidget):
         except Exception as e:
             logger.error(f"Rename failed: {e}")
 
-    def _on_item_renamed(self, item: QTreeWidgetItem, column: int) -> None:
-        """No-op — rename is handled by _commit_rename."""
-
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -1392,18 +1355,10 @@ class FileExplorerWidget(QWidget):
     def _get_icon(self, path: str) -> QIcon:
         try:
             if self.is_remote:
-                return (
-                    QIcon.fromTheme("folder")
-                    if self._is_remote_directory(path)
-                    else QIcon.fromTheme("text-x-generic")
-                )
-            return (
-                QIcon.fromTheme("folder")
-                if os.path.isdir(path)
-                else QIcon.fromTheme("text-x-generic")
-            )
+                return _get_file_icon(self._is_remote_directory(path))
+            return _get_file_icon(os.path.isdir(path))
         except Exception:
-            return QIcon.fromTheme("unknown")
+            return _get_file_icon(False)
 
     def _get_size_string(self, path: str) -> str:
         """

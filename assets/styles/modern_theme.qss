@@ -304,3 +304,31 @@ QToolTip {
     padding: 3px 6px;
     border-radius: 5px;
 }
+
+/* ============================================================================
+   TRANSFER STATUS LABELS
+   ============================================================================ */
+QLabel#status_pending {
+    color: #858585;
+    font-size: 11px;
+}
+
+QLabel#status_active {
+    color: #0ea5e9;
+    font-size: 11px;
+}
+
+QLabel#status_success {
+    color: #4ec9b0;
+    font-size: 11px;
+}
+
+QLabel#status_error {
+    color: #f48771;
+    font-size: 11px;
+}
+
+QLabel#secondary_label {
+    color: #858585;
+    font-size: 11px;
+}

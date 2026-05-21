@@ -194,7 +194,8 @@ class ConnectionFormWidget(QWidget):
     def test_connection(self) -> None:
         """Test the current connection configuration."""
         self.status_label.setText("● Testing...")
-        self.status_label.setStyleSheet("color: #ce9178; font-size: 11px;")
+        self.status_label.setObjectName("status_pending")
+        self.status_label.style().polish(self.status_label)
 
         conn_type = self.get_connection_type()
 
@@ -246,17 +247,20 @@ class ConnectionFormWidget(QWidget):
             cms = ConnectionManagerService(temp_settings)  # type: ignore
         except Exception:
             self.status_label.setText("● Invalid configuration")
-            self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(False)
             return
 
         if cms.test_connection():
             self.status_label.setText("● Connected successfully")
-            self.status_label.setStyleSheet("color: #4ec9b0; font-size: 11px;")
+            self.status_label.setObjectName("status_success")
+            self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(True)
         else:
             self.status_label.setText("● Connection failed")
-            self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(False)
 
     def _test_adb(self) -> None:
@@ -265,7 +269,8 @@ class ConnectionFormWidget(QWidget):
         devices = get_connected_devices()
         if not devices:
             self.status_label.setText("● No device connected")
-            self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(False)
             return
 
@@ -278,9 +283,11 @@ class ConnectionFormWidget(QWidget):
             base_dir = self.remote_base_dir_input.text().strip() or DEFAULT_ADB_BASE_DIR
             client.listdir(base_dir)
             self.status_label.setText("● Device connected successfully")
-            self.status_label.setStyleSheet("color: #4ec9b0; font-size: 11px;")
+            self.status_label.setObjectName("status_success")
+            self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(True)
         except Exception as e:
             self.status_label.setText(f"● ADB error: {str(e)[:50]}")
-            self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(False)

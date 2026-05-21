@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.components.settings_window import SettingsWindow
 from src.config.settings import Settings
 from src.controllers.main_window_controller import MainWindowController
 from src.services.connection_manager_service import ConnectionManagerService
@@ -38,6 +37,7 @@ from src.utils.constants import (
     VERSION,
 )
 from src.utils.logging_signal import logger
+from src.views.settings_window import SettingsWindow
 from src.widgets.file_explorer_widget import FileExplorerWidget
 
 
@@ -178,7 +178,7 @@ class MainWindow(QMainWindow):
         Returns:
             True if server selected, False if cancelled
         """
-        from src.components.server_selection_dialog import ServerSelectionDialog
+        from src.views.server_selection_dialog import ServerSelectionDialog
 
         selection_dialog = ServerSelectionDialog(self)
         if selection_dialog.exec() != QDialog.DialogCode.Accepted:
@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
 
     def change_server(self):
         """Allow user to change to a different server."""
-        from src.components.server_selection_dialog import ServerSelectionDialog
+        from src.views.server_selection_dialog import ServerSelectionDialog
 
         selection_dialog = ServerSelectionDialog(self)
         if selection_dialog.exec() != QDialog.DialogCode.Accepted:

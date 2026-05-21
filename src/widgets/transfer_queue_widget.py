@@ -125,7 +125,7 @@ class TransferItemWidget(QFrame):
 
         # Bottom row: speed + ETA or error
         self.detail_label = QLabel()
-        self.detail_label.setStyleSheet("color: #858585; font-size: 11px;")
+        self.detail_label.setObjectName("secondary_label")
         layout.addWidget(self.detail_label)
 
         # Retry button (hidden by default)
@@ -144,7 +144,8 @@ class TransferItemWidget(QFrame):
 
         if item.status == TransferStatus.PENDING:
             self.status_label.setText(STATUS_QUEUED)
-            self.status_label.setStyleSheet("color: #858585; font-size: 11px;")
+            self.status_label.setObjectName("status_pending")
+            self.status_label.style().polish(self.status_label)
             self.progress_bar.setVisible(False)
             self.detail_label.setVisible(False)
             self.retry_btn.setVisible(False)
@@ -156,7 +157,8 @@ class TransferItemWidget(QFrame):
                 self.status_label.setText(STATUS_DOWNLOADING)
             else:
                 self.status_label.setText(STATUS_UPLOADING)
-            self.status_label.setStyleSheet("color: #0078d4; font-size: 11px;")
+            self.status_label.setObjectName("status_active")
+            self.status_label.style().polish(self.status_label)
             self.progress_bar.setVisible(True)
 
             # If no progress data yet, show indeterminate (pulsing) bar
@@ -183,7 +185,8 @@ class TransferItemWidget(QFrame):
 
         elif item.status == TransferStatus.COMPLETED:
             self.status_label.setText("✅ Done")
-            self.status_label.setStyleSheet("color: #4ec9b0; font-size: 11px;")
+            self.status_label.setObjectName("status_success")
+            self.status_label.style().polish(self.status_label)
             self.progress_bar.setVisible(False)
             self.detail_label.setVisible(True)
             self.retry_btn.setVisible(False)
@@ -202,11 +205,13 @@ class TransferItemWidget(QFrame):
 
         elif item.status == TransferStatus.FAILED:
             self.status_label.setText(STATUS_FAILED)
-            self.status_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
             self.progress_bar.setVisible(False)
             self.detail_label.setVisible(True)
             self.detail_label.setText(item.error_message[:80])
-            self.detail_label.setStyleSheet("color: #f48771; font-size: 11px;")
+            self.detail_label.setObjectName("status_error")
+            self.detail_label.style().polish(self.detail_label)
             self.retry_btn.setVisible(True)
             self.cancel_btn.setVisible(False)
 

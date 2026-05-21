@@ -243,7 +243,7 @@ class ServerSelectionDialog(QDialog):
 
     def _add_new_server(self):
         """Open settings to add a new server."""
-        from src.components.settings_window import SettingsWindow
+        from src.views.settings_window import SettingsWindow
 
         settings_dialog = SettingsWindow(self.settings, server_mode=True)
         if settings_dialog.exec() == QDialog.DialogCode.Accepted:
@@ -259,7 +259,7 @@ class ServerSelectionDialog(QDialog):
         server_id = item.data(Qt.ItemDataRole.UserRole)
 
         if server_id:
-            from src.components.settings_window import SettingsWindow
+            from src.views.settings_window import SettingsWindow
 
             settings_dialog = SettingsWindow(
                 self.settings, server_mode=True, server_id=server_id

@@ -25,9 +25,9 @@
 ### Architecture
 
 ```
-Presentation Layer (UI Components, Widgets)
+Presentation Layer (Views, Widgets)
     ↓
-Controller Layer (MainWindowController)
+Controller Layer (MainWindowController, TransferController)
     ↓
 Application Layer (ManualTransferController)
     ↓

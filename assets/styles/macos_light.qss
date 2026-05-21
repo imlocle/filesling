@@ -263,8 +263,17 @@ QTabWidget::pane {
     background-color: #f5f5f7;
 }
 
+QTabWidget {
+    background-color: #f5f5f7;
+}
+
+QTabBar {
+    background-color: #f5f5f7;
+    qproperty-drawBase: 0;
+}
+
 QTabBar::tab {
-    background-color: transparent;
+    background-color: #f5f5f7;
     color: #6e6e73;
     border: none;
     border-bottom: 2px solid transparent;
@@ -273,12 +282,14 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
-    color: #1d1d1f;
+    color: #007aff;
     border-bottom-color: #007aff;
+    background-color: #f5f5f7;
 }
 
 QTabBar::tab:hover:!selected {
     color: #1d1d1f;
+    background-color: #ececee;
 }
 
 QFrame#transfer_item {
@@ -303,4 +314,32 @@ QToolTip {
     border: 1px solid #d2d2d7;
     padding: 3px 6px;
     border-radius: 5px;
+}
+
+/* ============================================================================
+   TRANSFER STATUS LABELS
+   ============================================================================ */
+QLabel#status_pending {
+    color: #8e8e93;
+    font-size: 11px;
+}
+
+QLabel#status_active {
+    color: #007aff;
+    font-size: 11px;
+}
+
+QLabel#status_success {
+    color: #248a3d;
+    font-size: 11px;
+}
+
+QLabel#status_error {
+    color: #d70015;
+    font-size: 11px;
+}
+
+QLabel#secondary_label {
+    color: #6e6e73;
+    font-size: 11px;
 }

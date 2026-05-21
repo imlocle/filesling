@@ -96,7 +96,6 @@ class ADBClient:
 
     def _normalize_remote_path(self, path: str) -> str:
         """Normalize malformed remote paths before sending to adb."""
-        # logger.info(path)
         path = path.strip()
         while "//" in path:
             path = path.replace("//", "/")
@@ -207,29 +206,6 @@ class ADBClient:
         except ValueError:
             size = 0
         return ADBStat(st_mode=S_IFREG | 0o644, st_size=size)
-        # First verify the path actually exists
-        # exists_result = self._shell(
-        #     f'[ -e "{path}" ] && echo exists || echo missing'
-        # ).strip()
-
-        # if exists_result != "exists":
-        #     raise FileNotFoundError(f"Remote path does not exist: {path}")
-
-        # # Determine if this is a directory
-        # is_dir_result = self._shell(f'[ -d "{path}" ] && echo dir || echo file').strip()
-
-        # is_dir = is_dir_result == "dir"
-
-        # # Try to get size safely (optional)
-        # size = 0
-        # try:
-        #     size_out = self._shell(f'stat -c %s "{path}" 2>/dev/null')
-        #     size = int(size_out.strip())
-        # except Exception:
-        #     pass
-
-        # mode = S_IFDIR | 0o755 if is_dir else S_IFREG | 0o644
-        # return ADBStat(st_mode=mode, st_size=size)
 
     def rename(self, old_path: str, new_path: str) -> None:
         """Rename/move a file or directory."""
@@ -427,20 +403,6 @@ def get_connected_devices() -> List[dict]:
         return devices
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return []
-
-
-def is_adb_available() -> bool:
-    """Check if adb is installed and accessible."""
-    try:
-        result = subprocess.run(
-            [get_adb_path(), "version"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
 
 
 def get_adb_path() -> str:

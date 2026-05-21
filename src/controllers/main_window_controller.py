@@ -8,9 +8,8 @@ from paramiko import SFTPClient
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
-from src.application.manual_transfer_controller import ManualTransferController
-from src.components.settings_window import SettingsWindow
 from src.config.settings import Settings
+from src.controllers.transfer_controller import ManualTransferController
 from src.models.errors import (
     AuthenticationError,
     ConnectionLostError,
@@ -36,9 +35,10 @@ from src.utils.constants import (
 )
 from src.utils.logging_signal import logger
 from src.utils.theme import apply_theme
+from src.views.settings_window import SettingsWindow
 
 if TYPE_CHECKING:
-    from src.components.main_window import MainWindow  # noqa: F401
+    from src.views.main_window import MainWindow  # noqa: F401
 
 
 class MainWindowController:
@@ -295,7 +295,9 @@ class MainWindowController:
                 timeout=120,
             )
             if result.returncode == 0:
-                logger.success("ADB installed successfully. Connect your device and try again.")
+                logger.success(
+                    "ADB installed successfully. Connect your device and try again."
+                )
                 QMessageBox.information(
                     self.view,
                     "ADB Installed",
@@ -573,8 +575,6 @@ class MainWindowController:
             from stat import S_ISDIR
 
             return S_ISDIR(sftp.stat(path).st_mode)
-            # sftp.listdir(path)
-            # return True
         except Exception:
             return False
 
@@ -725,7 +725,7 @@ class MainWindowController:
         """
         Download a file or folder from the remote to the configured download directory.
         """
-        from src.controllers.download_worker import DownloadWorker
+        from src.workers.download_worker import DownloadWorker
 
         # Use configured download directory
         local_dir = self.settings.download_directory

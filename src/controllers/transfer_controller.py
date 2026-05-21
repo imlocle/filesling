@@ -15,11 +15,11 @@ from typing import List, Optional
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from src.config.settings import Settings
-from src.controllers.transfer_worker import TransferWorker
 from src.services.connection_manager_service import ConnectionManagerService
 from src.services.transfer_history_service import TransferHistoryService
 from src.utils.constants import SOFTWARE_NAME
 from src.utils.logging_signal import logger
+from src.workers.transfer_worker import TransferWorker
 
 QUEUE_JSON = "transfer_queue.json"
 MAX_AUTO_RETRIES = 3
@@ -459,11 +459,6 @@ class ManualTransferController(QObject):
 
         # Process next item
         QTimer.singleShot(100, self._process_next)
-
-    def cancel_transfer(self) -> bool:
-        """Cancel not yet implemented."""
-        logger.warn("Transfer: Cancellation not yet implemented")
-        return False
 
     def clear_queue(self) -> None:
         """Clear all pending (not in-progress) transfers."""

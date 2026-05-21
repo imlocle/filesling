@@ -56,31 +56,3 @@ def rounded_icon(path: str, radius: int = 15) -> QIcon:
     painter.drawRoundedRect(pix.rect(), radius, radius)
     painter.end()
     return QIcon(rounded)
-
-
-def format_size(num_bytes: int) -> str:
-    """
-    Convert a file size in bytes into a human-readable string.
-    Always uses one decimal place.
-
-    Examples:
-        1024 -> "1.0 KB"
-        1048576 -> "1.0 MB"
-        450000000 -> "429.2 MB"
-    """
-    try:
-        if num_bytes < 0:
-            return f"{num_bytes} B"
-
-        units = ["B", "KB", "MB", "GB", "TB"]
-        size = float(num_bytes)
-        index = 0
-
-        while size >= 1024 and index < len(units) - 1:
-            size /= 1024.0
-            index += 1
-
-        return f"{size:.1f} {units[index]}"
-
-    except Exception:
-        return f"{num_bytes} B"

@@ -2,12 +2,12 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from src.components.main_window import MainWindow
-from src.components.splash_screen import SplashScreen
 from src.config.settings import Settings
 from src.utils.constants import VERSION
 from src.utils.helper import get_path, rounded_icon
 from src.utils.theme import apply_theme
+from src.views.main_window import MainWindow
+from src.views.splash_screen import SplashScreen
 
 
 def _get_version() -> str:

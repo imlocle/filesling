@@ -14,10 +14,10 @@ graph TB
 
     subgraph Controllers["Controller Layer"]
         MWC[MainWindowController]
-        MTC[ManualTransferController]
+        MTC[TransferController]
     end
 
-    subgraph Workers["Background Threads"]
+    subgraph Workers["Background Threads (src/workers/)"]
         TW[TransferWorker]
         DW[DownloadWorker]
         DL[DirectoryLoader]
@@ -74,7 +74,7 @@ sequenceDiagram
     participant User
     participant Explorer as FileExplorerWidget
     participant MW as MainWindow
-    participant MTC as ManualTransferController
+    participant MTC as TransferController
     participant TW as TransferWorker
     participant Remote as SSH/ADB
 

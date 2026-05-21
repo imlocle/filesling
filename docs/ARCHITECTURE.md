@@ -10,19 +10,11 @@ For visual diagrams of the system, see [System Diagram](SYSTEM_DIAGRAM.md).
 
 ```
 src/
-├── application/                    Business logic
-│   └── manual_transfer_controller.py   Transfer queue (queues, processes, retries)
-├── components/                     UI windows
-│   ├── main_window.py              Main app window (toolbar, explorer, diagnostics, queue)
-│   ├── server_selection_dialog.py  Server picker on launch
-│   ├── settings_window.py          Settings editor (connection, behavior, files)
-│   └── splash_screen.py            Startup splash
 ├── config/
 │   └── settings.py                 Pydantic config model + singleton
 ├── controllers/
 │   ├── main_window_controller.py   Routes UI events → services
-│   ├── download_worker.py          Background SFTP/ADB download worker
-│   └── transfer_worker.py          Background SFTP/ADB upload worker
+│   └── transfer_controller.py      Transfer queue management
 ├── models/
 │   └── errors.py                   Custom exception hierarchy
 ├── services/
@@ -32,12 +24,21 @@ src/
 │   └── transfer_history_service.py Persistent upload/download log
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
-│   ├── helper.py                   Path helpers, size formatting
-│   └── logging_signal.py          Qt signal logger + JSON error log
-└── widgets/
-    ├── connection_form_widget.py   Reusable SSH/ADB connection form
-    ├── file_explorer_widget.py     Remote file browser (tree, drag-drop, search)
-    └── transfer_queue_widget.py    Visual transfer queue panel
+│   ├── helper.py                   Path helpers, icon utilities
+│   ├── logging_signal.py           Qt signal logger + JSON error log
+│   └── theme.py                    Theme management
+├── views/                          Full windows and dialogs
+│   ├── main_window.py              Main app window (toolbar, explorer, queue)
+│   ├── server_selection_dialog.py  Server picker on launch
+│   ├── settings_window.py          Settings editor (connection, files)
+│   └── splash_screen.py            Startup splash
+├── widgets/                        Reusable UI components
+│   ├── connection_form_widget.py   Reusable SSH/ADB connection form
+│   ├── file_explorer_widget.py     Remote file browser (tree, drag-drop, search)
+│   └── transfer_queue_widget.py    Visual transfer queue panel
+└── workers/                        Background thread workers
+    ├── download_worker.py          Background SFTP/ADB download worker
+    └── transfer_worker.py          Background SFTP/ADB upload worker
 ```
 
 ## Connection Backends
@@ -72,7 +73,7 @@ Finder drop → FileExplorerWidget.dropEvent()
       → Persists active/pending queue to ~/.Shuttle/transfer_queue.json
       → Processes sequentially:
         → Opens dedicated SFTP session (or uses ADB)
-        → TransferWorker runs on QThread
+        → TransferWorker runs on QThread (src/workers/)
         → Emits progress percentage
         → Retries failed uploads up to 3 times
         → On success: deletes local file (if configured)
@@ -107,13 +108,13 @@ Right-click → "⬇️ Download"
 
 ## Threading
 
-| Thread          | Purpose                                       |
-| --------------- | --------------------------------------------- |
-| Main (UI)       | Qt event loop, all widget updates             |
-| DirectoryLoader | Background directory listing (per-navigation) |
-| TransferWorker  | Background file upload (per-transfer)         |
-| DownloadWorker  | Background file download (per-download)       |
-| SearchWorker    | Background recursive search                   |
+| Thread          | Purpose                                       | Location              |
+| --------------- | --------------------------------------------- | --------------------- |
+| Main (UI)       | Qt event loop, all widget updates             | views/, widgets/      |
+| DirectoryLoader | Background directory listing (per-navigation) | widgets/file_explorer |
+| TransferWorker  | Background file upload (per-transfer)         | workers/              |
+| DownloadWorker  | Background file download (per-download)       | workers/              |
+| SearchWorker    | Background recursive search                   | widgets/file_explorer |
 
 Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer uses the main SFTP client. They don't share state — no locks needed.
 
