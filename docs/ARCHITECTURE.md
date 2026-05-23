@@ -21,7 +21,7 @@ src/
 │   ├── adb_client.py               ADB client (mimics SFTPClient interface)
 │   ├── connection_manager_service.py   SSH/SFTP connection lifecycle
 │   ├── file_deletion_service.py    Safe deletion via send2trash
-│   └── transfer_history_service.py Persistent upload/download log
+│   └── activity_history_service.py  Persistent activity log (uploads, downloads, renames, deletes, moves)
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
 │   ├── crash_handler.py            Global exception handler + crash log

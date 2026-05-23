@@ -114,7 +114,9 @@ class ConnectionFormWidget(QWidget):
         key_col.addWidget(self.ssh_key_path)
         row.addLayout(key_col, stretch=1)
         ssh_layout.addLayout(row)
-        key_hint = QLabel("Path to your private key. Default is ~/.ssh/id_rsa. Port 22 is standard for SSH.")
+        key_hint = QLabel(
+            "Path to your private key. Default is ~/.ssh/id_rsa. Port 22 is standard for SSH."
+        )
         key_hint.setObjectName("secondary_label")
         key_hint.setWordWrap(True)
         ssh_layout.addWidget(key_hint)
@@ -142,7 +144,9 @@ class ConnectionFormWidget(QWidget):
         adb_row.addWidget(self.adb_refresh_btn)
         adb_layout.addLayout(adb_row)
 
-        adb_hint = QLabel("Enable USB Debugging on your device: Settings → Developer Options → USB Debugging")
+        adb_hint = QLabel(
+            "Enable USB Debugging on your device: Settings → Developer Options → USB Debugging"
+        )
         adb_hint.setObjectName("secondary_label")
         adb_hint.setWordWrap(True)
         adb_layout.addWidget(adb_hint)

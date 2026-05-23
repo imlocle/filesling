@@ -1337,6 +1337,22 @@ class FileExplorerWidget(QWidget):
             item.setText(0, new_name)  # type: ignore
             self.tree_widget.blockSignals(False)
             logger.success(f"Renamed: {old_name} → {new_name}")
+
+            # Record in history
+            from src.services.activity_history_service import ActivityHistoryService
+
+            history = ActivityHistoryService()
+            history.add(
+                filename=old_name,
+                action="rename",
+                source=old_path,
+                destination=new_path,
+                server_name=(
+                    self.settings.config.current_server_id
+                    if hasattr(self.settings, "config")
+                    else ""
+                ),
+            )
         except Exception as e:
             logger.error(f"Rename failed: {e}")
 

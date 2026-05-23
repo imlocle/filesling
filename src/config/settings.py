@@ -44,6 +44,7 @@ class SettingsConfig(BaseModel):
     # Transfer Behavior
     delete_after_transfer: bool = True
     download_directory: str = os.path.expanduser("~/Downloads")
+    reveal_in_finder_after_download: bool = False
     skip_patterns: set[str] = Field(
         default_factory=lambda: {".DS_Store", "Thumbs.db", ".Trashes", "._*"}
     )
@@ -345,6 +346,7 @@ class Settings:
             "remote_base_dir": self.config.remote_base_dir,
             "delete_after_transfer": self.config.delete_after_transfer,
             "download_directory": self.config.download_directory,
+            "reveal_in_finder_after_download": self.config.reveal_in_finder_after_download,
             "skip_patterns": list(self.config.skip_patterns),
             "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,

@@ -432,8 +432,8 @@ class MainWindow(QMainWindow):
 
         view_menu.addSeparator()
 
-        history_action = QAction("Transfer History...", self)
-        history_action.triggered.connect(self._show_transfer_history)
+        history_action = QAction("Activity History...", self)
+        history_action.triggered.connect(self._show_activity_history)
         view_menu.addAction(history_action)
 
         diagnostics_action = QAction("Diagnostics Log...", self)
@@ -640,15 +640,18 @@ class MainWindow(QMainWindow):
             scrollbar = self._diagnostics_log_box.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
 
-    def _show_transfer_history(self) -> None:
-        """Show transfer history in a dialog."""
+    def _show_activity_history(self) -> None:
+        """Show activity history in a dialog."""
         from PySide6.QtWidgets import QDialog, QPlainTextEdit, QVBoxLayout
 
-        history = self.controller.manual_transfer.history
+        from src.services.activity_history_service import ActivityHistoryService
+
+        # Fresh load from disk to include all recent activity
+        history = ActivityHistoryService()
         records = history.records
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Transfer History")
+        dialog.setWindowTitle("Activity History")
         dialog.setMinimumSize(550, 400)
 
         layout = QVBoxLayout(dialog)
@@ -656,17 +659,34 @@ class MainWindow(QMainWindow):
         text.setReadOnly(True)
 
         if not records:
-            text.setPlainText("No transfer history yet.")
+            text.setPlainText("No activity yet.")
         else:
             lines = []
             for r in reversed(records):
-                icon = "⬆️" if r.direction == "upload" else "⬇️"
-                lines.append(
-                    f"{icon}  {r.filename}\n"
-                    f"   {r.timestamp}  •  {r.direction}  •  {r.server_name}\n"
-                    f"   {r.source} → {r.destination}\n"
-                )
-            text.setPlainText("\n".join(lines))
+                icon = {
+                    "upload": "⬆️",
+                    "download": "⬇️",
+                    "delete": "🗑️",
+                    "rename": "✏️",
+                    "move": "↔️",
+                }.get(r.action, "•")
+
+                line = f"{icon}  {r.action.capitalize()}  •  {r.filename}"
+                line += f"\n    {r.timestamp}  •  {r.server_name}"
+
+                if r.action == "rename":
+                    old_name = os.path.basename(r.source)
+                    new_name = os.path.basename(r.destination)
+                    line += f"\n    {old_name} → {new_name}"
+                elif r.action == "delete":
+                    line += f"\n    {r.source}"
+                elif r.action in ("upload", "download", "move"):
+                    src = r.source or ""
+                    dst = r.destination or ""
+                    line += f"\n    {src} → {dst}"
+
+                lines.append(line)
+            text.setPlainText("\n\n".join(lines))
 
         layout.addWidget(text)
         dialog.exec()

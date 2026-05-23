@@ -543,6 +543,14 @@ class MainWindowController:
 
             logger.trash(f"Deletion: {os.path.basename(path)}: Deleted")
 
+            # Record in history
+            self.manual_transfer.history.add(
+                filename=os.path.basename(path),
+                action="delete",
+                source=path,
+                server_name=self.settings.config.current_server_id,
+            )
+
         except ConnectionLostError as e:
             logger.error(f"Delete failed: Connection lost: {e}")
             QMessageBox.warning(
@@ -798,10 +806,12 @@ class MainWindowController:
 
         # Connect signals
         self._download_thread.started.connect(self._download_worker.run)
-        self._download_worker.finished.connect(self._on_download_finished)
-        self._download_worker.error.connect(self._on_download_error)
         self._download_worker.progress.connect(self._on_download_progress)
-        self._download_thread.finished.connect(self._cleanup_download)
+        # Use thread.finished (fires on main thread) for completion
+        self._download_thread.finished.connect(self._complete_download)
+        self._download_worker.finished.connect(self._download_thread.quit)
+        self._download_worker.error.connect(self._on_download_error_store)
+        self._download_worker.error.connect(self._download_thread.quit)
 
         # Start
         self._download_thread.start()
@@ -822,40 +832,52 @@ class MainWindowController:
                 item = queue._items[index]
                 item.transferred_bytes = int(item.total_bytes * percent / 100)
 
-    def _on_download_finished(self) -> None:
-        """Handle download completion — defer to main thread via timer."""
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(0, self._complete_download)
+    def _on_download_error_store(self, error_msg: str) -> None:
+        """Store error from worker thread (will be read on main thread)."""
+        self._download_error_msg = error_msg
 
     def _complete_download(self) -> None:
-        """Actually mark download complete (runs on main thread)."""
-        if hasattr(self, "_download_queue_index") and hasattr(
-            self.view, "transfer_queue"
-        ):
-            self.view.transfer_queue.set_completed(self._download_queue_index)
+        """Handle download completion or failure (runs on main thread via thread.finished)."""
+        error_msg = getattr(self, "_download_error_msg", None)
 
-        # Record in transfer history
-        if hasattr(self, "_download_remote_path") and hasattr(
-            self, "_download_local_dir"
-        ):
-            filename = os.path.basename(self._download_remote_path)
-            local_path = os.path.join(self._download_local_dir, filename)
+        if error_msg:
+            # Download failed
+            if hasattr(self, "_download_queue_index") and hasattr(
+                self.view, "transfer_queue"
+            ):
+                self.view.transfer_queue.set_failed(
+                    self._download_queue_index, error_msg
+                )
+            self._download_error_msg = None
+        else:
+            # Download succeeded
+            if hasattr(self, "_download_queue_index") and hasattr(
+                self.view, "transfer_queue"
+            ):
+                self.view.transfer_queue.set_completed(self._download_queue_index)
 
-            self.manual_transfer.history.add(
-                filename=filename,
-                direction="download",
-                source=self._download_remote_path,
-                destination=self._download_local_dir,
-                size_bytes=getattr(self, "_download_total_bytes", 0),
-                server_name=self.settings.config.current_server_id,
-            )
+            # Record in activity history
+            if hasattr(self, "_download_remote_path") and hasattr(
+                self, "_download_local_dir"
+            ):
+                filename = os.path.basename(self._download_remote_path)
+                local_path = os.path.join(self._download_local_dir, filename)
 
-            # Reveal in Finder
-            self._reveal_in_finder(local_path)
+                self.manual_transfer.history.add(
+                    filename=filename,
+                    action="download",
+                    source=self._download_remote_path,
+                    destination=self._download_local_dir,
+                    size_bytes=getattr(self, "_download_total_bytes", 0),
+                    server_name=self.settings.config.current_server_id,
+                )
 
-        if hasattr(self, "_download_thread") and self._download_thread:
-            self._download_thread.quit()
+                # Reveal in Finder (if enabled in settings)
+                if self.settings.config.reveal_in_finder_after_download:
+                    self._reveal_in_finder(local_path)
+
+        # Cleanup thread/worker
+        self._cleanup_download()
 
     def _reveal_in_finder(self, path: str) -> None:
         """Reveal a file in Finder (macOS)."""
@@ -865,23 +887,6 @@ class MainWindowController:
             subprocess.run(["open", "-R", path], check=False)
         except Exception:
             pass
-
-    def _on_download_error(self, error_msg: str) -> None:
-        """Handle download failure — defer to main thread via timer."""
-        from PySide6.QtCore import QTimer
-
-        self._download_error_msg = error_msg
-        QTimer.singleShot(0, self._fail_download)
-
-    def _fail_download(self) -> None:
-        """Actually mark download failed (runs on main thread)."""
-        error_msg = getattr(self, "_download_error_msg", "Unknown error")
-        if hasattr(self, "_download_queue_index") and hasattr(
-            self.view, "transfer_queue"
-        ):
-            self.view.transfer_queue.set_failed(self._download_queue_index, error_msg)
-        if hasattr(self, "_download_thread") and self._download_thread:
-            self._download_thread.quit()
 
     def _cleanup_download(self) -> None:
         """Clean up download worker and thread after thread has stopped."""
@@ -994,6 +999,15 @@ class MainWindowController:
 
             logger.success(
                 f"Moved: {os.path.basename(src_path)}: To {os.path.basename(dest_path)}"
+            )
+
+            # Record in history
+            self.manual_transfer.history.add(
+                filename=os.path.basename(src_path),
+                action="move",
+                source=src_path,
+                destination=dest_path,
+                server_name=self.settings.config.current_server_id,
             )
         except FileExistsError:
             logger.warn(f"Destination already exists: {dest_path}")

@@ -343,3 +343,16 @@ QLabel#secondary_label {
     color: #6e6e73;
     font-size: 11px;
 }
+
+/* Subtle text-style button */
+QPushButton#subtle_btn {
+    background-color: transparent;
+    border: none;
+    color: #8e8e93;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+QPushButton#subtle_btn:hover {
+    color: #1d1d1f;
+}

@@ -2,6 +2,7 @@
 Transfer queue widget — shows pending, in-progress, and completed transfers.
 """
 
+import os
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -101,6 +102,12 @@ class TransferItemWidget(QFrame):
         self.status_label = QLabel()
         self.status_label.setStyleSheet("font-size: 11px;")
 
+        self.finder_btn = QPushButton("Show in Finder")
+        self.finder_btn.setMaximumHeight(22)
+        self.finder_btn.setVisible(False)
+        self.finder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.finder_btn.clicked.connect(self._reveal_in_finder)
+
         self.cancel_btn = QPushButton("✕")
         self.cancel_btn.setMaximumWidth(22)
         self.cancel_btn.setMaximumHeight(22)
@@ -111,6 +118,7 @@ class TransferItemWidget(QFrame):
 
         top_row.addWidget(self.name_label, stretch=1)
         top_row.addWidget(self.status_label)
+        top_row.addWidget(self.finder_btn)
         top_row.addWidget(self.cancel_btn)
 
         layout.addLayout(top_row)
@@ -149,6 +157,7 @@ class TransferItemWidget(QFrame):
             self.progress_bar.setVisible(False)
             self.detail_label.setVisible(False)
             self.retry_btn.setVisible(False)
+            self.finder_btn.setVisible(False)
             self.cancel_btn.setVisible(True)
 
         elif item.status == TransferStatus.IN_PROGRESS:
@@ -170,6 +179,7 @@ class TransferItemWidget(QFrame):
 
             self.detail_label.setVisible(True)
             self.retry_btn.setVisible(False)
+            self.finder_btn.setVisible(False)
             self.cancel_btn.setVisible(False)
 
             # Speed and ETA
@@ -191,6 +201,10 @@ class TransferItemWidget(QFrame):
             self.detail_label.setVisible(True)
             self.retry_btn.setVisible(False)
             self.cancel_btn.setVisible(False)
+
+            # Show "Show in Finder" for completed downloads
+            is_download = item.display_name.startswith("⬇")
+            self.finder_btn.setVisible(is_download)
 
             # Show duration
             if item.start_time and item.end_time:
@@ -214,6 +228,27 @@ class TransferItemWidget(QFrame):
             self.detail_label.style().polish(self.detail_label)
             self.retry_btn.setVisible(True)
             self.cancel_btn.setVisible(False)
+
+    def _reveal_in_finder(self) -> None:
+        """Open the downloaded file's location in Finder."""
+        import subprocess
+
+        from src.config.settings import Settings
+
+        settings = Settings()
+        download_dir = settings.download_directory
+        # Strip the "⬇ " prefix to get the filename
+        filename = self.item.display_name.lstrip("⬇ ").strip()
+        path = os.path.join(download_dir, filename)
+
+        try:
+            if os.path.exists(path):
+                subprocess.run(["open", "-R", path], check=False)
+            else:
+                # File might have been moved — just open the directory
+                subprocess.run(["open", download_dir], check=False)
+        except Exception:
+            pass
 
 
 class TransferQueueWidget(QWidget):
@@ -239,13 +274,15 @@ class TransferQueueWidget(QWidget):
         # Header
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
+        header_layout.setContentsMargins(0, 0, 0, 0)
 
         self.header_label = QLabel("Transfers")
         self.header_label.setObjectName("section_header")
 
         self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setMaximumWidth(60)
-        self.clear_btn.setMaximumHeight(20)
+        self.clear_btn.setObjectName("subtle_btn")
+        self.clear_btn.setMaximumHeight(22)
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clear_btn.clicked.connect(self.clear_completed)
         self.clear_btn.setVisible(False)
 

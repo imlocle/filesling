@@ -15,8 +15,8 @@ from typing import List, Optional
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from src.config.settings import Settings
+from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
-from src.services.transfer_history_service import TransferHistoryService
 from src.utils.constants import SOFTWARE_NAME
 from src.utils.logging_signal import logger
 from src.workers.transfer_worker import TransferWorker
@@ -109,7 +109,7 @@ class ManualTransferController(QObject):
         super().__init__(parent)
         self.settings = settings
         self.connection_manager = connection_manager
-        self.history = TransferHistoryService()
+        self.history = ActivityHistoryService()
 
         # Queue state
         self._queue: List[QueuedTransfer] = []
@@ -360,7 +360,7 @@ class ManualTransferController(QObject):
         for path in transfer.local_paths:
             self.history.add(
                 filename=os.path.basename(path.rstrip("/")),
-                direction="upload",
+                action="upload",
                 source=path,
                 destination=transfer.remote_destination,
                 size_bytes=transfer.total_bytes,

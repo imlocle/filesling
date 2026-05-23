@@ -1,7 +1,8 @@
 """
-Transfer history service — persists upload/download records to JSON.
+Activity history service — persists file operation records to JSON.
 
-Stores the last 200 transfers in ~/.Shuttle/transfer_history.json.
+Stores the last 500 actions in ~/.Shuttle/activity_history.json.
+Tracks: uploads, downloads, renames, deletes, moves.
 """
 
 import json
@@ -12,43 +13,50 @@ from typing import List
 
 from src.utils.constants import SOFTWARE_NAME
 
-HISTORY_FILE = "transfer_history.json"
-MAX_HISTORY = 200
+HISTORY_FILE = "activity_history.json"
+MAX_HISTORY = 500
 
 
 @dataclass
-class TransferRecord:
-    """A single transfer record."""
+class ActivityRecord:
+    """A single activity record."""
 
     filename: str
-    direction: str  # "upload" or "download"
-    source: str  # local path (upload) or remote path (download)
-    destination: str  # remote path (upload) or local path (download)
+    action: str  # "upload", "download", "rename", "delete", "move"
+    source: str = ""  # original path
+    destination: str = ""  # new path (for upload/download/move/rename)
     size_bytes: int = 0
     timestamp: str = ""
     server_name: str = ""
-    status: str = "completed"  # "completed" or "failed"
+    status: str = "completed"
 
     def __post_init__(self):
         if not self.timestamp:
             self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-class TransferHistoryService:
-    """Manages persistent transfer history."""
+class ActivityHistoryService:
+    """Manages persistent activity history."""
 
     def __init__(self):
         self._history_path = Path.home() / f".{SOFTWARE_NAME}" / HISTORY_FILE
-        self._records: List[TransferRecord] = []
+        self._records: List[ActivityRecord] = []
         self._load()
 
     def _load(self) -> None:
         """Load history from disk."""
+        path = self._history_path
+
         try:
-            if self._history_path.exists():
-                with open(self._history_path, "r") as f:
+            if path.exists():
+                with open(path, "r") as f:
                     data = json.load(f)
-                self._records = [TransferRecord(**r) for r in data]
+                self._records = []
+                for r in data:
+                    # Handle old "direction" field → "action"
+                    if "direction" in r and "action" not in r:
+                        r["action"] = r.pop("direction")
+                    self._records.append(ActivityRecord(**r))
         except (json.JSONDecodeError, TypeError, KeyError):
             self._records = []
 
@@ -63,22 +71,25 @@ class TransferHistoryService:
                     indent=2,
                 )
         except (OSError, PermissionError):
-            pass  # Non-critical — don't crash if we can't write history
+            pass
 
     def add(
         self,
         filename: str,
-        direction: str,
-        source: str,
-        destination: str,
+        action: str,
+        source: str = "",
+        destination: str = "",
         size_bytes: int = 0,
         server_name: str = "",
         status: str = "completed",
+        # Keep backward compat for old callers using "direction"
+        direction: str = "",
     ) -> None:
-        """Add a transfer record."""
-        record = TransferRecord(
+        """Add an activity record."""
+        actual_action = direction or action
+        record = ActivityRecord(
             filename=filename,
-            direction=direction,
+            action=actual_action,
             source=source,
             destination=destination,
             size_bytes=size_bytes,
@@ -86,17 +97,16 @@ class TransferHistoryService:
             status=status,
         )
         self._records.append(record)
-        # Trim to max
         if len(self._records) > MAX_HISTORY:
             self._records = self._records[-MAX_HISTORY:]
         self._save()
 
     @property
-    def records(self) -> List[TransferRecord]:
+    def records(self) -> List[ActivityRecord]:
         """Get all records (newest last)."""
         return self._records
 
-    def search(self, query: str) -> List[TransferRecord]:
+    def search(self, query: str) -> List[ActivityRecord]:
         """Search history by filename."""
         query = query.lower()
         return [r for r in self._records if query in r.filename.lower()]
@@ -106,7 +116,7 @@ class TransferHistoryService:
         return any(
             r.filename == filename
             and r.destination == destination
-            and r.direction == "upload"
+            and r.action == "upload"
             and r.status == "completed"
             for r in self._records
         )

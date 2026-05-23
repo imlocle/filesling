@@ -157,6 +157,12 @@ class SettingsWindow(QDialog):
         download_row.addWidget(browse_btn)
         layout.addLayout(download_row)
 
+        self.reveal_in_finder_checkbox = QCheckBox("Open in Finder after download")
+        self.reveal_in_finder_checkbox.setChecked(
+            self.settings.config.reveal_in_finder_after_download
+        )
+        layout.addWidget(self.reveal_in_finder_checkbox)
+
         # Skip patterns
         layout.addWidget(QLabel("Skip Patterns"))
         self.skip_patterns_input = QTextEdit(
@@ -308,6 +314,7 @@ class SettingsWindow(QDialog):
                 "delete_after_transfer": self.delete_after_transfer_checkbox.isChecked(),
                 "download_directory": self.download_dir_input.text().strip()
                 or os.path.expanduser("~/Downloads"),
+                "reveal_in_finder_after_download": self.reveal_in_finder_checkbox.isChecked(),
                 "skip_exit_confirm": self.settings.config.skip_exit_confirm,
                 "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [
