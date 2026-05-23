@@ -12,14 +12,18 @@ Built with Python, PySide6, and Paramiko.
 
 - 🖥 **Remote file explorer** — Browse any SSH server or Android device
 - 📂 **Drag-and-drop upload** — Drop files from Finder into the explorer
+- ⬇️ **Download from server** — Right-click to download files to your Mac
 - 📱 **Android USB support** — Connect phones/tablets via ADB (no MTP needed)
-- 📊 **Transfer queue** — Queue uploads with speed, ETA, progress, auto-retry, and crash recovery
+- 📊 **Transfer queue** — Queue uploads/downloads with speed, ETA, progress, and auto-retry
 - 🔍 **Recursive search** — Search across subdirectories with Enter
 - 🔄 **Multi-server** — Save multiple devices, set a default for auto-connect
 - ⭐ **Per-server bookmarks** — Save quick-access folders and choose a default start folder per server
-- ✏️ **Inline rename** — Slow-click to rename files directly
+- ✏️ **Inline rename** — Slow-click or right-click to rename files directly
 - 💾 **Disk space bar** — See usage for the current remote filesystem, including mounted drives
 - 🗑 **Auto-cleanup** — Move local files to trash after upload
+- 📋 **Transfer history** — Persistent log of all uploads and downloads
+- 🔔 **Duplicate detection** — Warns before overwriting existing files
+- 🐛 **Crash reports** — Friendly error dialog with one-click GitHub issue reporting
 - 🧰 **Diagnostics log** — Hidden by default, available from the View menu when troubleshooting
 - 🌓 **Appearance modes** — Follow system, light, or dark theme
 - ⌨️ **Keyboard shortcuts** — ⌘+R, ⌘+N, ⌘+F, ⌘+Delete, etc.

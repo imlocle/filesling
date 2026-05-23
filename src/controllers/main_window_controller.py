@@ -839,8 +839,11 @@ class MainWindowController:
         if hasattr(self, "_download_remote_path") and hasattr(
             self, "_download_local_dir"
         ):
+            filename = os.path.basename(self._download_remote_path)
+            local_path = os.path.join(self._download_local_dir, filename)
+
             self.manual_transfer.history.add(
-                filename=os.path.basename(self._download_remote_path),
+                filename=filename,
                 direction="download",
                 source=self._download_remote_path,
                 destination=self._download_local_dir,
@@ -848,8 +851,20 @@ class MainWindowController:
                 server_name=self.settings.config.current_server_id,
             )
 
+            # Reveal in Finder
+            self._reveal_in_finder(local_path)
+
         if hasattr(self, "_download_thread") and self._download_thread:
             self._download_thread.quit()
+
+    def _reveal_in_finder(self, path: str) -> None:
+        """Reveal a file in Finder (macOS)."""
+        import subprocess
+
+        try:
+            subprocess.run(["open", "-R", path], check=False)
+        except Exception:
+            pass
 
     def _on_download_error(self, error_msg: str) -> None:
         """Handle download failure — defer to main thread via timer."""

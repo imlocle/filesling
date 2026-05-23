@@ -530,10 +530,9 @@ class FileExplorerWidget(QWidget):
         layout.addWidget(self.tree_widget)
 
         self.breadcrumb_label: QLabel = QLabel()
-        self.breadcrumb_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
         self.breadcrumb_label.setObjectName("secondary_label")
+        self.breadcrumb_label.setTextFormat(Qt.TextFormat.RichText)
+        self.breadcrumb_label.linkActivated.connect(self._on_breadcrumb_clicked)
         layout.addWidget(self.breadcrumb_label)
 
         # ------------------------------------------------------------------
@@ -581,8 +580,18 @@ class FileExplorerWidget(QWidget):
         self.refresh()
 
     def _update_breadcrumb(self) -> None:
-        """Update bottom breadcrumb text."""
-        self.breadcrumb_label.setText(self.current_path)
+        """Update bottom breadcrumb with clickable path segments."""
+        parts = self.current_path.strip("/").split("/")
+        crumbs = []
+        for i, part in enumerate(parts):
+            path = "/" + "/".join(parts[: i + 1])
+            crumbs.append(f'<a href="{path}" style="text-decoration:none;">{part}</a>')
+        self.breadcrumb_label.setText(" / ".join(crumbs) if crumbs else "/")
+
+    def _on_breadcrumb_clicked(self, path: str) -> None:
+        """Navigate to a clicked breadcrumb path."""
+        self.current_path = path
+        self.refresh()
 
     # ------------------------------------------------------------------
     #  Context menu (create / delete / rename / move)

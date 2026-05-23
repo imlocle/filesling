@@ -432,6 +432,10 @@ class MainWindow(QMainWindow):
 
         view_menu.addSeparator()
 
+        history_action = QAction("Transfer History...", self)
+        history_action.triggered.connect(self._show_transfer_history)
+        view_menu.addAction(history_action)
+
         diagnostics_action = QAction("Diagnostics Log...", self)
         diagnostics_action.triggered.connect(self._show_diagnostics_log)
         view_menu.addAction(diagnostics_action)
@@ -635,6 +639,37 @@ class MainWindow(QMainWindow):
             self._diagnostics_log_box.append(message)
             scrollbar = self._diagnostics_log_box.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
+
+    def _show_transfer_history(self) -> None:
+        """Show transfer history in a dialog."""
+        from PySide6.QtWidgets import QDialog, QPlainTextEdit, QVBoxLayout
+
+        history = self.controller.manual_transfer.history
+        records = history.records
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Transfer History")
+        dialog.setMinimumSize(550, 400)
+
+        layout = QVBoxLayout(dialog)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+
+        if not records:
+            text.setPlainText("No transfer history yet.")
+        else:
+            lines = []
+            for r in reversed(records):
+                icon = "⬆️" if r.direction == "upload" else "⬇️"
+                lines.append(
+                    f"{icon}  {r.filename}\n"
+                    f"   {r.timestamp}  •  {r.direction}  •  {r.server_name}\n"
+                    f"   {r.source} → {r.destination}\n"
+                )
+            text.setPlainText("\n".join(lines))
+
+        layout.addWidget(text)
+        dialog.exec()
 
     def _show_diagnostics_log(self) -> None:
         """Show the diagnostics log in a separate window."""

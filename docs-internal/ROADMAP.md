@@ -138,11 +138,11 @@
 
 ### Quality of Life
 
-- [ ] Show transfer history panel (View menu → Transfer History)
-- [ ] "Open in Finder" for downloaded files (click completed transfer → reveal in Finder)
-- [ ] Breadcrumb path bar should be clickable (navigate to any parent folder)
-- [ ] Remember window size/position between sessions
-- [ ] Confirm before deleting multiple files (currently deletes immediately)
+- [x] Remember window size/position between sessions
+- [x] Confirm before deleting files (single and multi-select)
+- [x] "Open in Finder" for downloaded files (auto-reveals after download)
+- [x] Breadcrumb path bar is clickable (navigate to any parent folder)
+- [x] Transfer history panel (View menu → Transfer History)
 
 ---
 

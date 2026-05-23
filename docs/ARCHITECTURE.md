@@ -24,6 +24,7 @@ src/
 │   └── transfer_history_service.py Persistent upload/download log
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
+│   ├── crash_handler.py            Global exception handler + crash log
 │   ├── helper.py                   Path helpers, icon utilities
 │   ├── logging_signal.py           Qt signal logger + JSON error log
 │   └── theme.py                    Theme management
@@ -132,9 +133,13 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 
 - Explorer remains the primary workspace
 - Transfer queue is a first-class bottom panel and expands with the window
+- Clickable breadcrumb path bar for quick navigation to parent folders
 - Diagnostics logs are hidden by default and available from `View → Diagnostics Log...`
+- Transfer history available from `View → Transfer History...`
 - Connection status lives in the status bar instead of duplicating the explorer title
 - macOS menu bar with File, Edit, View, Help menus
+- Window size and position remembered between sessions
+- Downloads auto-reveal in Finder on completion
 
 ## Theming
 
@@ -148,6 +153,9 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 
 - Custom exception hierarchy in `errors.py`
 - Errors logged to `logs/errors.json` (last 500 entries)
+- Global crash handler catches unhandled exceptions and shows a user-friendly dialog
+- Crash reports saved to `~/.Shuttle/crash.log` with one-click GitHub issue reporting
+- Previous session crashes detected on next launch with option to view report
 - Transfer failures don't delete local files
 - Failed uploads are retried automatically before being marked failed
 - Interrupted queued uploads are restored on next launch and restarted from the beginning
