@@ -19,7 +19,7 @@
 - [x] Folder names not showing in transfer queue/logs when path has trailing slash
 - [x] Duplicate detection triggers on folders (should only check files)
 - [x] Upload verification fails for ADB (stat returns 0 bytes before filesystem syncs)
-- [x] ADB not found in `.app` bundle — PATH doesn't include Homebrew; fixed with `get_adb_path()` fallback to `/opt/homebrew/bin/adb`
+- [x] ADB not found in `.app` bundle — PATH doesn't include Homebrew; fixed with `get_adb_path()` fallback
 - [x] Disk space bar not updating when switching to Android device — removed ADB skip in `_get_disk_usage()`
 - [x] Light mode: tab bar has dark background strip — fixed with explicit `QTabBar` background color
 - [x] Light mode: folder/file icons missing — replaced `QIcon.fromTheme` with `QStyle.standardIcon`
@@ -30,11 +30,7 @@
 
 ## 🐛 Open
 
-- [ ] `QObject::killTimer` / `QBasicTimer::start` warnings on download completion (cosmetic, non-blocking — accepted)
-- [ ] `brew install` for ADB blocks the UI thread during installation (~30-60 seconds with no progress indicator)
-- [ ] Transfer queue index tracking could conflict if upload and download run simultaneously
-- [ ] ADB `stat` can return stale/incorrect sizes immediately after file operations
-- [ ] Large ADB folder listing (1000+ files) may still feel slow if device USB connection is slow
+- [ ] Transfer queue index tracking could conflict if upload and download run simultaneously (fix when adding parallel transfers)
 
 ---
 
@@ -42,6 +38,3 @@
 
 - [ ] Does `adb push` handle filenames with special characters (spaces, quotes, unicode)?
 - [ ] What happens if USB cable is disconnected mid-transfer?
-- [ ] Does the app handle SSH connection timeout gracefully during a long idle period?
-- [ ] Memory usage with very large transfer history (200 records should be fine, but untested at scale)
-- [ ] Does the `.app` bundle work on Intel Macs? (built on ARM runner)

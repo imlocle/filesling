@@ -61,6 +61,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(SOFTWARE_NAME)
         self.setMinimumSize(700, 900)
 
+        # Restore window geometry from previous session
+        self._restore_geometry()
+
         # Connection retry tracking
         self.connection_attempts = 0
         self.max_connection_attempts = 3
@@ -684,6 +687,7 @@ class MainWindow(QMainWindow):
         skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
 
         if skip_confirm:
+            self._save_geometry()
             self.controller.shutdown()
             event.accept()
             return
@@ -709,10 +713,30 @@ class MainWindow(QMainWindow):
                 self.settings.config.skip_exit_confirm = True
                 self.settings.save_config(self.settings._config_to_dict())
 
+            self._save_geometry()
             self.controller.shutdown()
             event.accept()
         else:
             event.ignore()
+
+    # ------------------------------------------------------------------
+    # Window Geometry Persistence
+    # ------------------------------------------------------------------
+    def _save_geometry(self) -> None:
+        """Save window size and position for next session."""
+        from PySide6.QtCore import QSettings
+
+        settings = QSettings(SOFTWARE_NAME, SOFTWARE_NAME)
+        settings.setValue("geometry", self.saveGeometry())
+
+    def _restore_geometry(self) -> None:
+        """Restore window size and position from previous session."""
+        from PySide6.QtCore import QSettings
+
+        settings = QSettings(SOFTWARE_NAME, SOFTWARE_NAME)
+        geometry = settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
 
     def _handle_remote_drop(self, local_paths: list[str], remote_dir: str) -> None:
         """
