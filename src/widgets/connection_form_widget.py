@@ -258,11 +258,42 @@ class ConnectionFormWidget(QWidget):
         from src.services.adb_client import get_connected_devices
 
         self.adb_device_combo.clear()
-        devices = get_connected_devices()
+        saved_device_id = self._config.get("device_id", "")
+        saved_name = self._config.get("name", "")
+
+        try:
+            devices = get_connected_devices()
+        except Exception:
+            devices = []
+
         if devices:
             for device in devices:
                 label = f"{device['model']} ({device['id']})"
                 self.adb_device_combo.addItem(label, device["id"])
+
+            # Select the saved device if it's in the list
+            if saved_device_id:
+                for i in range(self.adb_device_combo.count()):
+                    if self.adb_device_combo.itemData(i) == saved_device_id:
+                        self.adb_device_combo.setCurrentIndex(i)
+                        return
+                # Saved device not in connected list — add it as disconnected
+                disconnected_label = (
+                    f"{saved_name} — {saved_device_id} (disconnected)"
+                    if saved_name
+                    else f"{saved_device_id} (disconnected)"
+                )
+                self.adb_device_combo.addItem(disconnected_label, saved_device_id)
+                self.adb_device_combo.setCurrentIndex(self.adb_device_combo.count() - 1)
+        elif saved_device_id:
+            # No devices connected — show the saved device as disconnected
+            disconnected_label = (
+                f"{saved_name} — {saved_device_id} (disconnected)"
+                if saved_name
+                else f"{saved_device_id} (disconnected)"
+            )
+            self.adb_device_combo.addItem(disconnected_label, saved_device_id)
+            self.adb_device_combo.setCurrentIndex(0)
         else:
             self.adb_device_combo.setPlaceholderText(PLACEHOLDER_NO_DEVICES)
 
