@@ -84,11 +84,17 @@ class ConnectionFormWidget(QWidget):
         self.host_input = QLineEdit(self._config.get("host", ""))
         self.host_input.setPlaceholderText(PLACEHOLDER_HOST)
         ssh_layout.addWidget(self.host_input)
+        host_hint = QLabel("IP address or hostname of the server on your network")
+        host_hint.setObjectName("secondary_label")
+        ssh_layout.addWidget(host_hint)
 
         ssh_layout.addWidget(QLabel("Username"))
         self.username_input = QLineEdit(self._config.get("username", ""))
         self.username_input.setPlaceholderText(PLACEHOLDER_USERNAME)
         ssh_layout.addWidget(self.username_input)
+        username_hint = QLabel("The SSH login user (e.g., pi, admin, root)")
+        username_hint.setObjectName("secondary_label")
+        ssh_layout.addWidget(username_hint)
 
         row = QHBoxLayout()
         row.setSpacing(8)
@@ -108,6 +114,10 @@ class ConnectionFormWidget(QWidget):
         key_col.addWidget(self.ssh_key_path)
         row.addLayout(key_col, stretch=1)
         ssh_layout.addLayout(row)
+        key_hint = QLabel("Path to your private key. Default is ~/.ssh/id_rsa. Port 22 is standard for SSH.")
+        key_hint.setObjectName("secondary_label")
+        key_hint.setWordWrap(True)
+        ssh_layout.addWidget(key_hint)
 
         layout.addWidget(self.ssh_group)
 
@@ -132,6 +142,11 @@ class ConnectionFormWidget(QWidget):
         adb_row.addWidget(self.adb_refresh_btn)
         adb_layout.addLayout(adb_row)
 
+        adb_hint = QLabel("Enable USB Debugging on your device: Settings → Developer Options → USB Debugging")
+        adb_hint.setObjectName("secondary_label")
+        adb_hint.setWordWrap(True)
+        adb_layout.addWidget(adb_hint)
+
         layout.addWidget(self.adb_group)
 
         # --- Base directory ---
@@ -146,6 +161,12 @@ class ConnectionFormWidget(QWidget):
         )
         self.remote_base_dir_input.setPlaceholderText(PLACEHOLDER_BASE_DIR)
         layout.addWidget(self.remote_base_dir_input)
+
+        self._base_dir_hint = QLabel()
+        self._base_dir_hint.setObjectName("secondary_label")
+        self._base_dir_hint.setWordWrap(True)
+        self._update_base_dir_hint()
+        layout.addWidget(self._base_dir_hint)
 
         # Show/hide
         self.adb_group.setVisible(current_type == CONN_TYPE_ADB)
@@ -217,6 +238,21 @@ class ConnectionFormWidget(QWidget):
             self.remote_base_dir_input.setText(DEFAULT_ADB_BASE_DIR)
         elif not is_adb and current_text in ("", DEFAULT_ADB_BASE_DIR):
             self.remote_base_dir_input.setText(DEFAULT_REMOTE_BASE_DIR)
+        self._update_base_dir_hint()
+
+    def _update_base_dir_hint(self) -> None:
+        """Update the hint text below Base Directory based on connection type."""
+        is_adb = self.connection_type_combo.currentData() == CONN_TYPE_ADB
+        if is_adb:
+            self._base_dir_hint.setText(
+                "Android internal storage is typically /storage/emulated/0. "
+                "Common folders: Download, DCIM, Movies, Music."
+            )
+        else:
+            self._base_dir_hint.setText(
+                "The starting directory when browsing this server. "
+                "Use / to browse from root."
+            )
 
     def _refresh_adb_devices(self) -> None:
         from src.services.adb_client import get_connected_devices
