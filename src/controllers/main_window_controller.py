@@ -31,7 +31,6 @@ from src.utils.constants import (
     DIALOG_FILE_ALREADY_EXISTS,
     DIALOG_FOLDER_EXISTS,
     DIALOG_MOVE_FAILED,
-    DIALOG_RENAME_FAILED,
 )
 from src.utils.logging_signal import logger
 from src.utils.theme import apply_theme
@@ -179,12 +178,12 @@ class MainWindowController:
 
     def _connect_adb(self, server_config: dict) -> None:
         """Connect to an Android device via ADB."""
-        import shutil
-
-        from src.services.adb_client import ADBClient, get_connected_devices
+        from src.services.adb_client import ADBClient, get_adb_path, get_connected_devices
 
         # Check if ADB is installed
-        if not shutil.which("adb"):
+        try:
+            get_adb_path()
+        except IOError:
             self._prompt_install_adb()
             return
 
@@ -686,37 +685,20 @@ class MainWindowController:
     # --------------------------------------------------------------
     def rename_item(self, old_path: str) -> None:
         """
-        Rename a file or folder.
+        Rename a file or folder using inline editing in the explorer.
 
         Args:
             old_path: Current path of item to rename
         """
         explorer = self.view.remote_explorer
-        new_name = explorer.prompt_rename(old_path)
-        if not new_name:
-            return
+        basename = os.path.basename(old_path)
 
-        new_path = os.path.join(os.path.dirname(old_path), new_name)
-
-        try:
-            if old_path.startswith(self.settings.remote_base_dir):
-                sftp = self.view.remote_explorer.sftp
-                if not sftp:
-                    raise RuntimeError("No connection available")
-                sftp.rename(old_path, new_path)
-                self.view.remote_explorer.refresh()
-            else:
-                os.rename(old_path, new_path)
-
-            logger.success(f"Renamed: {os.path.basename(old_path)}: → {new_name}")
-        except Exception as e:
-            logger.error(f"Rename failed: {e}")
-            QMessageBox.critical(
-                self.view,
-                DIALOG_RENAME_FAILED,
-                f"Failed to rename item:\n{str(e)}",
-                QMessageBox.StandardButton.Ok,
-            )
+        # Find the tree item matching this path
+        for i in range(explorer.tree_widget.topLevelItemCount()):
+            item = explorer.tree_widget.topLevelItem(i)
+            if item and item.text(0) == basename:
+                explorer._start_inline_rename(item, 0)
+                return
 
     # --------------------------------------------------------------
     #  DOWNLOAD

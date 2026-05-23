@@ -45,7 +45,6 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.settings import Settings
-from src.services.adb_client import ADBClient
 from src.utils.logging_signal import logger
 
 
@@ -938,10 +937,7 @@ class FileExplorerWidget(QWidget):
             self._update_breadcrumb()
             if self.is_remote and self.sftp:
                 try:
-                    if isinstance(self.sftp, ADBClient):
-                        pass
-                    else:
-                        self._get_disk_usage()
+                    self._get_disk_usage()
                 except Exception:
                     pass
             return
@@ -954,10 +950,7 @@ class FileExplorerWidget(QWidget):
         # Update disk space bar
         if self.is_remote and self.sftp:
             try:
-                if isinstance(self.sftp, ADBClient):
-                    pass
-                else:
-                    self._get_disk_usage()
+                self._get_disk_usage()
             except Exception:
                 pass
 
