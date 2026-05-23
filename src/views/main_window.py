@@ -33,6 +33,7 @@ from src.utils.constants import (
     DUP_ACTION_CANCEL,
     DUP_ACTION_OVERWRITE,
     DUP_ACTION_SKIP,
+    GITHUB_REPO_URL,
     SOFTWARE_NAME,
     VERSION,
 )
@@ -442,9 +443,15 @@ class MainWindow(QMainWindow):
 
         github_action = QAction("GitHub Repository", self)
         github_action.triggered.connect(
-            lambda: __import__("webbrowser").open("https://github.com/imlocle/shuttle")
+            lambda: __import__("webbrowser").open(GITHUB_REPO_URL)
         )
         help_menu.addAction(github_action)
+
+        bug_action = QAction("Report a Bug", self)
+        bug_action.triggered.connect(
+            lambda: __import__("webbrowser").open(f"{GITHUB_REPO_URL}/issues/new")
+        )
+        help_menu.addAction(bug_action)
 
         shortcuts_action = QAction("Keyboard Shortcuts", self)
         shortcuts_action.triggered.connect(self._show_shortcuts)
@@ -459,7 +466,7 @@ class MainWindow(QMainWindow):
                 f"Shuttle v{VERSION}\n\n"
                 "A native macOS transfer hub for devices and servers.\n\n"
                 "Built with Python, PySide6, and Paramiko.\n"
-                "https://github.com/imlocle/shuttle"
+                f"{GITHUB_REPO_URL}"
             ),
         )
 

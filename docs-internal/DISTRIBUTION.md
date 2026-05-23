@@ -24,8 +24,7 @@ git status  # should be clean
 # Edit: version = "X.Y.Z"
 
 # 3. Commit the version bump
-git add pyproject.toml
-git add constants.py
+git add pyproject.toml src/utils/constants.py
 git commit -m "bump version to X.Y.Z"
 git push origin dev
 

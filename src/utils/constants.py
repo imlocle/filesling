@@ -2,6 +2,7 @@
 SOFTWARE_NAME = "Shuttle"
 CONFIG_JSON = "config.json"
 VERSION = "2.3.0"
+GITHUB_REPO_URL = "https://github.com/imlocle/shuttle"
 
 # Connection types
 CONN_TYPE_SSH = "ssh"

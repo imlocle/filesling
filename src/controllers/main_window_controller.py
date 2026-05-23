@@ -178,7 +178,11 @@ class MainWindowController:
 
     def _connect_adb(self, server_config: dict) -> None:
         """Connect to an Android device via ADB."""
-        from src.services.adb_client import ADBClient, get_adb_path, get_connected_devices
+        from src.services.adb_client import (
+            ADBClient,
+            get_adb_path,
+            get_connected_devices,
+        )
 
         # Check if ADB is installed
         try:

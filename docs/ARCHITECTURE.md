@@ -134,6 +134,15 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 - Transfer queue is a first-class bottom panel and expands with the window
 - Diagnostics logs are hidden by default and available from `View → Diagnostics Log...`
 - Connection status lives in the status bar instead of duplicating the explorer title
+- macOS menu bar with File, Edit, View, Help menus
+
+## Theming
+
+- Three modes: Follow System, Light, Dark (configurable in Settings → Appearance)
+- Stylesheets: `assets/styles/modern_theme.qss` (dark), `assets/styles/macos_light.qss` (light)
+- `src/utils/theme.py` resolves system preference and applies the correct stylesheet
+- UI elements use object names (e.g., `status_active`, `status_error`) for theme-aware colors
+- File/folder icons use `QStyle.standardIcon` for native macOS appearance in both modes
 
 ## Error Handling
 
