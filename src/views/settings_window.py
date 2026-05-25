@@ -114,6 +114,34 @@ class SettingsWindow(QDialog):
         self.connection_form = ConnectionFormWidget(config=config)
         layout.addWidget(self.connection_form)
 
+        # Per-server settings (server mode only)
+        if self.server_mode:
+            layout.addWidget(QLabel(""))
+            layout.addWidget(QLabel("Server-Specific Settings"))
+
+            # Per-server download directory
+            dl_row = QHBoxLayout()
+            dl_row.setSpacing(8)
+            self.server_download_dir_input = QLineEdit(
+                self.server_config.get("download_directory", "")
+            )
+            self.server_download_dir_input.setPlaceholderText(
+                "Leave empty to use global setting"
+            )
+            dl_row.addWidget(QLabel("Download to:"))
+            dl_row.addWidget(self.server_download_dir_input)
+            layout.addLayout(dl_row)
+
+            # Per-server file extension filter
+            layout.addWidget(QLabel("File Extension Filter"))
+            self.server_filter_input = QLineEdit(
+                self.server_config.get("extension_filter", "")
+            )
+            self.server_filter_input.setPlaceholderText(
+                "e.g., .mp4, .mkv, .avi (leave empty for all)"
+            )
+            layout.addWidget(self.server_filter_input)
+
         layout.addStretch()
         self.tab_widget.addTab(tab, "Connection")
 
@@ -169,6 +197,10 @@ class SettingsWindow(QDialog):
         )
         layout.addWidget(self.notify_checkbox)
 
+        self.notify_sound_checkbox = QCheckBox("Play sound on completion")
+        self.notify_sound_checkbox.setChecked(self.settings.config.notify_sound)
+        layout.addWidget(self.notify_sound_checkbox)
+
         # Skip patterns
         layout.addWidget(QLabel("Skip Patterns"))
         self.skip_patterns_input = QTextEdit(
@@ -209,6 +241,24 @@ class SettingsWindow(QDialog):
         info.setObjectName("secondary_label")
         layout.addWidget(info)
 
+        # Export / Import
+        layout.addWidget(QLabel(""))
+        layout.addWidget(QLabel("Configuration"))
+
+        export_import_row = QHBoxLayout()
+        export_btn = QPushButton("Export Settings")
+        export_btn.clicked.connect(self._export_settings)
+        export_import_row.addWidget(export_btn)
+
+        import_btn = QPushButton("Import Settings")
+        import_btn.clicked.connect(self._import_settings)
+        export_import_row.addWidget(import_btn)
+        layout.addLayout(export_import_row)
+
+        info = QLabel("Export your config to share between machines.")
+        info.setObjectName("secondary_label")
+        layout.addWidget(info)
+
         layout.addStretch()
         self.tab_widget.addTab(tab, "Appearance")
 
@@ -222,6 +272,73 @@ class SettingsWindow(QDialog):
         )
         if folder:
             self.download_dir_input.setText(folder)
+
+    def _export_settings(self) -> None:
+        """Export settings to a JSON file."""
+        import json
+
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Settings",
+            os.path.expanduser("~/FileSling_settings.json"),
+            "JSON Files (*.json)",
+        )
+        if not path:
+            return
+
+        try:
+            config_data = self.settings._config_to_dict()
+            with open(path, "w") as f:
+                json.dump(config_data, f, indent=2)
+            logger.success(f"Settings exported to: {path}")
+            QMessageBox.information(
+                self, "Export Complete", f"Settings exported to:\n{path}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Export Failed", f"Failed to export settings:\n{e}"
+            )
+
+    def _import_settings(self) -> None:
+        """Import settings from a JSON file."""
+        import json
+
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Settings",
+            os.path.expanduser("~"),
+            "JSON Files (*.json)",
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                config_data = json.load(f)
+
+            # Validate before applying
+            SettingsConfig.from_json(config_data)
+            self.settings.save_config(config_data)
+
+            # Reset singleton so next access picks up new config
+            Settings._instance = None
+
+            logger.success(f"Settings imported from: {path}")
+            QMessageBox.information(
+                self,
+                "Import Complete",
+                "Settings imported successfully.\n\n"
+                "Please restart FileSling for all changes to take effect.",
+            )
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Import Failed", f"Failed to import settings:\n{e}"
+            )
 
     # ------------------------------------------------------------------
     # Footer
@@ -273,6 +390,16 @@ class SettingsWindow(QDialog):
             config["bookmarks"] = existing_config.get("bookmarks", [])
             config["default_bookmark"] = existing_config.get("default_bookmark", "")
 
+            # Per-server settings
+            if hasattr(self, "server_download_dir_input"):
+                dl_dir = self.server_download_dir_input.text().strip()
+                if dl_dir:
+                    config["download_directory"] = dl_dir
+            if hasattr(self, "server_filter_input"):
+                ext_filter = self.server_filter_input.text().strip()
+                if ext_filter:
+                    config["extension_filter"] = ext_filter
+
             # Validate SSH config
             if config.get(CONN_TYPE_KEY) == CONN_TYPE_SSH:
                 SettingsConfig.from_json(
@@ -322,6 +449,7 @@ class SettingsWindow(QDialog):
                 or os.path.expanduser("~/Downloads"),
                 "reveal_in_finder_after_download": self.reveal_in_finder_checkbox.isChecked(),
                 "notify_on_transfer_complete": self.notify_checkbox.isChecked(),
+                "notify_sound": self.notify_sound_checkbox.isChecked(),
                 "skip_exit_confirm": self.settings.config.skip_exit_confirm,
                 "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [

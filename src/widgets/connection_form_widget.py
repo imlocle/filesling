@@ -121,6 +121,25 @@ class ConnectionFormWidget(QWidget):
         key_hint.setWordWrap(True)
         ssh_layout.addWidget(key_hint)
 
+        # Passphrase for SSH key
+        ssh_layout.addWidget(QLabel("Key Passphrase (optional)"))
+        self.passphrase_input = QLineEdit(self._config.get("key_passphrase", ""))
+        self.passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.passphrase_input.setPlaceholderText("Leave empty if key has no passphrase")
+        ssh_layout.addWidget(self.passphrase_input)
+
+        # Password auth (alternative to key)
+        ssh_layout.addWidget(QLabel("Password (alternative to SSH key)"))
+        self.password_input = QLineEdit(self._config.get("password", ""))
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setPlaceholderText(
+            "Leave empty to use SSH key authentication"
+        )
+        ssh_layout.addWidget(self.password_input)
+        pw_hint = QLabel("If set, password auth is used instead of SSH key.")
+        pw_hint.setObjectName("secondary_label")
+        ssh_layout.addWidget(pw_hint)
+
         layout.addWidget(self.ssh_group)
 
         # --- ADB fields ---
@@ -206,7 +225,7 @@ class ConnectionFormWidget(QWidget):
                 or DEFAULT_ADB_BASE_DIR,
             }
         else:
-            return {
+            config = {
                 CONN_TYPE_KEY: CONN_TYPE_SSH,
                 "username": self.username_input.text().strip(),
                 "host": self.host_input.text().strip(),
@@ -215,6 +234,14 @@ class ConnectionFormWidget(QWidget):
                 "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip()
                 or DEFAULT_REMOTE_BASE_DIR,
             }
+            # Optional auth fields
+            passphrase = self.passphrase_input.text()
+            if passphrase:
+                config["key_passphrase"] = passphrase
+            password = self.password_input.text()
+            if password:
+                config["password"] = password
+            return config
 
     def test_connection(self) -> None:
         """Test the current connection configuration."""

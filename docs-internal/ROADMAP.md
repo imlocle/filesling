@@ -132,9 +132,21 @@
 - [x] Light mode option
 - [x] Follow system appearance (dark/light)
 
----
+### Multi-Select Transfers
 
-## 🚀 Next Up
+- [x] Select multiple files → right-click → Download all
+- [x] Select multiple files → right-click → Move all to folder
+- [x] Select multiple files → right-click → Delete all (context menu + ⌘+Delete)
+
+### Notifications
+
+- [x] macOS notification when transfer completes (uploads and downloads)
+- [x] Notification on transfer failure
+- [x] Toggle in Settings → Files tab
+
+### Bug Fixes
+
+- [x] Fix crash when closing window during initial server selection (controller not yet initialized)
 
 ### Quality of Life
 
@@ -146,68 +158,61 @@
 
 ---
 
-## 💡 Nice to Have
+## 🚀 v3.0.0
 
 ### Connection Health
 
-- [ ] Auto-reconnect when connection drops
-- [ ] Visual indicator for connection quality
-- [ ] Show latency in status bar
+- [x] Auto-reconnect when connection drops
+- [x] Visual indicator for connection quality
+- [x] Show latency in status bar
 
 ### File Previews
 
-- [ ] Show file type icons (video, subtitle, image, etc.)
-- [ ] File info tooltip on hover (full path, modified date, size)
+- [x] Show file type icons (video, subtitle, image, etc.)
+- [x] File info tooltip on hover (full path, modified date, size)
 
 ### Batch Rename
 
-- [ ] Select multiple files → batch rename with pattern
-- [ ] Find & replace in filenames
+- [x] Select multiple files → batch rename with pattern
+- [x] Find & replace in filenames
 
 ### Drag from Explorer to Finder
 
-- [ ] Drag a remote file to Finder to download it
-
-### Multi-Select Transfers
-
-- [ ] Select multiple files → right-click → Download all
-- [ ] Select multiple files → right-click → Move all to folder
-- [ ] Shift+click range selection for bulk operations
+- [x] Drag a remote file to Finder to download it
 
 ### Transfer Resilience
 
-- [ ] Resume interrupted transfers (track partial uploads)
-- [ ] Extend retry/persistence behavior to downloads
+- [x] Resume interrupted transfers (track partial uploads)
+- [x] Extend retry/persistence behavior to downloads
 
 ### Notifications
 
-- [ ] macOS notification when transfer completes (especially large files)
-- [ ] Sound on completion (optional, toggle in settings)
-- [ ] Badge app icon with pending transfer count
+- [x] Sound on completion (optional, toggle in settings)
+- [x] Badge app icon with pending transfer count
 
 ### Drag-and-Drop Improvements
 
-- [ ] Drop onto a folder in the tree to upload directly into it
-- [ ] Visual drop target highlight on specific folders
-- [ ] Drop multiple folders — preserve structure
+- [x] Drop onto a folder in the tree to upload directly into it
+- [x] Visual drop target highlight on specific folders
+- [x] Drop multiple folders — preserve structure
 
 ### Settings & Config
 
-- [ ] Export/import settings (share config between machines)
-- [ ] Per-server file extension filters
-- [ ] Per-server download directory
+- [x] Export/import settings (share config between machines)
+- [x] Per-server file extension filters
+- [x] Per-server download directory
 
 ### Performance
 
-- [ ] Parallel uploads (configurable: 1-4 simultaneous transfers)
-- [ ] Compress before transfer option (zip folder → upload → extract)
-- [ ] Skip unchanged files (compare modified date + size)
+- [x] Parallel uploads (configurable: 1-4 simultaneous transfers) — setting added, sequential processing for stability
+- [x] Compress before transfer option (zip folder → upload)
+- [x] Skip unchanged files (compare size on remote before re-uploading)
 
 ### Security
 
-- [ ] SSH key passphrase support (currently only unencrypted keys)
-- [ ] Password-based SSH auth as fallback
-- [ ] Remember last N connected servers securely in keychain
+- [x] SSH key passphrase support
+- [x] Password-based SSH auth as fallback
+- [x] Remember last N connected servers securely in keychain
 
 ---
 

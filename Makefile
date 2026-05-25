@@ -1,7 +1,7 @@
 .PHONY: help install dev-install build test lint format clean run release
 
-PYTHON = python3
-PIP = pip3
+PYTHON = .venv/bin/python
+PIP = .venv/bin/pip
 
 help:
 	@echo "FileSling — Build & Development"
@@ -32,15 +32,14 @@ run:
 	$(PYTHON) main.py
 
 format:
-	autoflake --in-place --remove-all-unused-imports -r src main.py
-	black src main.py
-	isort src main.py
+	$(PYTHON) -m black src main.py
+	$(PYTHON) -m isort src main.py
 
 lint:
-	flake8 src main.py
+	$(PYTHON) -m flake8 src main.py
 
 test:
-	pytest
+	$(PYTHON) -m pytest
 
 build: clean
 	$(PYTHON) -m build

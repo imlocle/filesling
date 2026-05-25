@@ -46,6 +46,8 @@ class SettingsConfig(BaseModel):
     download_directory: str = os.path.expanduser("~/Downloads")
     reveal_in_finder_after_download: bool = False
     notify_on_transfer_complete: bool = True
+    notify_sound: bool = True
+    compress_folders_before_transfer: bool = False
     skip_patterns: set[str] = Field(
         default_factory=lambda: {".DS_Store", "Thumbs.db", ".Trashes", "._*"}
     )
@@ -55,6 +57,7 @@ class SettingsConfig(BaseModel):
     skip_exit_confirm: bool = False
     bookmarks: list[str] = Field(default_factory=list)
     theme_mode: str = "system"
+    max_parallel_transfers: int = 1
 
     @field_validator("host")
     @classmethod
@@ -349,9 +352,12 @@ class Settings:
             "download_directory": self.config.download_directory,
             "reveal_in_finder_after_download": self.config.reveal_in_finder_after_download,
             "notify_on_transfer_complete": self.config.notify_on_transfer_complete,
+            "notify_sound": self.config.notify_sound,
+            "compress_folders_before_transfer": self.config.compress_folders_before_transfer,
             "skip_patterns": list(self.config.skip_patterns),
             "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,
             "bookmarks": self.config.bookmarks,
             "theme_mode": self.config.theme_mode,
+            "max_parallel_transfers": self.config.max_parallel_transfers,
         }

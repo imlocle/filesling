@@ -322,6 +322,7 @@ class ManualTransferController(QObject):
                 local_paths=transfer.local_paths,
                 remote_root=transfer.remote_destination,
                 total_bytes=transfer.total_bytes,
+                compress_folders=self.settings.config.compress_folders_before_transfer,
             )
             self._active_worker.moveToThread(self._active_thread)
 

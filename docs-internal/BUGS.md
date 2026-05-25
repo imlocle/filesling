@@ -27,14 +27,3 @@
 - [x] `ADBStat.filename` property has no setter — changed to regular dataclass field
 
 ---
-
-## 🐛 Open
-
-- [ ] Transfer queue index tracking could conflict if upload and download run simultaneously (fix when adding parallel transfers)
-
----
-
-## 🔍 To Investigate
-
-- [ ] Does `adb push` handle filenames with special characters (spaces, quotes, unicode)?
-- [ ] What happens if USB cable is disconnected mid-transfer?

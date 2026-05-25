@@ -32,6 +32,7 @@ class TransferWorker(QObject):
         local_paths: List[str],
         remote_root: str,
         total_bytes: int = 0,
+        compress_folders: bool = False,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -39,7 +40,8 @@ class TransferWorker(QObject):
         self.local_paths = local_paths
         self.remote_root = remote_root
         self._total_bytes = total_bytes
-        self._cumulative_bytes = 0  # Track total bytes transferred across all files
+        self._cumulative_bytes = 0
+        self._compress_folders = compress_folders
 
     # ----------------------------
     #  Internal helpers
@@ -122,7 +124,10 @@ class TransferWorker(QObject):
 
     def _upload_file(self, local_path: str, remote_dir: str) -> None:
         """
-        Upload a single file with verification.
+        Upload a single file with verification and resume support.
+
+        If a partial file exists on the remote with the same size, skip it.
+        This enables effective resume after interrupted transfers.
 
         Args:
             local_path: Local file path
@@ -148,6 +153,20 @@ class TransferWorker(QObject):
             raise FileUploadError(
                 "Cannot access local file", file_path=local_path, details=str(e)
             )
+
+        # Resume support: check if file already exists with correct size
+        try:
+            remote_stat = self.sftp.stat(remote_file)
+            if remote_stat.st_size == size_bytes:
+                # File already fully uploaded — skip
+                self._cumulative_bytes += size_bytes
+                if self._total_bytes > 0:
+                    overall_pct = int(self._cumulative_bytes * 100 / self._total_bytes)
+                    self.progress.emit(min(overall_pct, 100))
+                logger.info(f"Skipped (already uploaded): {filename}")
+                return
+        except (IOError, OSError):
+            pass  # File doesn't exist — proceed with upload
 
         # progress callback
         def progress_callback(transferred: int, total: int):
@@ -227,6 +246,38 @@ class TransferWorker(QObject):
                 )
                 self._upload_file(local_file, remote_dir)
 
+    def _upload_folder_compressed(self, local_folder: str, remote_root: str) -> None:
+        """
+        Compress a folder to zip, upload the zip, then clean up.
+
+        Args:
+            local_folder: Local folder path
+            remote_root: Remote root directory
+        """
+        import shutil
+        import tempfile
+
+        folder_name = os.path.basename(local_folder)
+        temp_dir = tempfile.mkdtemp(prefix="filesling_zip_")
+        zip_path = os.path.join(temp_dir, folder_name)
+
+        try:
+            # Create zip archive
+            archive_path = shutil.make_archive(zip_path, "zip", local_folder)
+            # Update total bytes to reflect zip size
+            zip_size = os.path.getsize(archive_path)
+            self._total_bytes = zip_size
+
+            # Upload the zip file
+            self._upload_file(archive_path, remote_root)
+
+        finally:
+            # Clean up temp zip
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
     # ----------------------------
     #  Public entrypoint for QThread
     # ----------------------------
@@ -235,7 +286,10 @@ class TransferWorker(QObject):
         try:
             for path in self.local_paths:
                 if os.path.isdir(path):
-                    self._upload_folder(path, self.remote_root)
+                    if self._compress_folders:
+                        self._upload_folder_compressed(path, self.remote_root)
+                    else:
+                        self._upload_folder(path, self.remote_root)
                 else:
                     self._upload_file(path, self.remote_root)
 

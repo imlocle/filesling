@@ -43,8 +43,12 @@ class ConnectionManagerService:
         if self.ssh_client and self.sftp_client:
             return True
 
-        # Validate SSH key exists before attempting connection
-        if not os.path.exists(self.settings.ssh_key_path):
+        # Check auth method — password auth doesn't need SSH key
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        use_password = bool(server_config and server_config.get("password"))
+
+        # Validate SSH key exists before attempting connection (key auth only)
+        if not use_password and not os.path.exists(self.settings.ssh_key_path):
             error_msg = f"SSH key not found: {self.settings.ssh_key_path}"
             logger.error(f"Connection: {error_msg}")
             raise FileAccessError(
@@ -54,16 +58,17 @@ class ConnectionManagerService:
             )
 
         # Check SSH key permissions (should be 600 or 400)
-        try:
-            key_stat = os.stat(self.settings.ssh_key_path)
-            key_perms = oct(key_stat.st_mode)[-3:]
-            if key_perms not in ["600", "400"]:
-                logger.warn(
-                    f"Connection: SSH key has insecure permissions: {key_perms}. "
-                    f"Should be 600 or 400"
-                )
-        except OSError as e:
-            logger.warn(f"Connection: Could not check SSH key permissions: {e}")
+        if not use_password:
+            try:
+                key_stat = os.stat(self.settings.ssh_key_path)
+                key_perms = oct(key_stat.st_mode)[-3:]
+                if key_perms not in ["600", "400"]:
+                    logger.warn(
+                        f"Connection: SSH key has insecure permissions: {key_perms}. "
+                        f"Should be 600 or 400"
+                    )
+            except OSError as e:
+                logger.warn(f"Connection: Could not check SSH key permissions: {e}")
 
         retries = 0
         max_retries = 3
@@ -74,12 +79,31 @@ class ConnectionManagerService:
                 self.ssh_client = SSHClient()
                 self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
 
-                self.ssh_client.connect(
-                    hostname=self.settings.host,
-                    username=self.settings.username,
-                    key_filename=self.settings.ssh_key_path,
-                    timeout=10,
+                # Determine auth method
+                server_config = self.settings.get_server(
+                    self.settings.config.current_server_id
                 )
+                password = server_config.get("password") if server_config else None
+                passphrase = (
+                    server_config.get("key_passphrase") if server_config else None
+                )
+
+                connect_kwargs = {
+                    "hostname": self.settings.host,
+                    "username": self.settings.username,
+                    "timeout": 10,
+                }
+
+                if password:
+                    # Password-based authentication
+                    connect_kwargs["password"] = password
+                else:
+                    # Key-based authentication
+                    connect_kwargs["key_filename"] = self.settings.ssh_key_path
+                    if passphrase:
+                        connect_kwargs["passphrase"] = passphrase
+
+                self.ssh_client.connect(**connect_kwargs)
 
                 # Open SFTP session
                 try:
@@ -185,6 +209,61 @@ class ConnectionManagerService:
 
     def is_connected(self) -> bool:
         return self.ssh_client is not None and self.sftp_client is not None
+
+    def check_alive(self) -> bool:
+        """
+        Check if the SSH connection is still alive by sending a keepalive.
+
+        Returns:
+            True if connection is responsive, False if dead/disconnected
+        """
+        if not self.ssh_client or not self.sftp_client:
+            return False
+        try:
+            transport = self.ssh_client.get_transport()
+            if transport is None or not transport.is_active():
+                return False
+            # Send a keepalive to verify the connection is truly alive
+            transport.send_ignore()
+            return True
+        except Exception:
+            return False
+
+    def measure_latency(self) -> float:
+        """
+        Measure round-trip latency to the server in milliseconds.
+
+        Returns:
+            Latency in ms, or -1 if not connected
+        """
+        import time
+
+        if not self.ssh_client:
+            return -1.0
+        try:
+            transport = self.ssh_client.get_transport()
+            if transport is None or not transport.is_active():
+                return -1.0
+            start = time.perf_counter()
+            transport.send_ignore()
+            elapsed = (time.perf_counter() - start) * 1000
+            return round(elapsed, 1)
+        except Exception:
+            return -1.0
+
+    def reconnect(self) -> bool:
+        """
+        Attempt to reconnect after a dropped connection.
+
+        Returns:
+            True if reconnection successful
+        """
+        self.disconnect()
+        try:
+            return self.connect()
+        except Exception as e:
+            logger.error(f"Connection: Reconnect failed: {e}")
+            return False
 
     def disconnect(self) -> None:
         """Close SSH + SFTP connections gracefully."""

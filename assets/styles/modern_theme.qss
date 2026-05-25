@@ -135,6 +135,16 @@ QLabel#connection_disconnected {
     font-weight: 600;
 }
 
+QLabel#connection_warning {
+    color: #ff9f0a;
+    font-weight: 600;
+}
+
+QLabel#connection_slow {
+    color: #ff6961;
+    font-weight: 600;
+}
+
 QCheckBox {
     spacing: 8px;
     color: #f5f5f7;

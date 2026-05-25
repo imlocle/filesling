@@ -48,18 +48,11 @@ from src.config.settings import Settings
 from src.utils.logging_signal import logger
 
 
-def _get_file_icon(is_dir: bool) -> QIcon:
-    """Get a reliable file/folder icon that works in both light and dark mode."""
-    from PySide6.QtWidgets import QStyle
+def _get_file_icon(is_dir: bool, filename: str = "") -> QIcon:
+    """Get a file/folder icon based on type. Uses colored pixmaps for theme compatibility."""
+    from src.utils.icons import get_file_icon
 
-    app = QApplication.instance()
-    if app:
-        style = app.style()
-        if is_dir:
-            return style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        else:
-            return style.standardIcon(QStyle.StandardPixmap.SP_FileIcon)
-    return QIcon()
+    return get_file_icon(is_dir, filename)
 
 
 class DragDropTreeWidget(QTreeWidget):
@@ -143,10 +136,39 @@ class DragDropTreeWidget(QTreeWidget):
         mime_data.setText(" | ".join(item_names))
         mime_data.setData("application/x-explorer-items", b"")
 
+        # For external drag (to Finder): provide file URLs if available
+        # For remote files, download to temp dir first
+        parent_widget = self.parent()
+        if parent_widget and hasattr(parent_widget, "is_remote"):
+            if parent_widget.is_remote and parent_widget.sftp:
+                import tempfile
+
+                temp_dir = tempfile.mkdtemp(prefix="filesling_drag_")
+                urls = []
+                for item_name in item_names:
+                    remote_path = os.path.join(parent_widget.current_path, item_name)
+                    local_temp = os.path.join(temp_dir, item_name)
+                    try:
+                        parent_widget.sftp.get(remote_path, local_temp)
+                        urls.append(QUrl.fromLocalFile(local_temp))
+                    except Exception:
+                        pass  # Skip files that fail to download
+                if urls:
+                    mime_data.setUrls(urls)
+            elif not parent_widget.is_remote:
+                # Local files — provide URLs directly
+                urls = []
+                for item_name in item_names:
+                    full_path = os.path.join(parent_widget.current_path, item_name)
+                    if os.path.exists(full_path):
+                        urls.append(QUrl.fromLocalFile(full_path))
+                if urls:
+                    mime_data.setUrls(urls)
+
         # Start drag operation
         drag = QDrag(self)
         drag.setMimeData(mime_data)
-        drag.exec(Qt.DropAction.MoveAction)
+        drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
 
         self._drag_start_pos = None
         self._drag_start_items = []
@@ -469,6 +491,7 @@ class FileExplorerWidget(QWidget):
 
         self.current_path: str = root_path
         self.drag_over: bool = False
+        self._drop_target_item: Optional[QTreeWidgetItem] = None
 
         # Inline rename state
         self._renaming_item: Optional[QTreeWidgetItem] = None
@@ -700,6 +723,7 @@ class FileExplorerWidget(QWidget):
 
         download_action = menu.addAction(f"⬇️ Download All ({count} items)")
         move_action = menu.addAction(f"↔️ Move All ({count} items)")
+        rename_action = menu.addAction(f"✏️ Batch Rename ({count} items)")
         menu.addSeparator()
         delete_action = menu.addAction(f"🗑️ Delete All ({count} items)")
 
@@ -709,6 +733,8 @@ class FileExplorerWidget(QWidget):
             self.files_download_requested.emit(paths)
         elif action == move_action:
             self._handle_move_items(paths)
+        elif action == rename_action:
+            self._handle_batch_rename(paths)
         elif action == delete_action:
             self.files_delete_requested.emit(paths)
 
@@ -1027,6 +1053,101 @@ class FileExplorerWidget(QWidget):
             moves.append((src_path, dest_path))
         self.items_move_requested.emit(moves)
 
+    def _handle_batch_rename(self, paths: List[str]) -> None:
+        """Handle batch rename — show find/replace dialog."""
+        from PySide6.QtWidgets import (
+            QDialog,
+            QDialogButtonBox,
+            QGridLayout,
+            QLineEdit,
+            QListWidget,
+        )
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Batch Rename ({len(paths)} items)")
+        dialog.setMinimumSize(450, 350)
+        dialog_layout = QVBoxLayout(dialog)
+
+        # Find & Replace inputs
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Find:"), 0, 0)
+        find_input = QLineEdit()
+        find_input.setPlaceholderText("Text to find in filenames")
+        grid.addWidget(find_input, 0, 1)
+
+        grid.addWidget(QLabel("Replace:"), 1, 0)
+        replace_input = QLineEdit()
+        replace_input.setPlaceholderText("Replacement text (leave empty to remove)")
+        grid.addWidget(replace_input, 1, 1)
+        dialog_layout.addLayout(grid)
+
+        # Preview list
+        dialog_layout.addWidget(QLabel("Preview:"))
+        preview_list = QListWidget()
+        preview_list.setMinimumHeight(150)
+        dialog_layout.addWidget(preview_list)
+
+        # Populate initial preview
+        basenames = [os.path.basename(p) for p in paths]
+        for name in basenames:
+            preview_list.addItem(f"{name} → {name}")
+
+        # Update preview on input change
+        def update_preview():
+            find_text = find_input.text()
+            preview_list.clear()
+            for name in basenames:
+                if find_text:
+                    new_name = name.replace(find_text, replace_input.text())
+                else:
+                    new_name = name
+                if new_name != name:
+                    preview_list.addItem(f"{name} → {new_name}")
+                else:
+                    preview_list.addItem(f"{name} (unchanged)")
+
+        find_input.textChanged.connect(update_preview)
+        replace_input.textChanged.connect(update_preview)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        find_text = find_input.text()
+        if not find_text:
+            return
+
+        replace_text = replace_input.text()
+
+        # Perform renames
+        renamed = 0
+        for path in paths:
+            old_name = os.path.basename(path)
+            new_name = old_name.replace(find_text, replace_text)
+            if new_name == old_name:
+                continue
+
+            new_path = os.path.join(os.path.dirname(path), new_name)
+            try:
+                if self.is_remote and self.sftp:
+                    self.sftp.rename(path, new_path)
+                elif not self.is_remote:
+                    os.rename(path, new_path)
+                renamed += 1
+            except Exception as e:
+                logger.error(f"Rename failed: {old_name}: {e}")
+
+        if renamed > 0:
+            logger.success(f"Batch rename: {renamed} files renamed")
+            self.refresh()
+
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation
     # ------------------------------------------------------------------
@@ -1101,10 +1222,15 @@ class FileExplorerWidget(QWidget):
         self._spinner.stop()
 
         for entry, is_dir, size_str, size_bytes in batch:
-            icon = _get_file_icon(is_dir)
+            icon = _get_file_icon(is_dir, entry)
             item = SortableTreeWidgetItem([entry, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
+            # Tooltip with full path and size
+            full_path = os.path.join(self.current_path, entry)
+            tooltip = f"{full_path}\nSize: {size_str}"
+            item.setToolTip(0, tooltip)
+            item.setToolTip(1, tooltip)
             self.tree_widget.addTopLevelItem(item)
 
     def _on_load_finished(self, results: list) -> None:
@@ -1139,11 +1265,16 @@ class FileExplorerWidget(QWidget):
                 pass
 
         for entry, is_dir, size_str, size_bytes in results:
-            icon = _get_file_icon(is_dir)
+            icon = _get_file_icon(is_dir, entry)
 
             item = SortableTreeWidgetItem([entry, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
+            # Tooltip with full path and size
+            full_path = os.path.join(self.current_path, entry)
+            tooltip = f"{full_path}\nSize: {size_str}"
+            item.setToolTip(0, tooltip)
+            item.setToolTip(1, tooltip)
             self.tree_widget.addTopLevelItem(item)
 
     def _on_load_error(self, error_msg: str) -> None:
@@ -1182,6 +1313,10 @@ class FileExplorerWidget(QWidget):
                 item = SortableTreeWidgetItem([entry, size_str])
                 item.setIcon(0, icon)
                 item.setData(1, Qt.ItemDataRole.UserRole, size_bytes)
+                # Tooltip with full path and size
+                tooltip = f"{full_path}\nSize: {size_str}"
+                item.setToolTip(0, tooltip)
+                item.setToolTip(1, tooltip)
                 self.tree_widget.addTopLevelItem(item)
 
         except Exception as e:
@@ -1385,7 +1520,7 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.clear()
 
         for rel_path, is_dir, size_str in results:
-            icon = _get_file_icon(is_dir)
+            icon = _get_file_icon(is_dir, rel_path)
             item = SortableTreeWidgetItem([rel_path, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, 0)
@@ -1433,7 +1568,7 @@ class FileExplorerWidget(QWidget):
         from src.widgets.file_explorer_widget import SortableTreeWidgetItem
 
         for rel_path, is_dir, size_str in results:
-            icon = _get_file_icon(is_dir)
+            icon = _get_file_icon(is_dir, rel_path)
             item = SortableTreeWidgetItem([rel_path, size_str])
             item.setIcon(0, icon)
             item.setData(1, Qt.ItemDataRole.UserRole, 0)
@@ -1547,11 +1682,12 @@ class FileExplorerWidget(QWidget):
 
     def _get_icon(self, path: str) -> QIcon:
         try:
+            filename = os.path.basename(path)
             if self.is_remote:
-                return _get_file_icon(self._is_remote_directory(path))
-            return _get_file_icon(os.path.isdir(path))
+                return _get_file_icon(self._is_remote_directory(path), filename)
+            return _get_file_icon(os.path.isdir(path), filename)
         except Exception:
-            return _get_file_icon(False)
+            return _get_file_icon(False, os.path.basename(path))
 
     def _get_size_string(self, path: str) -> str:
         """
@@ -1686,7 +1822,9 @@ class FileExplorerWidget(QWidget):
                     color = "#0a84ff"  # Blue
 
                 app = QApplication.instance()
-                is_light = app is not None and app.property("filesling_theme") == "light"
+                is_light = (
+                    app is not None and app.property("filesling_theme") == "light"
+                )
                 background = "#e8e8ed" if is_light else "#2b2c30"
                 border = "#d2d2d7" if is_light else "#3d3e44"
                 self._disk_bar.setStyleSheet(f"""
@@ -1743,7 +1881,44 @@ class FileExplorerWidget(QWidget):
 
     def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
         self.drag_over = False
+        self._clear_drop_highlight()
         self.update()
+
+    def dragMoveEvent(self, event) -> None:
+        """Track which folder item is being hovered during drag."""
+        item = self.tree_widget.itemAt(
+            self.tree_widget.mapFrom(self, event.position().toPoint())
+        )
+
+        # Determine if the hovered item is a folder
+        new_target = None
+        if item:
+            entry = item.text(0)
+            full_path = os.path.join(self.current_path, entry)
+            is_folder = False
+            if self.is_remote:
+                is_folder = self._is_remote_directory(full_path)
+            else:
+                is_folder = os.path.isdir(full_path)
+            if is_folder:
+                new_target = item
+
+        # Update highlight if target changed
+        if new_target != self._drop_target_item:
+            self._clear_drop_highlight()
+            self._drop_target_item = new_target
+            if self._drop_target_item:
+                self._drop_target_item.setBackground(0, QColor(0, 120, 215, 60))
+                self._drop_target_item.setBackground(1, QColor(0, 120, 215, 60))
+
+        event.acceptProposedAction()
+
+    def _clear_drop_highlight(self) -> None:
+        """Remove the visual highlight from the current drop target."""
+        if self._drop_target_item:
+            self._drop_target_item.setBackground(0, QColor(0, 0, 0, 0))
+            self._drop_target_item.setBackground(1, QColor(0, 0, 0, 0))
+            self._drop_target_item = None
 
     def dropEvent(self, event: QDropEvent) -> None:
         """
@@ -1779,12 +1954,14 @@ class FileExplorerWidget(QWidget):
                     self._handle_internal_drop(target_path)
 
             self.drag_over = False
+            self._clear_drop_highlight()
             self.update()
             return
 
         # External drop (from Finder/desktop) — always drop into current directory
         if not event.mimeData().hasUrls():
             self.drag_over = False
+            self._clear_drop_highlight()
             self.update()
             return
 
@@ -1799,13 +1976,21 @@ class FileExplorerWidget(QWidget):
 
         if not local_paths:
             self.drag_over = False
+            self._clear_drop_highlight()
             self.update()
             return
 
-        # Remote explorer: upload to current directory
+        # Remote explorer: upload to target folder or current directory
         if self.is_remote:
-            self.files_dropped.emit(local_paths, self.current_path)
+            dest_dir = self.current_path
+            if item_at_drop:
+                entry = item_at_drop.text(0)
+                target_path = os.path.join(self.current_path, entry)
+                if self._is_remote_directory(target_path):
+                    dest_dir = target_path
+            self.files_dropped.emit(local_paths, dest_dir)
             self.drag_over = False
+            self._clear_drop_highlight()
             self.update()
             return
 
@@ -1822,6 +2007,7 @@ class FileExplorerWidget(QWidget):
 
         self.refresh()
         self.drag_over = False
+        self._clear_drop_highlight()
         self.update()
 
     def _handle_internal_drop(self, target_folder_path: str) -> None:

@@ -73,6 +73,12 @@ class MainWindowController:
         self.selected_item: Optional[str] = None
         self._current_queue_index: int = -1
 
+        # Connection health monitoring
+        self._health_timer = QTimer()
+        self._health_timer.timeout.connect(self._check_connection_health)
+        self._health_timer.start(15000)  # Check every 15 seconds
+        self._last_latency: float = -1.0
+
     def _connect_controller_signals(self) -> None:
         """Connect controller signals to UI updates."""
         # Manual transfer signals
@@ -123,6 +129,9 @@ class MainWindowController:
                     self._current_queue_index = i
                     break
 
+        # Update dock badge
+        self._update_dock_badge()
+
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed — mark item as done."""
         if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
@@ -130,12 +139,19 @@ class MainWindowController:
             self._current_queue_index = -1
         self.refresh_explorers()
 
+        # Update dock badge
+        self._update_dock_badge()
+
         # Send macOS notification
         if self.settings.config.notify_on_transfer_complete:
             from src.services.notification_service import notify_transfer_complete
 
             filename = os.path.basename(path)
-            notify_transfer_complete(filename, action="uploaded")
+            notify_transfer_complete(
+                filename,
+                action="uploaded",
+                sound=self.settings.config.notify_sound,
+            )
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed — mark item as failed."""
@@ -143,6 +159,9 @@ class MainWindowController:
             short_error = error.split("\n")[0][:80]
             self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
             self._current_queue_index = -1
+
+        # Update dock badge
+        self._update_dock_badge()
 
         # Send macOS notification
         if self.settings.config.notify_on_transfer_complete:
@@ -162,12 +181,109 @@ class MainWindowController:
                 queue.update_progress(self._current_queue_index, transferred, 0)
 
     def _on_queue_changed(self, total: int) -> None:
-        """Handle transfer queue size change — add items to visual queue."""
-        pass  # Queue widget is updated directly via add_transfer
+        """Handle transfer queue size change — update dock badge."""
+        self._update_dock_badge()
 
     def _on_cancel_transfer(self, pending_index: int) -> None:
         """Handle cancel request from queue widget."""
         self.manual_transfer.cancel_queued_item(pending_index)
+
+    def _update_dock_badge(self) -> None:
+        """Update the Dock icon badge with pending transfer count."""
+        from src.services.notification_service import set_dock_badge
+
+        pending = self.manual_transfer.queue_size()
+        active = 1 if self.manual_transfer.is_busy() else 0
+        set_dock_badge(pending + active)
+
+    def _check_connection_health(self) -> None:
+        """Periodic connection health check with auto-reconnect."""
+        from src.services.adb_client import ADBClient
+
+        # Skip health check for ADB connections (stateless)
+        if self.view.remote_explorer.sftp and isinstance(
+            self.view.remote_explorer.sftp, ADBClient
+        ):
+            return
+
+        # Skip if not connected
+        if not self.connection_manager.is_connected():
+            return
+
+        # Check if connection is alive
+        if self.connection_manager.check_alive():
+            # Measure latency
+            latency = self.connection_manager.measure_latency()
+            self._last_latency = latency
+            self._update_connection_status_with_latency(latency)
+        else:
+            # Connection dropped — attempt auto-reconnect
+            logger.warn("Connection: Lost — attempting reconnect...")
+            self.view.connection_status_label.setText("● Reconnecting...")
+            self.view.connection_status_label.setObjectName("connection_warning")
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
+            )
+
+            if self.connection_manager.reconnect():
+                # Rebind SFTP to explorer
+                if self.connection_manager.sftp_client:
+                    self.view.remote_explorer.set_sftp(
+                        self.connection_manager.sftp_client
+                    )
+                    self.view.remote_explorer.refresh()
+
+                server_name = ""
+                server_config = self.settings.get_server(
+                    self.settings.config.current_server_id
+                )
+                if server_config:
+                    server_name = server_config.get("name", "")
+
+                if server_name:
+                    self.view.connection_status_label.setText(
+                        f"● Connected: {server_name}"
+                    )
+                else:
+                    self.view.connection_status_label.setText(
+                        f"● Connected: {self.settings.host}"
+                    )
+                self.view.connection_status_label.setObjectName("connection_connected")
+                self.view.connection_status_label.style().polish(
+                    self.view.connection_status_label
+                )
+                logger.success("Connection: Reconnected")
+            else:
+                self.view.connection_status_label.setText("● Disconnected")
+                self.view.connection_status_label.setObjectName(
+                    "connection_disconnected"
+                )
+                self.view.connection_status_label.style().polish(
+                    self.view.connection_status_label
+                )
+                logger.error("Connection: Reconnect failed")
+
+    def _update_connection_status_with_latency(self, latency: float) -> None:
+        """Update the status bar with latency info and color-coded quality."""
+        label = self.view.connection_status_label
+        current_text = label.text()
+
+        # Strip any existing latency suffix
+        if " (" in current_text:
+            base_text = current_text.split(" (")[0]
+        else:
+            base_text = current_text
+
+        if latency >= 0:
+            label.setText(f"{base_text} ({latency:.0f}ms)")
+            # Color code: green < 100ms, orange 100-300ms, red > 300ms
+            if latency < 100:
+                label.setObjectName("connection_connected")
+            elif latency < 300:
+                label.setObjectName("connection_warning")
+            else:
+                label.setObjectName("connection_slow")
+            label.style().polish(label)
 
     # --------------------------------------------------------------
     #  CONNECTION MANAGEMENT
@@ -763,8 +879,13 @@ class MainWindowController:
         """
         from src.workers.download_worker import DownloadWorker
 
-        # Use configured download directory
-        local_dir = self.settings.download_directory
+        # Use per-server download directory if configured, else global
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        local_dir = (
+            server_config.get("download_directory")
+            if server_config and server_config.get("download_directory")
+            else self.settings.download_directory
+        )
         os.makedirs(local_dir, exist_ok=True)
 
         # Check for duplicates and let user decide
@@ -779,14 +900,11 @@ class MainWindowController:
                         DIALOG_FILE_ALREADY_EXISTS,
                         f"'{filename}' already exists in your download folder."
                         "\n\nOverwrite it?",
-                        QMessageBox.StandardButton.Yes
-                        | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.No,
                     )
                     if reply != QMessageBox.StandardButton.Yes:
-                        logger.info(
-                            f"Download: Skipped (already exists): {filename}"
-                        )
+                        logger.info(f"Download: Skipped (already exists): {filename}")
                         return
                 else:
                     # For multi-download, skip duplicates with a log
@@ -909,7 +1027,21 @@ class MainWindowController:
         error_msg = getattr(self, "_download_error_msg", None)
 
         if error_msg:
-            # Download failed
+            # Check if we should retry
+            attempts = getattr(self, "_download_attempts", 0)
+            if attempts < 3:
+                self._download_attempts = attempts + 1
+                self._download_error_msg = None
+                logger.warn(
+                    f"Download: Retry {self._download_attempts}/3: "
+                    f"{error_msg.split(chr(10))[0][:60]}"
+                )
+                self._cleanup_download()
+                # Re-trigger download after a short delay
+                QTimer.singleShot(1000, self._retry_download)
+                return
+
+            # All retries exhausted — mark as failed
             if hasattr(self, "_download_queue_index") and hasattr(
                 self.view, "transfer_queue"
             ):
@@ -928,6 +1060,7 @@ class MainWindowController:
                     notify_transfer_failed(filename, error_msg.split("\n")[0][:60])
         else:
             # Download succeeded
+            self._download_attempts = 0
             if hasattr(self, "_download_queue_index") and hasattr(
                 self.view, "transfer_queue"
             ):
@@ -939,9 +1072,7 @@ class MainWindowController:
             total_bytes = getattr(self, "_download_total_bytes", 0)
 
             if remote_paths and local_dir:
-                per_file_bytes = (
-                    total_bytes // len(remote_paths) if remote_paths else 0
-                )
+                per_file_bytes = total_bytes // len(remote_paths) if remote_paths else 0
                 last_local_path = None
                 for remote_path in remote_paths:
                     filename = os.path.basename(remote_path)
@@ -969,18 +1100,77 @@ class MainWindowController:
                         notify_transfer_complete,
                     )
 
+                    use_sound = self.settings.config.notify_sound
                     if len(remote_paths) == 1:
                         notify_transfer_complete(
                             os.path.basename(remote_paths[0]),
                             action="downloaded",
+                            sound=use_sound,
                         )
                     else:
                         notify_batch_complete(
-                            len(remote_paths), action="downloaded"
+                            len(remote_paths),
+                            action="downloaded",
+                            sound=use_sound,
                         )
+
+        # Update dock badge
+        self._update_dock_badge()
 
         # Cleanup thread/worker
         self._cleanup_download()
+
+    def _retry_download(self) -> None:
+        """Retry a failed download using stored parameters."""
+        remote_paths = getattr(self, "_download_remote_paths", [])
+        local_dir = getattr(self, "_download_local_dir", "")
+        total_bytes = getattr(self, "_download_total_bytes", 0)
+
+        if not remote_paths or not local_dir:
+            return
+
+        from src.workers.download_worker import DownloadWorker
+
+        sftp = self.view.remote_explorer.sftp
+        if not sftp:
+            return
+
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        connection_type = (
+            server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
+            if server_config
+            else CONN_TYPE_SSH
+        )
+
+        if connection_type == CONN_TYPE_ADB:
+            download_sftp = sftp
+        else:
+            try:
+                download_sftp = self.connection_manager.open_sftp_session()
+                if download_sftp is None:
+                    return
+            except Exception:
+                return
+
+        from PySide6.QtCore import QThread
+
+        self._download_thread = QThread(self.view)
+        self._download_worker = DownloadWorker(
+            sftp=download_sftp,
+            remote_paths=remote_paths,
+            local_destination=local_dir,
+            total_bytes=total_bytes,
+        )
+        self._download_worker.moveToThread(self._download_thread)
+
+        self._download_thread.started.connect(self._download_worker.run)
+        self._download_worker.progress.connect(self._on_download_progress)
+        self._download_thread.finished.connect(self._complete_download)
+        self._download_worker.finished.connect(self._download_thread.quit)
+        self._download_worker.error.connect(self._on_download_error_store)
+        self._download_worker.error.connect(self._download_thread.quit)
+
+        self._download_thread.start()
 
     def _reveal_in_finder(self, path: str) -> None:
         """Reveal a file in Finder (macOS)."""
@@ -1084,9 +1274,7 @@ class MainWindowController:
 
         self.view.remote_explorer.refresh()
 
-    def _move_single(
-        self, src_path: str, dest_path: str, confirm: bool = True
-    ) -> None:
+    def _move_single(self, src_path: str, dest_path: str, confirm: bool = True) -> None:
         """
         Move a single file or folder.
 
@@ -1195,6 +1383,7 @@ class MainWindowController:
     # --------------------------------------------------------------
     def shutdown(self) -> None:
         """Clean shutdown of connections."""
+        self._health_timer.stop()
         try:
             self.connection_manager.disconnect()
         except Exception as e:
