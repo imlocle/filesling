@@ -270,16 +270,18 @@ class ConnectionManagerService:
         try:
             if self.sftp_client:
                 self.sftp_client.close()
-                self.sftp_client = None
         except Exception as e:
             logger.warn(f"Connection: Error closing SFTP: {e}")
+        finally:
+            self.sftp_client = None
 
         try:
             if self.ssh_client:
                 self.ssh_client.close()
-                self.ssh_client = None
         except Exception as e:
             logger.warn(f"Connection: Error closing SSH: {e}")
+        finally:
+            self.ssh_client = None
 
         logger.stop("Connection: Disconnected")
 

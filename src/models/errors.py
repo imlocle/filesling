@@ -9,7 +9,7 @@ from typing import Optional
 # ============================================================================
 
 
-class ShuttleError(Exception):
+class FileSlingError(Exception):
     """Base exception for all FileSling errors."""
 
     def __init__(self, message: str, details: Optional[str] = None):
@@ -28,7 +28,7 @@ class ShuttleError(Exception):
 # ============================================================================
 
 
-class ConnectionError(ShuttleError):
+class ConnectionError(FileSlingError):
     """Base exception for connection-related errors."""
 
 
@@ -53,7 +53,7 @@ class AuthenticationError(ConnectionError):
 # ============================================================================
 
 
-class TransferError(ShuttleError):
+class TransferError(FileSlingError):
     """Base exception for transfer operations."""
 
     def __init__(
@@ -89,7 +89,7 @@ class TransferVerificationError(TransferError):
 # ============================================================================
 
 
-class ConfigurationError(ShuttleError):
+class ConfigurationError(FileSlingError):
     """Base exception for configuration-related errors."""
 
 
@@ -116,7 +116,7 @@ class ConfigurationSaveError(ConfigurationError):
 # ============================================================================
 
 
-class FileSystemError(ShuttleError):
+class FileSystemError(FileSlingError):
     """Base exception for file system operations."""
 
     def __init__(
@@ -145,7 +145,7 @@ class FileDeletionError(FileSystemError):
 # ============================================================================
 
 
-class ValidationError(ShuttleError):
+class ValidationError(FileSlingError):
     """Base exception for validation errors."""
 
 
