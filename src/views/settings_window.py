@@ -163,6 +163,12 @@ class SettingsWindow(QDialog):
         )
         layout.addWidget(self.reveal_in_finder_checkbox)
 
+        self.notify_checkbox = QCheckBox("Notify when transfers complete")
+        self.notify_checkbox.setChecked(
+            self.settings.config.notify_on_transfer_complete
+        )
+        layout.addWidget(self.notify_checkbox)
+
         # Skip patterns
         layout.addWidget(QLabel("Skip Patterns"))
         self.skip_patterns_input = QTextEdit(
@@ -315,6 +321,7 @@ class SettingsWindow(QDialog):
                 "download_directory": self.download_dir_input.text().strip()
                 or os.path.expanduser("~/Downloads"),
                 "reveal_in_finder_after_download": self.reveal_in_finder_checkbox.isChecked(),
+                "notify_on_transfer_complete": self.notify_checkbox.isChecked(),
                 "skip_exit_confirm": self.settings.config.skip_exit_confirm,
                 "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [

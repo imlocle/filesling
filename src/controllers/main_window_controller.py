@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import QTimer
@@ -130,12 +130,26 @@ class MainWindowController:
             self._current_queue_index = -1
         self.refresh_explorers()
 
+        # Send macOS notification
+        if self.settings.config.notify_on_transfer_complete:
+            from src.services.notification_service import notify_transfer_complete
+
+            filename = os.path.basename(path)
+            notify_transfer_complete(filename, action="uploaded")
+
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed — mark item as failed."""
         if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
             short_error = error.split("\n")[0][:80]
             self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
             self._current_queue_index = -1
+
+        # Send macOS notification
+        if self.settings.config.notify_on_transfer_complete:
+            from src.services.notification_service import notify_transfer_failed
+
+            filename = os.path.basename(path)
+            notify_transfer_failed(filename, error.split("\n")[0][:60])
 
     def _on_transfer_progress(self, percentage: int) -> None:
         """Handle transfer progress update."""
@@ -490,29 +504,41 @@ class MainWindowController:
         if len(paths) == 1:
             self.delete_item(paths[0])
         else:
-            # Multi-delete confirmation
-            reply = QMessageBox.question(
-                self.view,
-                "Delete",
-                f"Are you sure you want to delete {len(paths)} items?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
+            self._delete_multiple(paths)
 
-            for path in paths:
-                try:
-                    is_remote = path.startswith(self.settings.remote_base_dir)
-                    if is_remote:
-                        self._delete_remote(path)
-                    else:
-                        self._delete_local(path)
-                    logger.trash(f"Deleted: {os.path.basename(path)}")
-                except Exception as e:
-                    logger.error(f"Delete failed: {os.path.basename(path)}: {e}")
+    def delete_items(self, paths: list) -> None:
+        """Delete multiple items from a list of paths (triggered by context menu)."""
+        if not paths:
+            return
+        if len(paths) == 1:
+            self.delete_item(paths[0])
+        else:
+            self._delete_multiple(paths)
 
-            self.view.remote_explorer.refresh()
+    def _delete_multiple(self, paths: list) -> None:
+        """Delete multiple paths with a single confirmation dialog."""
+        reply = QMessageBox.question(
+            self.view,
+            "Delete",
+            f"Are you sure you want to delete {len(paths)} items?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        for path in paths:
+            try:
+                is_remote = path.startswith(self.settings.remote_base_dir)
+                if is_remote:
+                    self._delete_remote(path)
+                else:
+                    self._delete_local(path)
+                logger.trash(f"Deleted: {os.path.basename(path)}")
+            except Exception as e:
+                logger.error(f"Delete failed: {os.path.basename(path)}: {e}")
+
+        self.view.remote_explorer.refresh()
 
     def delete_item(self, path: str) -> None:
         """
@@ -719,51 +745,92 @@ class MainWindowController:
         """
         Download a file or folder from the remote to the configured download directory.
         """
+        self._download_paths([remote_path])
+
+    def download_items(self, remote_paths: List[str]) -> None:
+        """
+        Download multiple files/folders from the remote to the configured download
+        directory. Each item is queued as a separate download in the transfer queue.
+        """
+        if not remote_paths:
+            return
+        self._download_paths(remote_paths)
+
+    def _download_paths(self, remote_paths: List[str]) -> None:
+        """
+        Internal method to download one or more remote paths.
+        Handles duplicate detection, queue display, and worker creation.
+        """
         from src.workers.download_worker import DownloadWorker
 
         # Use configured download directory
         local_dir = self.settings.download_directory
         os.makedirs(local_dir, exist_ok=True)
 
-        # Check for duplicate locally
-        filename = os.path.basename(remote_path)
-        local_path = os.path.join(local_dir, filename)
-        if os.path.exists(local_path):
-            reply = QMessageBox.question(
-                self.view,
-                DIALOG_FILE_ALREADY_EXISTS,
-                f"'{filename}' already exists in your download folder.\n\nOverwrite it?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                logger.info(f"Download: Skipped (already exists): {filename}")
-                return
+        # Check for duplicates and let user decide
+        paths_to_download = []
+        for remote_path in remote_paths:
+            filename = os.path.basename(remote_path)
+            local_path = os.path.join(local_dir, filename)
+            if os.path.exists(local_path):
+                if len(remote_paths) == 1:
+                    reply = QMessageBox.question(
+                        self.view,
+                        DIALOG_FILE_ALREADY_EXISTS,
+                        f"'{filename}' already exists in your download folder."
+                        "\n\nOverwrite it?",
+                        QMessageBox.StandardButton.Yes
+                        | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        logger.info(
+                            f"Download: Skipped (already exists): {filename}"
+                        )
+                        return
+                else:
+                    # For multi-download, skip duplicates with a log
+                    logger.info(f"Download: Skipping (already exists): {filename}")
+                    continue
+            paths_to_download.append(remote_path)
 
-        # Get file size for progress
+        if not paths_to_download:
+            logger.info("Download: All files already exist locally, nothing to do")
+            return
+
+        # Get connection
         sftp = self.view.remote_explorer.sftp
         if not sftp:
             logger.error("Download: No connection available")
             return
 
+        # Calculate total bytes for progress
         total_bytes = 0
-        try:
-            st = sftp.stat(remote_path)
-            if st.st_size:
-                total_bytes = st.st_size
-        except (IOError, OSError):
-            pass
+        for remote_path in paths_to_download:
+            try:
+                st = sftp.stat(remote_path)
+                if st.st_size:
+                    total_bytes += st.st_size
+            except (IOError, OSError):
+                pass
 
         # Display name
-        display_name = f"⬇ {os.path.basename(remote_path)}"
+        if len(paths_to_download) == 1:
+            display_name = f"⬇ {os.path.basename(paths_to_download[0])}"
+        else:
+            names = [os.path.basename(p) for p in paths_to_download[:3]]
+            display_name = f"⬇ {', '.join(names)}"
+            if len(paths_to_download) > 3:
+                display_name += f" (+{len(paths_to_download) - 3} more)"
 
-        # Add to visual queue and immediately mark as in-progress
+        # Add to visual queue
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
             index = queue.add_transfer(display_name, total_bytes)
             queue.set_in_progress(index)
             self._download_queue_index = index
 
+        # Get SFTP session for download
         server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
             server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
@@ -774,7 +841,6 @@ class MainWindowController:
         if connection_type == CONN_TYPE_ADB:
             download_sftp = sftp
         else:
-            # Open a dedicated SFTP session for the download
             try:
                 download_sftp = self.connection_manager.open_sftp_session()
                 if download_sftp is None:
@@ -798,7 +864,7 @@ class MainWindowController:
         self._download_thread = QThread(self.view)
         self._download_worker = DownloadWorker(
             sftp=download_sftp,
-            remote_paths=[remote_path],
+            remote_paths=paths_to_download,
             local_destination=local_dir,
             total_bytes=total_bytes,
         )
@@ -807,7 +873,6 @@ class MainWindowController:
         # Connect signals
         self._download_thread.started.connect(self._download_worker.run)
         self._download_worker.progress.connect(self._on_download_progress)
-        # Use thread.finished (fires on main thread) for completion
         self._download_thread.finished.connect(self._complete_download)
         self._download_worker.finished.connect(self._download_thread.quit)
         self._download_worker.error.connect(self._on_download_error_store)
@@ -815,10 +880,13 @@ class MainWindowController:
 
         # Start
         self._download_thread.start()
-        self._download_remote_path = remote_path
+        self._download_remote_paths = paths_to_download
         self._download_local_dir = local_dir
         self._download_total_bytes = total_bytes
-        logger.download(f"Download: {os.path.basename(remote_path)}")
+        if len(paths_to_download) == 1:
+            logger.download(f"Download: {os.path.basename(paths_to_download[0])}")
+        else:
+            logger.download(f"Download: {len(paths_to_download)} items")
         logger.info(f"Saving to: {local_dir}")
 
     def _on_download_progress(self, percent: int) -> None:
@@ -849,6 +917,15 @@ class MainWindowController:
                     self._download_queue_index, error_msg
                 )
             self._download_error_msg = None
+
+            # Send failure notification
+            if self.settings.config.notify_on_transfer_complete:
+                from src.services.notification_service import notify_transfer_failed
+
+                remote_paths = getattr(self, "_download_remote_paths", [])
+                if remote_paths:
+                    filename = os.path.basename(remote_paths[0])
+                    notify_transfer_failed(filename, error_msg.split("\n")[0][:60])
         else:
             # Download succeeded
             if hasattr(self, "_download_queue_index") and hasattr(
@@ -857,24 +934,50 @@ class MainWindowController:
                 self.view.transfer_queue.set_completed(self._download_queue_index)
 
             # Record in activity history
-            if hasattr(self, "_download_remote_path") and hasattr(
-                self, "_download_local_dir"
-            ):
-                filename = os.path.basename(self._download_remote_path)
-                local_path = os.path.join(self._download_local_dir, filename)
+            remote_paths = getattr(self, "_download_remote_paths", [])
+            local_dir = getattr(self, "_download_local_dir", "")
+            total_bytes = getattr(self, "_download_total_bytes", 0)
 
-                self.manual_transfer.history.add(
-                    filename=filename,
-                    action="download",
-                    source=self._download_remote_path,
-                    destination=self._download_local_dir,
-                    size_bytes=getattr(self, "_download_total_bytes", 0),
-                    server_name=self.settings.config.current_server_id,
+            if remote_paths and local_dir:
+                per_file_bytes = (
+                    total_bytes // len(remote_paths) if remote_paths else 0
                 )
+                last_local_path = None
+                for remote_path in remote_paths:
+                    filename = os.path.basename(remote_path)
+                    last_local_path = os.path.join(local_dir, filename)
+                    self.manual_transfer.history.add(
+                        filename=filename,
+                        action="download",
+                        source=remote_path,
+                        destination=local_dir,
+                        size_bytes=per_file_bytes,
+                        server_name=self.settings.config.current_server_id,
+                    )
 
                 # Reveal in Finder (if enabled in settings)
-                if self.settings.config.reveal_in_finder_after_download:
-                    self._reveal_in_finder(local_path)
+                if (
+                    self.settings.config.reveal_in_finder_after_download
+                    and last_local_path
+                ):
+                    self._reveal_in_finder(last_local_path)
+
+                # Send success notification
+                if self.settings.config.notify_on_transfer_complete:
+                    from src.services.notification_service import (
+                        notify_batch_complete,
+                        notify_transfer_complete,
+                    )
+
+                    if len(remote_paths) == 1:
+                        notify_transfer_complete(
+                            os.path.basename(remote_paths[0]),
+                            action="downloaded",
+                        )
+                    else:
+                        notify_batch_complete(
+                            len(remote_paths), action="downloaded"
+                        )
 
         # Cleanup thread/worker
         self._cleanup_download()
@@ -948,6 +1051,50 @@ class MainWindowController:
             src_path: Current path of item to move
             dest_path: Destination path for the item
         """
+        self._move_single(src_path, dest_path, confirm=True)
+
+    def move_items(self, moves: List[tuple]) -> None:
+        """
+        Move multiple files/folders to new locations with a single confirmation.
+
+        Args:
+            moves: List of (src_path, dest_path) tuples
+        """
+        if not moves:
+            return
+
+        if len(moves) == 1:
+            self._move_single(moves[0][0], moves[0][1], confirm=True)
+            return
+
+        # Single confirmation for all moves
+        dest_dir = os.path.dirname(moves[0][1])
+        confirm = QMessageBox.question(
+            self.view,
+            "Move Items",
+            f"Move {len(moves)} items to:\n{dest_dir}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        for src_path, dest_path in moves:
+            self._move_single(src_path, dest_path, confirm=False)
+
+        self.view.remote_explorer.refresh()
+
+    def _move_single(
+        self, src_path: str, dest_path: str, confirm: bool = True
+    ) -> None:
+        """
+        Move a single file or folder.
+
+        Args:
+            src_path: Current path of item to move
+            dest_path: Destination path for the item
+            confirm: Whether to show a confirmation dialog
+        """
         is_remote = src_path.startswith(self.settings.remote_base_dir)
 
         # Validate that source and destination are in the same filesystem
@@ -972,16 +1119,17 @@ class MainWindowController:
             )
             return
 
-        basename = os.path.basename(src_path)
-        confirm = QMessageBox.question(
-            self.view,
-            "Move Item",
-            f"Move '{basename}' to:\n{dest_path}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
+        if confirm:
+            basename = os.path.basename(src_path)
+            reply = QMessageBox.question(
+                self.view,
+                "Move Item",
+                f"Move '{basename}' to:\n{dest_path}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
         try:
             if is_remote:
@@ -989,7 +1137,8 @@ class MainWindowController:
                 if not sftp:
                     raise RuntimeError("No connection available")
                 sftp.rename(src_path, dest_path)
-                self.view.remote_explorer.refresh()
+                if confirm:
+                    self.view.remote_explorer.refresh()
             else:
                 # Create destination directory if it doesn't exist
                 dest_dir = os.path.dirname(dest_path)

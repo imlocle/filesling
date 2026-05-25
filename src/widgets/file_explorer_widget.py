@@ -437,7 +437,9 @@ class FileExplorerWidget(QWidget):
 
     directory_changed = Signal(str)
     file_delete_requested = Signal(str)
+    files_delete_requested = Signal(list)  # [paths] for multi-delete
     file_download_requested = Signal(str)  # remote_path
+    files_download_requested = Signal(list)  # [remote_paths]
     files_dropped = Signal(
         list, str
     )  # [local_paths], remote_dest_dir (or local dest dir)
@@ -445,6 +447,7 @@ class FileExplorerWidget(QWidget):
     file_rename_requested = Signal(str)
     folder_create_requested = Signal(str)  # new_folder_path
     item_move_requested = Signal(str, str)  # src_path, dest_path
+    items_move_requested = Signal(list)  # [(src_path, dest_path), ...]
     item_selected = Signal(str)
     remote_error = Signal(str)
 
@@ -611,7 +614,30 @@ class FileExplorerWidget(QWidget):
                 self._prompt_and_create_folder()
             return
 
-        entry = item.text(0)  # Get name from first column
+        # Check for multi-select
+        selected_items = self.tree_widget.selectedItems()
+        is_multi = len(selected_items) > 1
+
+        # Ensure the right-clicked item is part of the selection
+        if item not in selected_items:
+            # User right-clicked outside selection — treat as single item
+            selected_items = [item]
+            is_multi = False
+
+        if is_multi:
+            self._show_multi_select_context_menu(position, selected_items)
+        else:
+            self._show_single_item_context_menu(position, item)
+
+    def _show_single_item_context_menu(
+        self, position: QPoint, item: QTreeWidgetItem
+    ) -> None:
+        """Show context menu for a single selected item."""
+        menu = QMenu(self)
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        entry = item.text(0)
         full_path = os.path.join(self.current_path, entry)
 
         new_folder_action = menu.addAction("📁 New Folder")
@@ -658,6 +684,33 @@ class FileExplorerWidget(QWidget):
             self._toggle_bookmark(full_path)
         elif default_bookmark_action and action == default_bookmark_action:
             self._toggle_default_bookmark(full_path)
+
+    def _show_multi_select_context_menu(
+        self, position: QPoint, selected_items: List[QTreeWidgetItem]
+    ) -> None:
+        """Show context menu for multiple selected items."""
+        menu = QMenu(self)
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        count = len(selected_items)
+        paths = [
+            os.path.join(self.current_path, item.text(0)) for item in selected_items
+        ]
+
+        download_action = menu.addAction(f"⬇️ Download All ({count} items)")
+        move_action = menu.addAction(f"↔️ Move All ({count} items)")
+        menu.addSeparator()
+        delete_action = menu.addAction(f"🗑️ Delete All ({count} items)")
+
+        action = menu.exec(self.tree_widget.mapToGlobal(position))
+
+        if action == download_action:
+            self.files_download_requested.emit(paths)
+        elif action == move_action:
+            self._handle_move_items(paths)
+        elif action == delete_action:
+            self.files_delete_requested.emit(paths)
 
     def prompt_rename(self, old_path: str) -> Optional[str]:
         basename = os.path.basename(old_path)
@@ -851,6 +904,128 @@ class FileExplorerWidget(QWidget):
 
         dest_path = os.path.join(dest_dir, basename)
         self.item_move_requested.emit(src_path, dest_path)
+
+    def _handle_move_items(self, src_paths: List[str]) -> None:
+        """Handle moving multiple items — show a folder picker dialog."""
+        from PySide6.QtWidgets import (
+            QDialog,
+            QDialogButtonBox,
+            QTreeWidget,
+            QTreeWidgetItem,
+        )
+
+        count = len(src_paths)
+        names = [os.path.basename(p) for p in src_paths]
+        display = ", ".join(names[:3])
+        if count > 3:
+            display += f" (+{count - 3} more)"
+
+        # Build folder picker dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Move {count} items to...")
+        dialog.setMinimumSize(400, 400)
+        dialog_layout = QVBoxLayout(dialog)
+
+        label = QLabel(f"Select destination folder for {count} items:\n{display}")
+        dialog_layout.addWidget(label)
+
+        # Folder tree
+        tree = QTreeWidget()
+        tree.setHeaderHidden(True)
+        tree.setRootIsDecorated(True)
+        dialog_layout.addWidget(tree)
+
+        # Populate tree with remote folders
+        def _load_folder(parent_item, path):
+            """Load subfolders into tree item."""
+            try:
+                if self.is_remote and self.sftp:
+                    attrs = self.sftp.listdir_attr(path)
+                    folders = sorted(
+                        [
+                            a.filename
+                            for a in attrs
+                            if not a.filename.startswith(".")
+                            and a.st_mode is not None
+                            and S_ISDIR(a.st_mode)
+                        ],
+                        key=str.lower,
+                    )
+                else:
+                    entries = os.listdir(path)
+                    folders = sorted(
+                        [
+                            e
+                            for e in entries
+                            if not e.startswith(".")
+                            and os.path.isdir(os.path.join(path, e))
+                        ],
+                        key=str.lower,
+                    )
+                for folder in folders:
+                    child = QTreeWidgetItem([folder])
+                    child.setData(
+                        0, Qt.ItemDataRole.UserRole, os.path.join(path, folder)
+                    )
+                    parent_item.addChild(child)
+            except Exception:
+                pass
+
+        def _on_item_expanded(item):
+            """Lazy-load subfolders when expanded."""
+            if item.childCount() == 1 and item.child(0).text(0) == "":
+                item.removeChild(item.child(0))
+                folder_path = item.data(0, Qt.ItemDataRole.UserRole)
+                _load_folder(item, folder_path)
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    placeholder = QTreeWidgetItem([""])
+                    child.addChild(placeholder)
+
+        tree.itemExpanded.connect(_on_item_expanded)
+
+        # Add root
+        root_item = QTreeWidgetItem([os.path.basename(self.root_path) or "/"])
+        root_item.setData(0, Qt.ItemDataRole.UserRole, self.root_path)
+        tree.addTopLevelItem(root_item)
+        _load_folder(root_item, self.root_path)
+
+        # Add placeholders for lazy loading
+        for i in range(root_item.childCount()):
+            child = root_item.child(i)
+            placeholder = QTreeWidgetItem([""])
+            child.addChild(placeholder)
+
+        root_item.setExpanded(True)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(buttons)
+
+        # Show dialog
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # Get selected folder
+        selected = tree.currentItem()
+        if not selected:
+            return
+
+        dest_dir = selected.data(0, Qt.ItemDataRole.UserRole)
+        if not dest_dir:
+            return
+
+        # Emit batch move
+        moves = []
+        for src_path in src_paths:
+            basename = os.path.basename(src_path)
+            dest_path = os.path.join(dest_dir, basename)
+            moves.append((src_path, dest_path))
+        self.items_move_requested.emit(moves)
 
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation

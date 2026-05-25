@@ -304,14 +304,21 @@ class MainWindow(QMainWindow):
 
         # Explorer
         self.remote_explorer.file_delete_requested.connect(self.controller.delete_item)
+        self.remote_explorer.files_delete_requested.connect(
+            self.controller.delete_items
+        )
         self.remote_explorer.file_rename_requested.connect(self.controller.rename_item)
         self.remote_explorer.file_download_requested.connect(
             self.controller.download_item
+        )
+        self.remote_explorer.files_download_requested.connect(
+            self.controller.download_items
         )
         self.remote_explorer.folder_create_requested.connect(
             self.controller.create_folder
         )
         self.remote_explorer.item_move_requested.connect(self.controller.move_item)
+        self.remote_explorer.items_move_requested.connect(self.controller.move_items)
         self.remote_explorer.item_selected.connect(
             self.controller.handle_selection_changed
         )
@@ -738,6 +745,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent):
         """Called when user clicks the window's close button."""
+        # Guard: controller may not exist if window closes during early init
+        if not hasattr(self, "controller"):
+            self._save_geometry()
+            event.accept()
+            return
+
         # Check if user opted to skip the confirmation
         skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
 
