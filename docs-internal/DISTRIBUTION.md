@@ -15,6 +15,17 @@ FileSling is distributed via GitHub Releases. When you push a version tag, the C
 
 ### Step-by-Step Release Commands
 
+The fastest way to release is the Makefile shortcut:
+
+```bash
+make release V=3.0.0
+```
+
+This runs all the steps below automatically — bumps version, commits, merges to main, tags, and pushes. GitHub Actions takes over from there.
+
+<details>
+<summary>Manual steps (if you prefer doing it by hand)</summary>
+
 ```bash
 # 1. Make sure dev is up to date and committed
 git checkout dev
@@ -40,6 +51,8 @@ git push origin vX.Y.Z
 # 6. Go back to dev
 git checkout dev
 ```
+
+</details>
 
 ### What the CI/CD Does
 
@@ -79,18 +92,27 @@ Use semantic versioning: `MAJOR.MINOR.PATCH`
 - Added upload retry, queue persistence, per-server default bookmarks, and UI layout updates → **MINOR**
 - Renamed app from PiSync to FileSling, new config format → **MAJOR**
 
-## Suggested 2.2.0 Release Notes
+## Suggested 3.0.0 Release Notes
 
-Use these as a starting point for the next GitHub Release:
-
-- Added per-server bookmarks and per-server default start folders
-- Added upload queue persistence so queued uploads can recover after restart
-- Added automatic upload retry with up to 3 attempts
-- Updated disk usage bar to follow the currently browsed filesystem, including mounted drives
-- Made the Transfers panel larger and expandable
-- Moved Activity Log out of the main screen into `View → Diagnostics Log...`
-- Removed duplicate explorer title from the main window
-- Kept partial byte-level resume and download queue persistence as future work
+- Multi-select transfers: Download All, Move All, Delete All from context menu
+- Batch rename with find/replace across multiple files
+- macOS notifications on transfer complete/fail with optional sound
+- Dock badge showing pending transfer count
+- Connection health monitoring with auto-reconnect on drop
+- Latency indicator in status bar (color-coded: green/orange/red)
+- File type icons (colored, visible in both light and dark themes)
+- File info tooltip on hover (full path + size)
+- Drag-and-drop onto folders uploads directly into them
+- Drag remote files to Finder to download
+- Upload resume: skips already-uploaded files on retry
+- Download retry: auto-retries failed downloads up to 3 times
+- Compress folders before upload (optional)
+- SSH key passphrase support
+- Password-based SSH authentication as fallback
+- macOS Keychain integration for secure credential storage
+- Per-server download directory and file extension filters
+- Export/import settings as JSON
+- Fixed crash when closing during initial server selection
 
 ## Building Locally
 

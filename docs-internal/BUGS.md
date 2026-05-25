@@ -25,5 +25,7 @@
 - [x] Light mode: folder/file icons missing — replaced `QIcon.fromTheme` with `QStyle.standardIcon`
 - [x] Light mode: transfer status labels unreadable — replaced hardcoded colors with stylesheet object names
 - [x] `ADBStat.filename` property has no setter — changed to regular dataclass field
+- [x] Crash when closing window during initial server selection — `closeEvent` accessed `self.controller` before it was assigned
+- [x] File icons invisible in dark mode — replaced `QStyle.standardIcon` with custom colored pixmaps
 
 ---

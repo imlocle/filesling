@@ -1,22 +1,22 @@
 # Production Standards
 
 > **Last updated:** May 2026
-> **Version:** 2.2.0
+> **Version:** 3.0.0
 
 ---
 
 ## Current Status
 
-| Category                    | Status       | Notes                                      |
-| --------------------------- | ------------ | ------------------------------------------ |
-| Architecture & Organization | ✅ Solid     | Clean layered architecture                 |
-| Packaging & Distribution    | ✅ Complete  | pyproject.toml, CI/CD, GitHub Releases     |
-| Dependency Management       | ✅ Complete  | pip-tools with locked versions             |
-| CI/CD Automation            | ✅ Basic     | Build + release on tag push                |
-| Documentation               | ✅ Good      | Architecture, roadmap, internal guides     |
-| Testing & QA                | ❌ Missing   | No test suite yet                          |
-| Code Quality Tools          | ⚠️ Available | Configured in pyproject.toml, not enforced |
-| Release Management          | ✅ Manual    | Semver tags, GitHub Releases               |
+| Category                    | Status       | Notes                                       |
+| --------------------------- | ------------ | ------------------------------------------- |
+| Architecture & Organization | ✅ Solid     | Clean layered architecture                  |
+| Packaging & Distribution    | ✅ Complete  | pyproject.toml, CI/CD, GitHub Releases      |
+| Dependency Management       | ✅ Complete  | pip-tools with locked versions              |
+| CI/CD Automation            | ✅ Basic     | Build + release on tag push                 |
+| Documentation               | ✅ Good      | Architecture, roadmap, internal guides      |
+| Testing & QA                | ❌ Missing   | No test suite yet                           |
+| Code Quality Tools          | ✅ Enforced  | black, isort, flake8 via `make format/lint` |
+| Release Management          | ✅ Automated | `make release V=X.Y.Z`                      |
 
 ---
 
@@ -93,20 +93,22 @@ Skip UI tests initially — they require Qt display server setup.
 
 ### Code Formatting (LOW effort)
 
-Already configured in `pyproject.toml`. Just run:
+Already configured and working via Makefile:
 
 ```bash
-pip install black isort
-black src main.py
-isort src main.py
+make format   # runs black + isort
+make lint     # runs flake8
 ```
 
 ### Linting (MEDIUM effort)
 
+Already working:
+
 ```bash
-pip install flake8 mypy
-flake8 src main.py
-mypy src main.py
+make lint
+# Or directly:
+.venv/bin/python -m flake8 src main.py
+.venv/bin/python -m mypy src main.py
 ```
 
 ### CI Quality Gates (FUTURE)
@@ -140,15 +142,10 @@ jobs:
 See `DISTRIBUTION.md` for full details. Quick reference:
 
 ```bash
-# Bump version → commit → merge to main → tag → push tag
-git checkout dev
-# edit pyproject.toml version
-git add pyproject.toml && git commit -m "bump version to X.Y.Z"
-git push origin dev
-git checkout main && git merge dev && git push origin main
-git tag vX.Y.Z && git push origin vX.Y.Z
-git checkout dev
+make release V=3.0.0
 ```
+
+This bumps version, commits, merges to main, tags, and pushes. GitHub Actions handles the rest.
 
 ---
 

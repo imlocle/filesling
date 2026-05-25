@@ -36,6 +36,16 @@ make run
 ### Release commands
 
 ```bash
+# One command does everything:
+make release V=3.0.0
+```
+
+This bumps version in `pyproject.toml` and `src/utils/constants.py`, commits, pushes to dev, merges to main, tags, and pushes the tag. GitHub Actions builds the `.dmg` automatically.
+
+<details>
+<summary>Manual steps (if make release isn't available)</summary>
+
+```bash
 # 1. On dev branch, bump version in pyproject.toml and src/utils/constants.py
 #    Edit: version = "X.Y.Z" and VERSION = "X.Y.Z"
 
@@ -56,6 +66,8 @@ git push origin vX.Y.Z
 # 5. Back to dev
 git checkout dev
 ```
+
+</details>
 
 ### If the build fails
 

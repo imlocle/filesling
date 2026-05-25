@@ -1,7 +1,7 @@
 # FileSling
 
 <p align="center">
-  <img src="assets/icons/filesling_logo.png" alt="Shuttle" width="128">
+  <img src="assets/icons/filesling_logo.png" alt="FileSling" width="128">
 </p>
 
 A file manager for Mac that sends files to connected devices — SSH servers, Raspberry Pis, Android phones, tablets, and VR headsets — through a clean drag-and-drop interface.
@@ -11,18 +11,26 @@ Built with Python, PySide6, and Paramiko.
 ## Features
 
 - 🖥 **Remote file explorer** — Browse any SSH server or Android device
-- 📂 **Drag-and-drop upload** — Drop files from Finder into the explorer
-- ⬇️ **Download from server** — Right-click to download files to your Mac
+- 📂 **Drag-and-drop upload** — Drop files from Finder into the explorer (or onto specific folders)
+- ⬇️ **Download from server** — Right-click to download files, or select multiple and download all
 - 📱 **Android USB support** — Connect phones/tablets via ADB (no MTP needed)
 - 📊 **Transfer queue** — Queue uploads/downloads with speed, ETA, progress, and auto-retry
 - 🔍 **Recursive search** — Search across subdirectories with Enter
 - 🔄 **Multi-server** — Save multiple devices, set a default for auto-connect
 - ⭐ **Per-server bookmarks** — Save quick-access folders and choose a default start folder per server
 - ✏️ **Inline rename** — Slow-click or right-click to rename files directly
+- ✏️ **Batch rename** — Select multiple files and find/replace in filenames
 - 💾 **Disk space bar** — See usage for the current remote filesystem, including mounted drives
 - 🗑 **Auto-cleanup** — Move local files to trash after upload
 - 📋 **Transfer history** — Persistent log of all uploads and downloads
 - 🔔 **Duplicate detection** — Warns before overwriting existing files
+- 🔔 **macOS notifications** — Get notified when transfers complete or fail
+- 🔁 **Auto-reconnect** — Detects dropped connections and reconnects automatically
+- 📡 **Latency indicator** — Color-coded connection quality in the status bar
+- 🔐 **Flexible auth** — SSH key (with passphrase), password, or keychain storage
+- 📦 **Compress & upload** — Optionally zip folders before transfer
+- ⚡ **Resume uploads** — Skips already-uploaded files on retry
+- 📤 **Export/import settings** — Share config between machines
 - 🐛 **Crash reports** — Friendly error dialog with one-click GitHub issue reporting
 - 🧰 **Diagnostics log** — Hidden by default, available from the View menu when troubleshooting
 - 🌓 **Appearance modes** — Follow system, light, or dark theme
@@ -123,6 +131,23 @@ make test
 # Build distribution
 make build
 ```
+
+## Releasing
+
+```bash
+# Release a new version (bumps version, merges to main, tags, pushes)
+make release V=3.0.0
+```
+
+This single command:
+
+1. Updates the version in `pyproject.toml` and `src/utils/constants.py`
+2. Commits and pushes to `dev`
+3. Merges `dev` → `main` and pushes
+4. Creates a `v3.0.0` tag and pushes it
+5. Switches back to `dev`
+
+GitHub Actions then builds `FileSling.dmg` and creates the release automatically.
 
 ## Docs
 
