@@ -1,7 +1,7 @@
-# Shuttle
+# FileSling
 
 <p align="center">
-  <img src="assets/icons/shuttle_logo.png" alt="Shuttle" width="128">
+  <img src="assets/icons/filesling_logo.png" alt="Shuttle" width="128">
 </p>
 
 A file manager for Mac that sends files to connected devices — SSH servers, Raspberry Pis, Android phones, tablets, and VR headsets — through a clean drag-and-drop interface.
@@ -32,15 +32,15 @@ Built with Python, PySide6, and Paramiko.
 
 ### Download the app
 
-Grab `Shuttle.dmg` from the [latest release](https://github.com/imlocle/shuttle/releases/latest), open it, and drag `Shuttle.app` to Applications.
+Grab `FileSling.dmg` from the [latest release](https://github.com/imlocle/filesling/releases/latest), open it, and drag `FileSling.app` to Applications.
 
 **First launch on macOS:** Apple blocks unsigned apps by default. Run this once in Terminal to allow it:
 
 ```bash
-xattr -cr /Applications/Shuttle.app
+xattr -cr /Applications/FileSling.app
 ```
 
-Then open Shuttle normally.
+Then open FileSling normally.
 
 ### Run from source
 
@@ -57,7 +57,7 @@ python main.py
 
 ## Configuration
 
-Stored at `~/.Shuttle/config.json`:
+Stored at `~/.FileSling/config.json`:
 
 ```json
 {
@@ -129,9 +129,9 @@ make build
 - [Architecture](docs/ARCHITECTURE.md)
 - [System Diagram](docs/SYSTEM_DIAGRAM.md)
 - [Roadmap](docs-internal/ROADMAP.md)
-- [Case Study](https://imlocle.com/#/work/case-study/shuttle)
+- [Case Study](https://imlocle.com/#/work/case-study/filesling)
 
 ## Support
 
-If Shuttle is useful to you, consider buying me a coffee ☕
+If FileSling is useful to you, consider buying me a coffee ☕
 [buymeacoffee.com/imlocle](https://buymeacoffee.com/imlocle)

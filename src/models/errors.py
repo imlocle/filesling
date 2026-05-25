@@ -1,5 +1,5 @@
 """
-Custom exception hierarchy for Shuttle application.
+Custom exception hierarchy for FileSling application.
 """
 
 from typing import Optional
@@ -10,7 +10,7 @@ from typing import Optional
 
 
 class ShuttleError(Exception):
-    """Base exception for all Shuttle errors."""
+    """Base exception for all FileSling errors."""
 
     def __init__(self, message: str, details: Optional[str] = None):
         self.message = message

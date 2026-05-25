@@ -39,8 +39,8 @@ graph TB
 
     subgraph Config["Configuration"]
         Settings[Settings Singleton]
-        JSON["~/.Shuttle/config.json"]
-        History["~/.Shuttle/transfer_history.json"]
+        JSON["~/.FileSling/config.json"]
+        History["~/.FileSling/transfer_history.json"]
     end
 
     MW --> MWC

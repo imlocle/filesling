@@ -1511,7 +1511,7 @@ class FileExplorerWidget(QWidget):
                     color = "#0a84ff"  # Blue
 
                 app = QApplication.instance()
-                is_light = app is not None and app.property("shuttle_theme") == "light"
+                is_light = app is not None and app.property("filesling_theme") == "light"
                 background = "#e8e8ed" if is_light else "#2b2c30"
                 border = "#d2d2d7" if is_light else "#3d3e44"
                 self._disk_bar.setStyleSheet(f"""

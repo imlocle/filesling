@@ -1,7 +1,7 @@
 """
 Crash handler — catches unhandled exceptions and shows a user-friendly dialog.
 
-- Writes crash details to ~/.Shuttle/crash.log
+- Writes crash details to ~/.FileSling/crash.log
 - Shows a dialog with error info and a "Copy to Clipboard" button
 - On next launch, detects if the previous session crashed
 """
@@ -22,7 +22,7 @@ def write_crash_log(exc_type, exc_value, exc_tb) -> str:
     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
 
     report = (
-        f"Shuttle Crash Report\n"
+        f"FileSling Crash Report\n"
         f"{'=' * 50}\n"
         f"Version: {VERSION}\n"
         f"Time: {timestamp}\n"
@@ -69,7 +69,7 @@ def show_crash_dialog(report: str) -> None:
         layout.setContentsMargins(20, 20, 20, 20)
 
         # Header
-        header = QLabel("Shuttle encountered an unexpected error and needs to close.")
+        header = QLabel("FileSling encountered an unexpected error and needs to close.")
         header.setStyleSheet("font-size: 14px; font-weight: 600;")
         header.setWordWrap(True)
         layout.addWidget(header)

@@ -54,9 +54,9 @@ jobs:
       - name: Build .app with PyInstaller
         run: |
           pyinstaller \
-            --name=Shuttle \
+            --name=FileSling \
             --windowed \
-            --icon=assets/icons/shuttle_logo.png \
+            --icon=assets/icons/filesling_logo.png \
             --add-data="assets:assets" \
             --hidden-import=paramiko \
             --hidden-import=pydantic \
@@ -66,15 +66,15 @@ jobs:
       - name: Create DMG
         run: |
           mkdir -p dmg_contents
-          cp -R dist/Shuttle.app dmg_contents/
+          cp -R dist/FileSling.app dmg_contents/
           ln -s /Applications dmg_contents/Applications
-          hdiutil create -volname "Shuttle" -srcfolder dmg_contents -ov -format UDZO Shuttle.dmg
+          hdiutil create -volname "FileSling" -srcfolder dmg_contents -ov -format UDZO FileSling.dmg
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v5
         with:
           name: macos-dmg
-          path: Shuttle.dmg
+          path: FileSling.dmg
 
   release:
     needs: [build-python, build-macos]
@@ -98,7 +98,7 @@ jobs:
         with:
           files: |
             dist/*
-            macos/Shuttle.dmg
+            macos/FileSling.dmg
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

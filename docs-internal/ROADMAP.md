@@ -1,4 +1,4 @@
-# Shuttle — Feature Ideas & Improvements
+# FileSling — Feature Ideas & Improvements
 
 > A living document of ideas for advancing the application.
 
@@ -213,7 +213,7 @@
 
 ## 🔮 Future Directions
 
-> Shuttle's architecture (backend abstraction where ADBClient mimics SFTPClient) means
+> FileSling's architecture (backend abstraction where ADBClient mimics SFTPClient) means
 > new connection types can be added without changing the explorer UI. Each backend just
 > needs: listdir, stat, put, get, rename, mkdir, remove.
 
@@ -267,14 +267,14 @@
 ### macOS Native Polish
 
 - [ ] Menu bar icon with quick-transfer drop zone
-- [ ] Finder extension (right-click → "Send with Shuttle")
+- [ ] Finder extension (right-click → "Send with FileSling")
 - [ ] Spotlight integration for transfer history search
 - [ ] Touch Bar support (if applicable)
 - [ ] Native macOS share sheet integration
 
 ### Positioning
 
-Shuttle isn't just "Android File Transfer replacement" — it's a native macOS transfer
+FileSling isn't just "Android File Transfer replacement" — it's a native macOS transfer
 hub for devices and servers. The unified backend abstraction means it can grow into:
 
 - Dev/homelab tool (SSH servers, Docker, Raspberry Pi)

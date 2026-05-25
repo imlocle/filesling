@@ -44,7 +44,7 @@ from src.widgets.file_explorer_widget import FileExplorerWidget
 
 class MainWindow(QMainWindow):
     """
-    Main window for Shuttle — a remote file manager.
+    Main window for FileSling — a remote file manager.
 
     Features:
     - Clean toolbar with connection controls
@@ -156,7 +156,7 @@ class MainWindow(QMainWindow):
         """
         QMessageBox.information(
             self,
-            "Welcome to Shuttle",
+            "Welcome to FileSling",
             "Welcome! Let's set up your first server connection.",
             QMessageBox.StandardButton.Ok,
         )
@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 DIALOG_SETUP_REQUIRED,
-                "At least one server must be configured to use Shuttle.",
+                "At least one server must be configured to use FileSling.",
                 QMessageBox.StandardButton.Ok,
             )
             self.close()
@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(
                     self,
                     DIALOG_SETUP_FAILED,
-                    "Settings are required to run Shuttle.",
+                    "Settings are required to run FileSling.",
                     QMessageBox.StandardButton.Ok,
                 )
                 self.close()
@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        quit_action = QAction("Quit Shuttle", self)
+        quit_action = QAction("Quit FileSling", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.setMenuRole(QAction.MenuRole.QuitRole)
         quit_action.triggered.connect(self.close)
@@ -443,7 +443,7 @@ class MainWindow(QMainWindow):
         # --- Help Menu ---
         help_menu = menu_bar.addMenu("Help")
 
-        about_action = QAction("About Shuttle", self)
+        about_action = QAction("About FileSling", self)
         about_action.setMenuRole(QAction.MenuRole.AboutRole)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
@@ -468,9 +468,9 @@ class MainWindow(QMainWindow):
         """Show About dialog."""
         QMessageBox.about(
             self,
-            "About Shuttle",
+            "About FileSling",
             (
-                f"Shuttle v{VERSION}\n\n"
+                f"FileSling v{VERSION}\n\n"
                 "A native macOS transfer hub for devices and servers.\n\n"
                 "Built with Python, PySide6, and Paramiko.\n"
                 f"{GITHUB_REPO_URL}"

@@ -1,7 +1,7 @@
 """
 Activity history service — persists file operation records to JSON.
 
-Stores the last 500 actions in ~/.Shuttle/activity_history.json.
+Stores the last 500 actions in ~/.FileSling/activity_history.json.
 Tracks: uploads, downloads, renames, deletes, moves.
 """
 

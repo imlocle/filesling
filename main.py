@@ -21,7 +21,7 @@ def _get_version() -> str:
     try:
         from importlib.metadata import version
 
-        return version("shuttle")
+        return version("filesling")
     except Exception:
         return VERSION
 
@@ -44,7 +44,7 @@ def main():
             pass
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Shuttle")
+    app.setApplicationName("FileSling")
     app.setApplicationVersion(_get_version())
 
     # ---- STYLESHEET ----
@@ -57,8 +57,8 @@ def main():
 
         report = get_previous_crash_report()
         msg = QMessageBox()
-        msg.setWindowTitle("Shuttle — Previous Crash Detected")
-        msg.setText("Shuttle crashed during the last session.")
+        msg.setWindowTitle("FileSling — Previous Crash Detected")
+        msg.setText("FileSling crashed during the last session.")
         msg.setInformativeText("Would you like to view the crash report?")
         view_btn = msg.addButton("View Report", QMessageBox.ButtonRole.AcceptRole)
         msg.addButton("Dismiss", QMessageBox.ButtonRole.RejectRole)
@@ -72,7 +72,7 @@ def main():
         clear_crash_log()
 
     # ---- SPLASH ----
-    logo_path = get_path("assets/icons/shuttle_logo.png")
+    logo_path = get_path("assets/icons/filesling_logo.png")
     splash = SplashScreen(str(logo_path), duration=2500)
     splash.show()
 

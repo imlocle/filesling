@@ -1,8 +1,8 @@
-# Shuttle — Distribution & Release Guide
+# FileSling — Distribution & Release Guide
 
 ## Overview
 
-Shuttle is distributed via GitHub Releases. When you push a version tag, the CI/CD workflow automatically builds the package and creates a GitHub Release.
+FileSling is distributed via GitHub Releases. When you push a version tag, the CI/CD workflow automatically builds the package and creates a GitHub Release.
 
 ## Release Workflow
 
@@ -46,20 +46,20 @@ git checkout dev
 The `.github/workflows/publish.yml` workflow triggers on `v*` tags and:
 
 1. **build-python** (Ubuntu) — builds `.tar.gz` and `.whl` packages
-2. **build-macos** (macOS runner) — builds `Shuttle.app` via PyInstaller, wraps in `Shuttle.dmg`
+2. **build-macos** (macOS runner) — builds `FileSling.app` via PyInstaller, wraps in `FileSling.dmg`
 3. **release** — creates a GitHub Release with all artifacts attached:
-   - `Shuttle.dmg` — double-click installer for macOS users
-   - `shuttle-X.Y.Z-py3-none-any.whl` — pip-installable package
-   - `shuttle-X.Y.Z.tar.gz` — source distribution
+   - `FileSling.dmg` — double-click installer for macOS users
+   - `filesling-X.Y.Z-py3-none-any.whl` — pip-installable package
+   - `filesling-X.Y.Z.tar.gz` — source distribution
 
-No PyPI publishing — Shuttle is a desktop app, not a library.
+No PyPI publishing — FileSling is a desktop app, not a library.
 
 ### First Launch Note
 
-Users downloading `Shuttle.dmg` will need to run this once (unsigned app):
+Users downloading `FileSling.dmg` will need to run this once (unsigned app):
 
 ```bash
-xattr -cr /Applications/Shuttle.app
+xattr -cr /Applications/FileSling.app
 ```
 
 ## Version Numbering
@@ -77,7 +77,7 @@ Use semantic versioning: `MAJOR.MINOR.PATCH`
 - Fixed a crash when disconnecting → **PATCH**
 - Added Android USB support → **MINOR**
 - Added upload retry, queue persistence, per-server default bookmarks, and UI layout updates → **MINOR**
-- Renamed app from PiSync to Shuttle, new config format → **MAJOR**
+- Renamed app from PiSync to FileSling, new config format → **MAJOR**
 
 ## Suggested 2.2.0 Release Notes
 
@@ -98,7 +98,7 @@ Use these as a starting point for the next GitHub Release:
 
 ```bash
 python -m build
-# Output: dist/shuttle-X.Y.Z.tar.gz and dist/shuttle-X.Y.Z-py3-none-any.whl
+# Output: dist/filesling-X.Y.Z.tar.gz and dist/filesling-X.Y.Z-py3-none-any.whl
 ```
 
 ### Standalone Executable (PyInstaller)
@@ -112,7 +112,7 @@ python -m build
 
 ```bash
 # From wheel file
-pip install shuttle-X.Y.Z-py3-none-any.whl
+pip install filesling-X.Y.Z-py3-none-any.whl
 
 # From source (development mode)
 pip install -e .

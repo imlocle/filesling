@@ -38,6 +38,6 @@ def apply_theme(app: QApplication, theme_mode: str) -> None:
     try:
         with open(stylesheet_path, "r") as f:
             app.setStyleSheet(f.read())
-        app.setProperty("shuttle_theme", resolved)
+        app.setProperty("filesling_theme", resolved)
     except FileNotFoundError:
         print("No stylesheet found - using default theme.")

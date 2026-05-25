@@ -1,4 +1,4 @@
-/* Shuttle macOS Light Theme */
+/* FileSling macOS Light Theme */
 QWidget {
     background-color: #f5f5f7;
     color: #1d1d1f;

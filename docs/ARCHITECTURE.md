@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shuttle is a macOS file manager that sends files to connected devices (SSH servers, Android phones/tablets) through drag-and-drop. Built with Python and PySide6.
+FileSling is a macOS file manager that sends files to connected devices (SSH servers, Android phones/tablets) through drag-and-drop. Built with Python and PySide6.
 
 For visual diagrams of the system, see [System Diagram](SYSTEM_DIAGRAM.md).
 
@@ -71,7 +71,7 @@ Finder drop → FileExplorerWidget.dropEvent()
     → Calculates size, adds to TransferQueueWidget
     → ManualTransferController.queue_transfer()
       → Queues transfer
-      → Persists active/pending queue to ~/.Shuttle/transfer_queue.json
+      → Persists active/pending queue to ~/.FileSling/transfer_queue.json
       → Processes sequentially:
         → Opens dedicated SFTP session (or uses ADB)
         → TransferWorker runs on QThread (src/workers/)
@@ -121,13 +121,13 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 
 ## Configuration
 
-- Singleton `Settings` class loads from `~/.Shuttle/config.json`
+- Singleton `Settings` class loads from `~/.FileSling/config.json`
 - Pydantic `SettingsConfig` model with validation
 - Multi-server support with default server for auto-connect
 - Server configs store connection type, credentials, and base directory
 - Bookmarked folders and default start folder are stored per server
-- Transfer history stored in `~/.Shuttle/transfer_history.json` (last 200 records)
-- Pending and in-progress upload queue recovery stored in `~/.Shuttle/transfer_queue.json`
+- Transfer history stored in `~/.FileSling/transfer_history.json` (last 200 records)
+- Pending and in-progress upload queue recovery stored in `~/.FileSling/transfer_queue.json`
 
 ## Main Window UI
 
@@ -154,7 +154,7 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 - Custom exception hierarchy in `errors.py`
 - Errors logged to `logs/errors.json` (last 500 entries)
 - Global crash handler catches unhandled exceptions and shows a user-friendly dialog
-- Crash reports saved to `~/.Shuttle/crash.log` with one-click GitHub issue reporting
+- Crash reports saved to `~/.FileSling/crash.log` with one-click GitHub issue reporting
 - Previous session crashes detected on next launch with option to view report
 - Transfer failures don't delete local files
 - Failed uploads are retried automatically before being marked failed

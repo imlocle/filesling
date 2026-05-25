@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shuttle uses **pip-tools** for dependency management. This provides:
+FileSling uses **pip-tools** for dependency management. This provides:
 
 - Reproducible builds — exact versions locked in `.txt` files
 - Separated concerns — production vs development dependencies

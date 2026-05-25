@@ -1,4 +1,4 @@
-# Shuttle — Quick Reference
+# FileSling — Quick Reference
 
 > Copy-paste commands for common development and release tasks.
 

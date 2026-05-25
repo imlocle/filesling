@@ -61,11 +61,11 @@ Infrastructure (Paramiko SFTP, ADB subprocess, Filesystem)
 - Multi-server support
 - Auto-connect to default server
 - Per-server bookmarks and default start folders
-- Config stored at `~/.Shuttle/config.json`
+- Config stored at `~/.FileSling/config.json`
 
 ### Transfer Reliability
 
-- Upload queue persists active and pending items to `~/.Shuttle/transfer_queue.json`
+- Upload queue persists active and pending items to `~/.FileSling/transfer_queue.json`
 - Failed uploads retry automatically up to 3 times
 - Restored uploads restart from the beginning after app crash or quit
 - Partial byte-level resume is still future work

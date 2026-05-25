@@ -7,7 +7,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( dirname "$SCRIPT_DIR" )"
 
 echo "==================================="
-echo "Shuttle — PyInstaller Build"
+echo "FileSling — PyInstaller Build"
 echo "==================================="
 echo ""
 
@@ -22,9 +22,9 @@ echo "Building standalone executable..."
 cd "$PROJECT_ROOT"
 
 pyinstaller \
-    --name=Shuttle \
+    --name=FileSling \
     --windowed \
-    --icon=assets/icons/shuttle_logo.png \
+    --icon=assets/icons/filesling_logo.png \
     --add-data="assets:assets" \
     --hidden-import=paramiko \
     --hidden-import=pydantic \
@@ -33,4 +33,4 @@ pyinstaller \
 
 echo ""
 echo "Build complete!"
-echo "Executable: $PROJECT_ROOT/dist/Shuttle.app"
+echo "Executable: $PROJECT_ROOT/dist/FileSling.app"
