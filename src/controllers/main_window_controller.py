@@ -210,6 +210,10 @@ class MainWindowController:
         if not self.connection_manager.is_connected():
             return
 
+        # Skip reconnect if a transfer is in progress (avoid disrupting sessions)
+        if self.manual_transfer.is_busy():
+            return
+
         # Check if connection is alive
         if self.connection_manager.check_alive():
             # Measure latency
@@ -594,10 +598,6 @@ class MainWindowController:
                 self.view.connection_status_label.style()
             )
 
-    def handle_file_open(self, path: str) -> None:
-        """Handle file open event from explorer."""
-        logger.info(f"📂 Opened file: {path}")
-
     def handle_selection_changed(self, path: str) -> None:
         """Handle selection change in explorer."""
         self.selected_item = path or None
@@ -878,6 +878,9 @@ class MainWindowController:
         Handles duplicate detection, queue display, and worker creation.
         """
         from src.workers.download_worker import DownloadWorker
+
+        # Reset retry counter for new download
+        self._download_attempts = 0
 
         # Use per-server download directory if configured, else global
         server_config = self.settings.get_server(self.settings.config.current_server_id)

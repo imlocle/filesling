@@ -177,11 +177,11 @@ QProgressBar::chunk {
 }
 
 QTreeWidget, QListWidget {
-    background-color: #ffffff;
+    background-color: #f9f9fb;
     border: 1px solid #d2d2d7;
     border-radius: 7px;
     outline: none;
-    alternate-background-color: #f8f8fa;
+    alternate-background-color: #f4f4f6;
 }
 
 QTreeWidget::item, QListWidget::item {

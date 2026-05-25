@@ -68,6 +68,7 @@ class DragDropTreeWidget(QTreeWidget):
 
         # Slow-click rename state
         self._last_clicked_item: Optional[QTreeWidgetItem] = None
+        self._pressed_item: Optional[QTreeWidgetItem] = None
         self._rename_timer = QTimer(self)
         self._rename_timer.setSingleShot(True)
         self._rename_timer.timeout.connect(self._trigger_rename)
@@ -79,25 +80,35 @@ class DragDropTreeWidget(QTreeWidget):
             self._drag_start_pos = event.pos()
             self._drag_start_items = [item.text(0) for item in self.selectedItems()]
 
-            # Slow-click rename detection
+            # Cancel any pending rename immediately on new press
+            # (rename only triggers after mouse release + delay)
+            self._rename_timer.stop()
+            self._rename_pending_item = None
+
+            self._pressed_item = self.itemAt(event.pos())
+
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Start rename timer only on release (avoids conflict with drag)."""
+        if event.button() == Qt.MouseButton.LeftButton:
             item = self.itemAt(event.pos())
             if (
                 item
+                and item == self._pressed_item
                 and item == self._last_clicked_item
                 and len(self.selectedItems()) == 1
-                and not self._rename_timer.isActive()
+                and self._drag_start_pos is not None
+                and (event.pos() - self._drag_start_pos).manhattanLength() < 4
             ):
-                # Second click on same item — start rename timer
+                # Click-release on same item without dragging — start rename timer
                 self._rename_pending_item = item
-                self._rename_timer.start(500)
-            else:
-                # Different item or first click — cancel any pending rename
-                self._rename_timer.stop()
-                self._rename_pending_item = None
+                self._rename_timer.start(600)
 
             self._last_clicked_item = item
+            self._pressed_item = None
 
-        super().mousePressEvent(event)
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         """Double-click cancels rename timer and navigates."""
@@ -141,9 +152,16 @@ class DragDropTreeWidget(QTreeWidget):
         parent_widget = self.parent()
         if parent_widget and hasattr(parent_widget, "is_remote"):
             if parent_widget.is_remote and parent_widget.sftp:
+                import atexit
                 import tempfile
 
                 temp_dir = tempfile.mkdtemp(prefix="filesling_drag_")
+                # Schedule cleanup when the app exits
+                atexit.register(
+                    lambda d=temp_dir: __import__("shutil").rmtree(
+                        d, ignore_errors=True
+                    )
+                )
                 urls = []
                 for item_name in item_names:
                     remote_path = os.path.join(parent_widget.current_path, item_name)
@@ -151,6 +169,7 @@ class DragDropTreeWidget(QTreeWidget):
                     try:
                         parent_widget.sftp.get(remote_path, local_temp)
                         urls.append(QUrl.fromLocalFile(local_temp))
+                        logger.info(f"Drag: Downloaded {item_name} for Finder")
                     except Exception:
                         pass  # Skip files that fail to download
                 if urls:

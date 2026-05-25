@@ -1,22 +1,78 @@
 """
 File type icon generation for FileSling.
 
-Creates colored file icons that are visible in both light and dark themes.
-Folder icons use the native macOS style; file icons are custom-drawn with
-color coding by extension type.
+Uses native macOS QStyle icons (play button for video, etc.) and tints them
+white when dark mode is active so they remain visible against dark backgrounds.
 """
 
 from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QPoint, QSize
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
+
+# Extension sets by file type
+EXT_VIDEO = frozenset((".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"))
+EXT_AUDIO = frozenset((".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma"))
+EXT_IMAGE = frozenset(
+    (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff")
+)
+EXT_ARCHIVE = frozenset((".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz"))
+EXT_CODE = frozenset(
+    (".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml", ".yml")
+)
+EXT_DOCUMENT = frozenset((".pdf", ".doc", ".docx", ".txt", ".md", ".rtf", ".odt"))
+EXT_EXECUTABLE = frozenset((".apk", ".ipa", ".exe", ".dmg", ".app", ".deb", ".rpm"))
+
+# Extensions whose icons are solid/simple and safe to tint white in dark mode
+EXT_TINT_WHITE = EXT_VIDEO | EXT_AUDIO
+
+
+def _is_dark_mode() -> bool:
+    """Check if the app is currently using a dark theme."""
+    app = QApplication.instance()
+    if not app:
+        return False
+    theme = app.property("filesling_theme")
+    if theme == "light":
+        return False
+    if theme == "dark":
+        return True
+    try:
+        color_scheme = app.styleHints().colorScheme()
+        return color_scheme != Qt.ColorScheme.Light
+    except Exception:
+        return True
+
+
+def _tint_icon_white(icon: QIcon, size: int = 16) -> QIcon:
+    """Create a white-tinted version of an icon for dark backgrounds."""
+    pixmap = icon.pixmap(QSize(size, size))
+    if pixmap.isNull():
+        return icon
+
+    white_pixmap = QPixmap(pixmap.size())
+    white_pixmap.fill(QColor(0, 0, 0, 0))
+
+    painter = QPainter(white_pixmap)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+    painter.drawPixmap(0, 0, pixmap)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(white_pixmap.rect(), QColor(255, 255, 255, 220))
+    painter.end()
+
+    return QIcon(white_pixmap)
 
 
 def get_file_icon(is_dir: bool, filename: str = "") -> QIcon:
-    """Get a file/folder icon based on type. Uses colored pixmaps for theme compatibility."""
+    """
+    Get a file/folder icon based on type.
+
+    Uses native QStyle icons (play for video, volume for audio, etc.)
+    and tints solid icons white in dark mode for visibility.
+    """
     from PySide6.QtWidgets import QStyle
 
     app = QApplication.instance()
@@ -24,60 +80,31 @@ def get_file_icon(is_dir: bool, filename: str = "") -> QIcon:
         return QIcon()
 
     style = app.style()
+    dark = _is_dark_mode()
 
-    # Folders always use the native icon (macOS folder icons work in both themes)
     if is_dir:
         return style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
 
-    # For files, determine a color based on type and create a simple colored icon
     ext = os.path.splitext(filename)[1].lower() if filename else ""
 
-    # Map extensions to colors (visible in both light and dark mode)
-    if ext in (".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"):
-        color = QColor("#ff6b6b")  # Red for video
-    elif ext in (".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma"):
-        color = QColor("#a855f7")  # Purple for audio
-    elif ext in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff"):
-        color = QColor("#22c55e")  # Green for images
-    elif ext in (".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz"):
-        color = QColor("#f59e0b")  # Amber for archives
-    elif ext in (".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml"):
-        color = QColor("#3b82f6")  # Blue for code
-    elif ext in (".pdf", ".doc", ".docx", ".txt", ".md", ".rtf", ".odt"):
-        color = QColor("#6366f1")  # Indigo for documents
-    elif ext in (".srt", ".sub", ".ass", ".vtt"):
-        color = QColor("#14b8a6")  # Teal for subtitles
-    elif ext in (".apk", ".ipa", ".exe", ".dmg", ".app"):
-        color = QColor("#ec4899")  # Pink for executables
+    if ext in EXT_VIDEO:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+    elif ext in EXT_AUDIO:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_MediaVolume)
+    elif ext in EXT_IMAGE:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+    elif ext in EXT_ARCHIVE:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon)
+    elif ext in EXT_CODE:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+    elif ext in EXT_DOCUMENT:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView)
+    elif ext in EXT_EXECUTABLE:
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
     else:
-        color = QColor("#94a3b8")  # Slate gray for unknown
+        icon = style.standardIcon(QStyle.StandardPixmap.SP_FileIcon)
 
-    # Create a small colored file icon
-    size = QSize(16, 16)
-    pixmap = QPixmap(size)
-    pixmap.fill(QColor(0, 0, 0, 0))  # Transparent background
+    if dark and ext in EXT_TINT_WHITE:
+        return _tint_icon_white(icon)
 
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Draw a rounded rectangle as the file shape
-    pen = QPen(color)
-    pen.setWidth(1)
-    painter.setPen(pen)
-    painter.setBrush(color.lighter(160))
-
-    # File body
-    painter.drawRoundedRect(2, 1, 11, 14, 2, 2)
-
-    # Dog-ear (top-right corner fold)
-    painter.setBrush(color)
-    painter.drawPolygon(
-        [
-            QPoint(9, 1),
-            QPoint(13, 5),
-            QPoint(9, 5),
-        ]
-    )
-
-    painter.end()
-    return QIcon(pixmap)
+    return icon

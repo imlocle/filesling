@@ -322,7 +322,6 @@ class MainWindow(QMainWindow):
         self.remote_explorer.item_selected.connect(
             self.controller.handle_selection_changed
         )
-        self.remote_explorer.file_opened.connect(self.controller.handle_file_open)
         self.remote_explorer.files_dropped.connect(self._handle_remote_drop)
         self.remote_explorer.remote_error.connect(
             self.controller.handle_remote_explorer_failure

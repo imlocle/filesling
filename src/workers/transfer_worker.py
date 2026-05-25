@@ -140,10 +140,10 @@ class TransferWorker(QObject):
         """
         filename = os.path.basename(local_path)
         remote_file = os.path.join(remote_dir, filename).replace("\\", "/")
-        remote_dir = os.path.dirname(remote_file)
+        target_dir = os.path.dirname(remote_file)
 
         try:
-            self._ensure_remote_directory(remote_dir)
+            self._ensure_remote_directory(target_dir)
         except (RemoteDirectoryError, ConnectionLostError):
             raise
 
