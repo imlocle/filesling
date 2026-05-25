@@ -1,7 +1,7 @@
 # App
 SOFTWARE_NAME = "FileSling"
 CONFIG_JSON = "config.json"
-VERSION = "2.4.0"
+VERSION = "3.0.0"
 GITHUB_REPO_URL = "https://github.com/imlocle/filesling"
 
 # Connection types
