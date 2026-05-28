@@ -63,7 +63,7 @@ class DownloadWorker(QObject):
             file_size = 0
 
         # Progress callback
-        def progress_callback(transferred: int, total: int):
+        def progress_callback(transferred: int, total: int) -> None:
             if total <= 0:
                 return
             if self._total_bytes > 0:

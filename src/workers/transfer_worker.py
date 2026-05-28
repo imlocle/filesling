@@ -169,7 +169,7 @@ class TransferWorker(QObject):
             pass  # File doesn't exist — proceed with upload
 
         # progress callback
-        def progress_callback(transferred: int, total: int):
+        def progress_callback(transferred: int, total: int) -> None:
             if total <= 0:
                 return
             pct = int(transferred * 100 / total)

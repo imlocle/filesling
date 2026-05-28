@@ -138,7 +138,7 @@ class Settings:
     _instance: "Settings | None" = None
     config: SettingsConfig
 
-    def __new__(cls):
+    def __new__(cls) -> "Settings":
         if cls._instance is None:
             cls._instance = super(Settings, cls).__new__(cls)
             local_config_path = Path.home() / f".{SOFTWARE_NAME}" / CONFIG_JSON
@@ -178,44 +178,44 @@ class Settings:
 
     # Properties
     @property
-    def username(self):
+    def username(self) -> str:
         return self.config.username
 
     @property
-    def host(self):
+    def host(self) -> str:
         return self.config.host
 
     @property
-    def ssh_key_path(self):
+    def ssh_key_path(self) -> str:
         return self.config.ssh_key_path
 
     @property
-    def ssh_port(self):
+    def ssh_port(self) -> int:
         return self.config.ssh_port
 
     @property
-    def remote_base_dir(self):
+    def remote_base_dir(self) -> str:
         return self.config.remote_base_dir
 
     @property
-    def delete_after_transfer(self):
+    def delete_after_transfer(self) -> bool:
         return self.config.delete_after_transfer
 
     @property
-    def download_directory(self):
+    def download_directory(self) -> str:
         return self.config.download_directory
 
     @property
-    def skip_patterns(self):
+    def skip_patterns(self) -> set[str]:
         return self.config.skip_patterns
 
     @property
-    def skip_files(self):
+    def skip_files(self) -> set[str]:
         """Alias for skip_patterns (used by file explorer)."""
         return self.config.skip_patterns
 
     @property
-    def last_modified(self):
+    def last_modified(self) -> str:
         return self.config.last_modified
 
     def save_config(self, config_data: dict) -> None:

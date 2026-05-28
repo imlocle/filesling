@@ -79,7 +79,9 @@ class TransferItemWidget(QFrame):
     retry_requested = Signal(int)  # index
     cancel_requested = Signal(int)  # index
 
-    def __init__(self, index: int, item: TransferItem, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, index: int, item: TransferItem, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.index = index
         self.item = item

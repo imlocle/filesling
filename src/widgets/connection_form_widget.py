@@ -49,7 +49,9 @@ class ConnectionFormWidget(QWidget):
 
     connection_tested = Signal(bool)  # True if test succeeded
 
-    def __init__(self, config: Optional[dict] = None, parent=None):
+    def __init__(
+        self, config: Optional[dict] = None, parent: Optional[QWidget] = None
+    ) -> None:
         """
         Args:
             config: Existing server config dict to populate fields (or None for defaults)
@@ -58,7 +60,7 @@ class ConnectionFormWidget(QWidget):
         self._config = config or {}
         self._setup_ui()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -332,7 +334,7 @@ class ConnectionFormWidget(QWidget):
         from src.config.settings import SettingsConfig
 
         class TempSettings:
-            def __init__(self, config):
+            def __init__(self, config: "SettingsConfig") -> None:
                 self.username = config.username
                 self.host = config.host
                 self.ssh_key_path = config.ssh_key_path

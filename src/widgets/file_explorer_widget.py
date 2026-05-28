@@ -4,7 +4,7 @@ import os
 import shlex
 import shutil
 from stat import S_ISDIR
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import (
@@ -23,12 +23,15 @@ from PySide6.QtGui import (
     QDrag,
     QDragEnterEvent,
     QDragLeaveEvent,
+    QDragMoveEvent,
     QDropEvent,
     QFont,
     QIcon,
     QMouseEvent,
     QPainter,
+    QPaintEvent,
     QPen,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -248,7 +251,7 @@ class LoadingSpinner(QWidget):
         self._angle = (self._angle + 6) % 360
         self.update()
 
-    def paintEvent(self, event) -> None:
+    def paintEvent(self, event: QPaintEvent) -> None:
         if not self.isVisible():
             return
 
@@ -835,7 +838,13 @@ class FileExplorerWidget(QWidget):
             new_folder_path = os.path.join(self.current_path, folder_name)
             self.folder_create_requested.emit(new_folder_path)
 
-    def _expand_tree_to_path(self, tree, root_item, target_path, load_fn) -> None:
+    def _expand_tree_to_path(
+        self,
+        tree: QTreeWidget,
+        root_item: QTreeWidgetItem,
+        target_path: str,
+        load_fn: Callable,
+    ) -> None:
         """
         Expand the folder picker tree down to target_path and select it.
 
@@ -1533,7 +1542,9 @@ class FileExplorerWidget(QWidget):
             finished = Signal(list)
             error = Signal(str)
 
-            def __init__(self, sftp: object, base_path: str, query: str, max_depth: int = 3) -> None:
+            def __init__(
+                self, sftp: object, base_path: str, query: str, max_depth: int = 3
+            ) -> None:
                 super().__init__()
                 self.sftp = sftp
                 self.base_path = base_path
@@ -1963,7 +1974,7 @@ class FileExplorerWidget(QWidget):
         self._clear_drop_highlight()
         self.update()
 
-    def dragMoveEvent(self, event) -> None:
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         """Track which folder item is being hovered during drag."""
         item = self.tree_widget.itemAt(
             self.tree_widget.mapFrom(self, event.position().toPoint())
@@ -2130,7 +2141,7 @@ class FileExplorerWidget(QWidget):
     # ------------------------------------------------------------------
     # Paint overlay
     # ------------------------------------------------------------------
-    def paintEvent(self, event) -> None:
+    def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
 
         if self.drag_over:
@@ -2152,7 +2163,7 @@ class FileExplorerWidget(QWidget):
                 "📂 Drop files/folders here",
             )
 
-    def resizeEvent(self, event) -> None:
+    def resizeEvent(self, event: QResizeEvent) -> None:
         """Keep loading spinner sized to tree widget."""
         super().resizeEvent(event)
         self._spinner.resize(self.tree_widget.size())

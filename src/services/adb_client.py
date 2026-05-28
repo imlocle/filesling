@@ -14,7 +14,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from stat import S_IFDIR, S_IFREG, S_ISDIR
-from typing import List, Optional
+from typing import Callable, Generator, List, Optional
 
 
 @dataclass
@@ -34,7 +34,7 @@ class ADBClient:
     This class translates those into `adb shell` commands.
     """
 
-    def __init__(self, device_id: Optional[str] = None):
+    def __init__(self, device_id: Optional[str] = None) -> None:
         """
         Initialize ADB client.
 
@@ -74,7 +74,9 @@ class ADBClient:
         """Run a shell command on the device."""
         return self._run(["shell", command], timeout=timeout)
 
-    def _shell_stream(self, command: str, timeout: int = 60):
+    def _shell_stream(
+        self, command: str, timeout: int = 60
+    ) -> Generator[str, None, None]:
         """Run a shell command and yield stdout lines as they arrive."""
         cmd = self._adb_prefix + ["shell", command]
         try:
@@ -120,7 +122,9 @@ class ADBClient:
             results.extend(batch)
         return results
 
-    def listdir_attr_stream(self, path: str, batch_size: int = 50):
+    def listdir_attr_stream(
+        self, path: str, batch_size: int = 50
+    ) -> Generator[List[ADBStat], None, None]:
         """
         Stream directory listing in batches.
 
@@ -242,11 +246,15 @@ class ADBClient:
         path = self._normalize_remote_path(path)
         self._shell(f'mkdir -p "{path}"')
 
-    def get(self, remote_path: str, local_path: str, callback=None) -> None:
+    def get(
+        self, remote_path: str, local_path: str, callback: Optional[Callable] = None
+    ) -> None:
         """Alias for pull() — matches Paramiko SFTPClient interface."""
         self.pull(remote_path, local_path, callback)
 
-    def put(self, local_path: str, remote_path: str, callback=None) -> None:
+    def put(
+        self, local_path: str, remote_path: str, callback: Optional[Callable] = None
+    ) -> None:
         """
         Upload a file to the device.
 
@@ -271,7 +279,9 @@ class ADBClient:
         if callback:
             callback(total_size, total_size)
 
-    def pull(self, remote_path: str, local_path: str, callback=None) -> None:
+    def pull(
+        self, remote_path: str, local_path: str, callback: Optional[Callable] = None
+    ) -> None:
         """
         Download a file from the device.
 
@@ -300,15 +310,15 @@ class ADBClient:
         if callback:
             callback(total_size, total_size)
 
-    def get_channel(self):
+    def get_channel(self) -> "ADBClient":
         """Compatibility stub — returns self for disk usage."""
         return self
 
-    def get_transport(self):
+    def get_transport(self) -> "ADBClient":
         """Compatibility stub — returns self for disk usage."""
         return self
 
-    def open_session(self):
+    def open_session(self) -> "ADBSession":
         """Compatibility stub for disk usage command execution."""
         return ADBSession(self)
 
@@ -319,7 +329,7 @@ class ADBClient:
 class ADBSession:
     """Mimics a paramiko SSH session for executing commands (used by disk usage)."""
 
-    def __init__(self, client: ADBClient):
+    def __init__(self, client: ADBClient) -> None:
         self._client = client
         self._output = ""
 

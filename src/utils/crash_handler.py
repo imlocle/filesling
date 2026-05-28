@@ -10,13 +10,19 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
+from typing import Type
 
 from src.utils.constants import GITHUB_REPO_URL, SOFTWARE_NAME, VERSION
 
 CRASH_LOG_PATH = Path.home() / f".{SOFTWARE_NAME}" / "crash.log"
 
 
-def write_crash_log(exc_type, exc_value, exc_tb) -> str:
+def write_crash_log(
+    exc_type: Type[BaseException],
+    exc_value: BaseException,
+    exc_tb: TracebackType | None,
+) -> str:
     """Write crash details to file and return the formatted report."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
@@ -148,7 +154,11 @@ def _open_github_issue(report: str) -> None:
 def install_crash_handler() -> None:
     """Install the global exception handler."""
 
-    def handler(exc_type, exc_value, exc_tb):
+    def handler(
+        exc_type: Type[BaseException],
+        exc_value: BaseException,
+        exc_tb: TracebackType | None,
+    ) -> None:
         # Don't catch KeyboardInterrupt
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_tb)

@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QGraphicsDropShadowEffect, QSplashScreen
 
 
 class SplashScreen(QSplashScreen):
-    def __init__(self, logo_path: str, duration: int = 2500):
+    def __init__(self, logo_path: str, duration: int = 2500) -> None:
         # Load original image
         original = QPixmap(logo_path)
 
@@ -35,7 +35,7 @@ class SplashScreen(QSplashScreen):
         shadow.setColor(QColor(0, 0, 0, 80))  # semi-transparent black
         self.setGraphicsEffect(shadow)
 
-    def show_and_wait(self, callback, window=None):
+    def show_and_wait(self, callback: object, window: object = None) -> None:
         """
         Show splash screen and wait for both:
         1. Minimum duration to elapse
@@ -58,17 +58,17 @@ class SplashScreen(QSplashScreen):
         if window:
             window.fully_loaded.connect(self._on_window_loaded)
 
-    def _on_min_duration_elapsed(self):
+    def _on_min_duration_elapsed(self) -> None:
         """Called when minimum display duration has elapsed."""
         self.ready_to_close = True
         self._try_close()
 
-    def _on_window_loaded(self):
+    def _on_window_loaded(self) -> None:
         """Called when main window signals it's fully loaded."""
         self.window_loaded = True
         self._try_close()
 
-    def _try_close(self):
+    def _try_close(self) -> None:
         """Close splash only when both conditions are met."""
         if self.ready_to_close and self.window_loaded:
             self.callback()

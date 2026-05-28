@@ -30,7 +30,7 @@ class ActivityRecord:
     server_name: str = ""
     status: str = "completed"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.timestamp:
             self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -38,7 +38,7 @@ class ActivityRecord:
 class ActivityHistoryService:
     """Manages persistent activity history."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._history_path = Path.home() / f".{SOFTWARE_NAME}" / HISTORY_FILE
         self._records: List[ActivityRecord] = []
         self._load()

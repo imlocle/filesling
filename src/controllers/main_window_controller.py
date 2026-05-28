@@ -54,9 +54,9 @@ class MainWindowController:
 
     def __init__(
         self,
-        view,
+        view: "MainWindow",
         connection_manager: ConnectionManagerService,
-    ):
+    ) -> None:
         self.view = view
         self.settings: Settings = view.settings
         self.connection_manager = connection_manager
@@ -110,7 +110,11 @@ class MainWindowController:
 
         restored = self.manual_transfer.restore_persisted_queue()
         for transfer in restored:
-            queue.add_transfer(transfer.display_name, transfer.total_bytes)
+            queue.add_transfer(
+                transfer.display_name,
+                transfer.total_bytes,
+                transfer.remote_destination,
+            )
 
         if restored:
             QTimer.singleShot(500, self.manual_transfer.start_processing)
@@ -947,7 +951,7 @@ class MainWindowController:
         # Add to visual queue
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
-            index = queue.add_transfer(display_name, total_bytes)
+            index = queue.add_transfer(display_name, total_bytes, local_dir)
             queue.set_in_progress(index)
             self._download_queue_index = index
 
@@ -1369,7 +1373,7 @@ class MainWindowController:
     # --------------------------------------------------------------
     #  SETTINGS
     # --------------------------------------------------------------
-    def open_settings(self):
+    def open_settings(self) -> None:
         settings_window = SettingsWindow(self.settings)
         if settings_window.exec() == QDialog.DialogCode.Accepted:
             # Reload settings since the singleton was reset during save

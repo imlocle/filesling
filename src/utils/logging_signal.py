@@ -11,12 +11,12 @@ _LOGS_DIR = os.path.join(
 )
 
 
-def _ensure_logs_dir():
+def _ensure_logs_dir() -> None:
     """Create logs directory if it doesn't exist."""
     os.makedirs(_LOGS_DIR, exist_ok=True)
 
 
-def _write_error_log(msg: str):
+def _write_error_log(msg: str) -> None:
     """Append an error entry to the JSON log file."""
     try:
         _ensure_logs_dir()
@@ -78,58 +78,58 @@ class Logger(QObject):
             f'<span style="color: #cccccc;">{msg}</span>'
         )
 
-    def info(self, msg: str):
+    def info(self, msg: str) -> None:
         """Log informational message."""
         formatted = self._format_message("ℹ️", msg, "#4ec9b0")
         self.log_signal.emit(formatted)
 
-    def success(self, msg: str):
+    def success(self, msg: str) -> None:
         """Log success message."""
         formatted = self._format_message("✅", msg, "#4ec9b0")
         self.log_signal.emit(formatted)
 
-    def error(self, msg: str):
+    def error(self, msg: str) -> None:
         """Log error message and persist to logs/errors.json."""
         formatted = self._format_message("❌", msg, "#f48771")
         self.log_signal.emit(formatted)
         _write_error_log(msg)
 
-    def warn(self, msg: str):
+    def warn(self, msg: str) -> None:
         """Log warning message."""
         formatted = self._format_message("⚠️", msg, "#ce9178")
         self.log_signal.emit(formatted)
 
-    def start(self, msg: str):
+    def start(self, msg: str) -> None:
         """Log start event."""
         formatted = self._format_message("▶️", msg, "#4ec9b0")
         self.log_signal.emit(formatted)
 
-    def stop(self, msg: str):
+    def stop(self, msg: str) -> None:
         """Log stop event."""
         formatted = self._format_message("⏹️", msg, "#858585")
         self.log_signal.emit(formatted)
 
-    def search(self, msg: str):
+    def search(self, msg: str) -> None:
         """Log search/scan event."""
         formatted = self._format_message("🔍", msg, "#007acc")
         self.log_signal.emit(formatted)
 
-    def upload(self, msg: str):
+    def upload(self, msg: str) -> None:
         """Log upload event."""
         formatted = self._format_message("⬆️", msg, "#007acc")
         self.log_signal.emit(formatted)
 
-    def download(self, msg: str):
+    def download(self, msg: str) -> None:
         """Log download event."""
         formatted = self._format_message("⬇️", msg, "#007acc")
         self.log_signal.emit(formatted)
 
-    def trash(self, msg: str):
+    def trash(self, msg: str) -> None:
         """Log deletion event."""
         formatted = self._format_message("🗑️", msg, "#ce9178")
         self.log_signal.emit(formatted)
 
-    def log(self, msg: str):
+    def log(self, msg: str) -> None:
         """Emit raw message without formatting."""
         self.log_signal.emit(msg)
 

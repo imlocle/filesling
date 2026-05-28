@@ -12,7 +12,7 @@ from typing import Optional
 class FileSlingError(Exception):
     """Base exception for all FileSling errors."""
 
-    def __init__(self, message: str, details: Optional[str] = None):
+    def __init__(self, message: str, details: Optional[str] = None) -> None:
         self.message = message
         self.details = details
         super().__init__(self.message)
@@ -61,7 +61,7 @@ class TransferError(FileSlingError):
         message: str,
         file_path: Optional[str] = None,
         details: Optional[str] = None,
-    ):
+    ) -> None:
         self.file_path = file_path
         super().__init__(message, details)
 
@@ -98,7 +98,7 @@ class InvalidConfigurationError(ConfigurationError):
 
     def __init__(
         self, message: str, field: Optional[str] = None, details: Optional[str] = None
-    ):
+    ) -> None:
         self.field = field
         super().__init__(message, details)
 
@@ -121,7 +121,7 @@ class FileSystemError(FileSlingError):
 
     def __init__(
         self, message: str, path: Optional[str] = None, details: Optional[str] = None
-    ):
+    ) -> None:
         self.path = path
         super().__init__(message, details)
 

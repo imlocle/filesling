@@ -23,7 +23,7 @@ from src.utils.logging_signal import logger
 
 
 class ConnectionManagerService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.ssh_client: Optional[SSHClient] = None
         self.sftp_client: Optional[SFTPClient] = None

@@ -50,7 +50,7 @@ class SettingsWindow(QDialog):
         settings: Settings,
         server_mode: bool = False,
         server_id: str | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.setWindowTitle(f"{SOFTWARE_NAME} - Settings")
         self.setMinimumSize(500, 450)
@@ -364,13 +364,13 @@ class SettingsWindow(QDialog):
     # ------------------------------------------------------------------
     # Save
     # ------------------------------------------------------------------
-    def save_settings(self):
+    def save_settings(self) -> None:
         if self.server_mode:
             self._save_server_config()
         else:
             self._save_global_settings()
 
-    def _save_server_config(self):
+    def _save_server_config(self) -> None:
         if not self.server_id:
             self.server_id = str(uuid.uuid4())[:8]
 
@@ -429,7 +429,7 @@ class SettingsWindow(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save:\n{str(e)}")
 
-    def _save_global_settings(self):
+    def _save_global_settings(self) -> None:
         try:
             conn_config = self.connection_form.get_config()
 

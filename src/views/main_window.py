@@ -113,14 +113,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
-    def _emit_fully_loaded(self):
+    def _emit_fully_loaded(self) -> None:
         """Emit signal that window is fully loaded and ready."""
         self.fully_loaded.emit()
 
         # Auto-connect after window is loaded
         QTimer.singleShot(200, self._auto_connect_and_start)
 
-    def _auto_connect_and_start(self):
+    def _auto_connect_and_start(self) -> None:
         """Automatically connect after window loads."""
         self.controller.connect()
 
@@ -233,7 +233,7 @@ class MainWindow(QMainWindow):
 
         return True
 
-    def handle_connection_failure(self):
+    def handle_connection_failure(self) -> None:
         """Handle connection failure — show server selection dialog."""
         self.connection_attempts += 1
 
@@ -264,7 +264,7 @@ class MainWindow(QMainWindow):
                 f"Connection attempt {self.connection_attempts}/{self.max_connection_attempts} failed"
             )
 
-    def change_server(self):
+    def change_server(self) -> None:
         """Allow user to change to a different server."""
         from src.views.server_selection_dialog import ServerSelectionDialog
 
@@ -735,14 +735,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Lifecycle Events
     # ------------------------------------------------------------------
-    def showEvent(self, event: QShowEvent):
+    def showEvent(self, event: QShowEvent) -> None:
         """Called when window is shown."""
         super().showEvent(event)
         # This handler itself does not force a connection; the user can connect
         # or start monitoring manually, and auto-connect/auto-start may still
         # occur elsewhere based on user settings.
 
-    def closeEvent(self, event: QCloseEvent):
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Called when user clicks the window's close button."""
         # Guard: controller may not exist if window closes during early init
         if not hasattr(self, "controller"):
@@ -865,7 +865,7 @@ class MainWindow(QMainWindow):
             display_name += f" (+{len(names) - 2})"
 
         # Add to visual queue
-        self.transfer_queue.add_transfer(display_name, total_bytes)
+        self.transfer_queue.add_transfer(display_name, total_bytes, remote_dir)
 
         # Start the transfer
         self.controller.manual_transfer.queue_transfer(

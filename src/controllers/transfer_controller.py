@@ -36,7 +36,7 @@ class QueuedTransfer:
     display_name: str = ""
     attempts: int = 0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.display_name:
             names = [os.path.basename(p.rstrip("/")) for p in self.local_paths]
             self.display_name = ", ".join(names[:3])
@@ -105,7 +105,7 @@ class ManualTransferController(QObject):
         settings: Settings,
         connection_manager: ConnectionManagerService,
         parent: Optional[QObject] = None,
-    ):
+    ) -> None:
         super().__init__(parent)
         self.settings = settings
         self.connection_manager = connection_manager
