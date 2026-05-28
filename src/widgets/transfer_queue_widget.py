@@ -43,6 +43,7 @@ class TransferItem:
     display_name: str
     total_bytes: int = 0
     transferred_bytes: int = 0
+    destination: str = ""
     status: TransferStatus = TransferStatus.PENDING
     error_message: str = ""
     start_time: float = 0.0
@@ -78,7 +79,7 @@ class TransferItemWidget(QFrame):
     retry_requested = Signal(int)  # index
     cancel_requested = Signal(int)  # index
 
-    def __init__(self, index: int, item: TransferItem, parent=None):
+    def __init__(self, index: int, item: TransferItem, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.index = index
         self.item = item
@@ -99,8 +100,31 @@ class TransferItemWidget(QFrame):
         self.name_label.setMaximumWidth(400)
         self.name_label.setWordWrap(False)
 
+        # Show destination path if available
+        if item.destination:
+            # Use a compact relative-style path
+            dest_display = item.destination
+            if len(dest_display) > 50:
+                dest_display = "…" + dest_display[-47:]
+            self.name_label.setText(f"{item.display_name}")
+            self.name_label.setToolTip(f"{item.display_name} → {item.destination}")
+            self.dest_label = QLabel(f"→ {dest_display}")
+            self.dest_label.setObjectName("secondary_label")
+            self.dest_label.setStyleSheet("font-size: 10px;")
+        else:
+            self.dest_label = None
+
         self.status_label = QLabel()
         self.status_label.setStyleSheet("font-size: 11px;")
+
+        self.cancel_btn = QPushButton("x")
+        self.cancel_btn.setObjectName("subtle_btn")
+        self.cancel_btn.setMaximumWidth(20)
+        self.cancel_btn.setMaximumHeight(20)
+        self.cancel_btn.setToolTip("Cancel")
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.index))
+        self.cancel_btn.setVisible(False)
 
         self.finder_btn = QPushButton("Show in Finder")
         self.finder_btn.setMaximumHeight(22)
@@ -108,20 +132,16 @@ class TransferItemWidget(QFrame):
         self.finder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.finder_btn.clicked.connect(self._reveal_in_finder)
 
-        self.cancel_btn = QPushButton("✕")
-        self.cancel_btn.setMaximumWidth(22)
-        self.cancel_btn.setMaximumHeight(22)
-        self.cancel_btn.setToolTip("Cancel")
-        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.clicked.connect(lambda: self.cancel_requested.emit(self.index))
-        self.cancel_btn.setVisible(False)
-
         top_row.addWidget(self.name_label, stretch=1)
         top_row.addWidget(self.status_label)
-        top_row.addWidget(self.finder_btn)
         top_row.addWidget(self.cancel_btn)
+        top_row.addWidget(self.finder_btn)
 
         layout.addLayout(top_row)
+
+        # Destination path (if available)
+        if self.dest_label:
+            layout.addWidget(self.dest_label)
 
         # Progress bar (only for in-progress)
         self.progress_bar = QProgressBar()
@@ -146,7 +166,7 @@ class TransferItemWidget(QFrame):
 
         self.update_display()
 
-    def update_display(self):
+    def update_display(self) -> None:
         """Update the widget to reflect current item state."""
         item = self.item
 
@@ -180,7 +200,7 @@ class TransferItemWidget(QFrame):
             self.detail_label.setVisible(True)
             self.retry_btn.setVisible(False)
             self.finder_btn.setVisible(False)
-            self.cancel_btn.setVisible(False)
+            self.cancel_btn.setVisible(True)
 
             # Speed and ETA
             speed = item.speed_bytes_per_sec
@@ -262,7 +282,7 @@ class TransferQueueWidget(QWidget):
     retry_transfer = Signal(int)  # index of failed transfer to retry
     cancel_transfer = Signal(int)  # index of pending transfer to cancel
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._items: List[TransferItem] = []
         self._item_widgets: List[TransferItemWidget] = []
@@ -318,9 +338,15 @@ class TransferQueueWidget(QWidget):
         self._update_timer.timeout.connect(self._refresh_active)
         self._update_timer.setInterval(500)
 
-    def add_transfer(self, display_name: str, total_bytes: int = 0) -> int:
+    def add_transfer(
+        self, display_name: str, total_bytes: int = 0, destination: str = ""
+    ) -> int:
         """Add a new transfer to the queue. Returns its index."""
-        item = TransferItem(display_name=display_name, total_bytes=total_bytes)
+        item = TransferItem(
+            display_name=display_name,
+            total_bytes=total_bytes,
+            destination=destination,
+        )
         self._items.append(item)
         index = len(self._items) - 1
 

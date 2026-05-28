@@ -61,7 +61,7 @@ class DragDropTreeWidget(QTreeWidget):
     # Emitted when user slow-clicks to rename: (item, column)
     slow_click_rename = Signal(QTreeWidgetItem, int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._drag_start_pos = None
         self._drag_start_items = []
@@ -216,7 +216,7 @@ class SortableTreeWidgetItem(QTreeWidgetItem):
 class LoadingSpinner(QWidget):
     """A modern spinning arc loading indicator, centered over the parent widget."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -232,23 +232,23 @@ class LoadingSpinner(QWidget):
         self._spinner_size = 32
         self._color = QColor(0, 120, 215)  # Blue accent
 
-    def start(self):
+    def start(self) -> None:
         """Show spinner and start animation."""
         self._angle = 0
         self.setVisible(True)
         self._timer.start(16)  # ~60fps
         self.raise_()
 
-    def stop(self):
+    def stop(self) -> None:
         """Hide spinner and stop animation."""
         self._timer.stop()
         self.setVisible(False)
 
-    def _rotate(self):
+    def _rotate(self) -> None:
         self._angle = (self._angle + 6) % 360
         self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, event) -> None:
         if not self.isVisible():
             return
 
@@ -293,15 +293,15 @@ class DirectoryLoader(QObject):
         is_remote: bool,
         sftp: Optional[SFTPClient],
         settings: Settings,
-        parent=None,
-    ):
+        parent: QObject | None = None,
+    ) -> None:
         super().__init__(parent)
         self.path = path
         self.is_remote = is_remote
         self.sftp = sftp
         self.settings = settings
 
-    def run(self):
+    def run(self) -> None:
         """Load directory entries."""
         try:
             if self.is_remote:
@@ -835,6 +835,58 @@ class FileExplorerWidget(QWidget):
             new_folder_path = os.path.join(self.current_path, folder_name)
             self.folder_create_requested.emit(new_folder_path)
 
+    def _expand_tree_to_path(self, tree, root_item, target_path, load_fn) -> None:
+        """
+        Expand the folder picker tree down to target_path and select it.
+
+        Walks the path segments from root to target, expanding and loading
+        each level so the user sees the tree pre-navigated to the current folder.
+        """
+        from PySide6.QtWidgets import QTreeWidgetItem
+
+        if not target_path or not target_path.startswith(self.root_path):
+            return
+
+        # Get the relative path segments from root to target
+        rel = os.path.relpath(target_path, self.root_path)
+        if rel == ".":
+            tree.setCurrentItem(root_item)
+            return
+
+        segments = rel.split(os.sep)
+        current_item = root_item
+
+        for segment in segments:
+            # Expand current item (triggers lazy load via placeholder removal)
+            current_item.setExpanded(True)
+
+            # If children are placeholders, load them manually
+            if current_item.childCount() == 1 and current_item.child(0).text(0) == "":
+                current_item.removeChild(current_item.child(0))
+                folder_path = current_item.data(0, Qt.ItemDataRole.UserRole)
+                load_fn(current_item, folder_path)
+                # Add placeholders for next level
+                for i in range(current_item.childCount()):
+                    child = current_item.child(i)
+                    placeholder = QTreeWidgetItem([""])
+                    child.addChild(placeholder)
+
+            # Find the child matching this segment
+            found = False
+            for i in range(current_item.childCount()):
+                child = current_item.child(i)
+                if child.text(0) == segment:
+                    current_item = child
+                    found = True
+                    break
+
+            if not found:
+                break
+
+        # Select and scroll to the final item
+        tree.setCurrentItem(current_item)
+        tree.scrollToItem(current_item)
+
     def _handle_move_item(self, src_path: str) -> None:
         """Handle moving an item — show a folder picker dialog."""
         from PySide6.QtWidgets import (
@@ -862,7 +914,7 @@ class FileExplorerWidget(QWidget):
         dialog_layout.addWidget(tree)
 
         # Populate tree with remote folders
-        def _load_folder(parent_item, path):
+        def _load_folder(parent_item: QTreeWidgetItem, path: str) -> None:
             """Load subfolders into tree item."""
             try:
                 if self.is_remote and self.sftp:
@@ -897,7 +949,7 @@ class FileExplorerWidget(QWidget):
             except Exception:
                 pass
 
-        def _on_item_expanded(item):
+        def _on_item_expanded(item: QTreeWidgetItem) -> None:
             """Lazy-load subfolders when expanded."""
             # Only load if children haven't been loaded yet
             if item.childCount() == 1 and item.child(0).text(0) == "":
@@ -925,6 +977,10 @@ class FileExplorerWidget(QWidget):
             child.addChild(placeholder)
 
         root_item.setExpanded(True)
+
+        # Auto-expand to the current directory of the file being moved
+        current_dir = os.path.dirname(src_path)
+        self._expand_tree_to_path(tree, root_item, current_dir, _load_folder)
 
         # Buttons
         buttons = QDialogButtonBox(
@@ -981,7 +1037,7 @@ class FileExplorerWidget(QWidget):
         dialog_layout.addWidget(tree)
 
         # Populate tree with remote folders
-        def _load_folder(parent_item, path):
+        def _load_folder(parent_item: QTreeWidgetItem, path: str) -> None:
             """Load subfolders into tree item."""
             try:
                 if self.is_remote and self.sftp:
@@ -1016,7 +1072,7 @@ class FileExplorerWidget(QWidget):
             except Exception:
                 pass
 
-        def _on_item_expanded(item):
+        def _on_item_expanded(item: QTreeWidgetItem) -> None:
             """Lazy-load subfolders when expanded."""
             if item.childCount() == 1 and item.child(0).text(0) == "":
                 item.removeChild(item.child(0))
@@ -1042,6 +1098,10 @@ class FileExplorerWidget(QWidget):
             child.addChild(placeholder)
 
         root_item.setExpanded(True)
+
+        # Auto-expand to the current directory of the items being moved
+        current_dir = os.path.dirname(src_paths[0])
+        self._expand_tree_to_path(tree, root_item, current_dir, _load_folder)
 
         # Buttons
         buttons = QDialogButtonBox(
@@ -1112,7 +1172,7 @@ class FileExplorerWidget(QWidget):
             preview_list.addItem(f"{name} → {name}")
 
         # Update preview on input change
-        def update_preview():
+        def update_preview() -> None:
             find_text = find_input.text()
             preview_list.clear()
             for name in basenames:
@@ -1473,14 +1533,14 @@ class FileExplorerWidget(QWidget):
             finished = Signal(list)
             error = Signal(str)
 
-            def __init__(self, sftp, base_path, query, max_depth=3):
+            def __init__(self, sftp: object, base_path: str, query: str, max_depth: int = 3) -> None:
                 super().__init__()
                 self.sftp = sftp
                 self.base_path = base_path
                 self.query = query
                 self.max_depth = max_depth
 
-            def run(self):
+            def run(self) -> None:
                 try:
                     results = []
                     self._search_dir(self.base_path, results, 0)
@@ -1488,7 +1548,7 @@ class FileExplorerWidget(QWidget):
                 except Exception as e:
                     self.error.emit(str(e))
 
-            def _search_dir(self, path, results, depth):
+            def _search_dir(self, path: str, results: list, depth: int) -> None:
                 if depth > self.max_depth:
                     return
                 try:
@@ -1512,7 +1572,7 @@ class FileExplorerWidget(QWidget):
                 except Exception:
                     pass
 
-            def _fmt_size(self, size_bytes):
+            def _fmt_size(self, size_bytes: int) -> str:
                 if size_bytes < 1024:
                     return f"{size_bytes} B"
                 elif size_bytes < 1024 * 1024:
@@ -1951,7 +2011,8 @@ class FileExplorerWidget(QWidget):
         - Move files to the target location
         """
         # First check if we're dropping on a tree item (internal drop)
-        item_at_drop = self.tree_widget.itemAt(event.position().toPoint())
+        drop_pos = self.tree_widget.mapFrom(self, event.position().toPoint())
+        item_at_drop = self.tree_widget.itemAt(drop_pos)
 
         # Check if this is an internal drag (internal MIME format)
         is_internal_drag = event.mimeData().hasFormat("application/x-explorer-items")
