@@ -14,7 +14,7 @@
 | Dependency Management       | ✅ Complete  | pip-tools with locked versions              |
 | CI/CD Automation            | ✅ Basic     | Build + release on tag push                 |
 | Documentation               | ✅ Good      | Architecture, roadmap, internal guides      |
-| Testing & QA                | ❌ Missing   | No test suite yet                           |
+| Testing & QA                | ✅ Complete  | 132 unit tests, pytest, CI on push to dev   |
 | Code Quality Tools          | ✅ Enforced  | black, isort, flake8 via `make format/lint` |
 | Release Management          | ✅ Automated | `make release V=X.Y.Z`                      |
 
@@ -74,66 +74,22 @@ Infrastructure (Paramiko SFTP, ADB subprocess, Filesystem)
 
 ## What's Next (When You're Ready)
 
-### Testing (HIGH value)
+### Expand Test Coverage
 
-Add a `tests/` directory with pytest:
+Current tests cover services, models, and utilities. Next steps:
 
-```bash
-pip install pytest pytest-cov
-pytest tests/ --cov=src
-```
+- Integration tests for transfer flows (mock SFTP)
+- Widget tests using `pytest-qt` (requires display)
+- End-to-end connection tests against a local SSH server
 
-Focus on:
+### CI Quality Gates
 
-- Settings validation (Pydantic model edge cases)
-- Error hierarchy (correct exceptions raised)
-- Helper utilities (path formatting, size calculations)
+Already implemented in `.github/workflows/quality.yml`:
 
-Skip UI tests initially — they require Qt display server setup.
-
-### Code Formatting (LOW effort)
-
-Already configured and working via Makefile:
-
-```bash
-make format   # runs black + isort
-make lint     # runs flake8
-```
-
-### Linting (MEDIUM effort)
-
-Already working:
-
-```bash
-make lint
-# Or directly:
-.venv/bin/python -m flake8 src main.py
-.venv/bin/python -m mypy src main.py
-```
-
-### CI Quality Gates (FUTURE)
-
-When you have tests and formatted code, add a second workflow that runs on push to `dev`:
-
-```yaml
-# .github/workflows/quality.yml
-name: Quality Checks
-on:
-  push:
-    branches: [dev]
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: pip install black isort flake8
-      - run: black --check src main.py
-      - run: isort --check-only src main.py
-      - run: flake8 src main.py
-```
+- Runs on every push to `dev` and PRs to `main`
+- Checks formatting (black, isort)
+- Runs flake8 lint
+- Runs full test suite
 
 ---
 
@@ -158,9 +114,10 @@ Production (4 packages):
 - **Pydantic** — Settings validation
 - **send2trash** — Safe file deletion
 
-Development tools (configured, optional):
+Development tools:
 
-- pytest, pytest-cov — testing
+- pytest, pytest-cov, pytest-qt — testing
 - black, isort — formatting
 - flake8, mypy, pylint — linting
-- build — packaging
+- build, twine, pyinstaller — packaging & distribution
+- pip-tools — dependency management

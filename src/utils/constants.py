@@ -25,7 +25,6 @@ PLACEHOLDER_NO_DEVICES = "No devices — plug in via USB"
 # Dialog titles
 DIALOG_MOVE_FAILED = "Move Failed"
 DIALOG_DELETION_FAILED = "Deletion Failed"
-DIALOG_RENAME_FAILED = "Rename Failed"
 DIALOG_CREATION_FAILED = "Creation Failed"
 DIALOG_CONNECTION_LOST = "Connection Lost"
 DIALOG_CONNECTION_FAILED = "Connection Failed"

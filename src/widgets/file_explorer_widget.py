@@ -469,7 +469,6 @@ class FileExplorerWidget(QWidget):
 
     Emits:
         - directory_changed(str): when current_path changes to a new directory
-        - file_opened(str): when a file is double-clicked
         - file_delete_requested(str): when user requests delete via context menu
         - file_rename_requested(str): when user requests rename via context menu
         - folder_create_requested(str): when user creates a new folder
@@ -487,7 +486,6 @@ class FileExplorerWidget(QWidget):
     files_dropped = Signal(
         list, str
     )  # [local_paths], remote_dest_dir (or local dest dir)
-    file_opened = Signal(str)
     file_rename_requested = Signal(str)
     folder_create_requested = Signal(str)  # new_folder_path
     item_move_requested = Signal(str, str)  # src_path, dest_path
@@ -1438,15 +1436,11 @@ class FileExplorerWidget(QWidget):
                     self.current_path = new_path
                     self.refresh()
                     self.directory_changed.emit(self.current_path)
-                else:
-                    self.file_opened.emit(new_path)
             else:
                 if os.path.isdir(new_path):
                     self.current_path = new_path
                     self.refresh()
                     self.directory_changed.emit(self.current_path)
-                else:
-                    self.file_opened.emit(new_path)
         except Exception as e:
             error_item = QTreeWidgetItem([f"⚠️ Cannot open {entry}: {e}", ""])
             self.tree_widget.addTopLevelItem(error_item)

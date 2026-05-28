@@ -121,24 +121,17 @@ git commit -m "update dependencies"
 
 ---
 
-## Code Quality (Optional)
+## Code Quality
 
 ```bash
-# Format
+# Format (black + isort)
 make format
 
-# Lint
+# Lint (flake8)
 make lint
 
-# Test (when tests exist)
+# Run tests (132 unit tests)
 make test
-
-# Or run individually:
-black src main.py
-isort src main.py
-flake8 src main.py
-mypy src main.py
-pytest tests/ --cov=src
 ```
 
 ---
