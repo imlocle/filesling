@@ -29,6 +29,7 @@ pyinstaller \
     --hidden-import=paramiko \
     --hidden-import=pydantic \
     --hidden-import=PySide6 \
+    --hidden-import=pymobiledevice3 \
     main.py
 
 echo ""

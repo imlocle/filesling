@@ -7,6 +7,7 @@ GITHUB_REPO_URL = "https://github.com/imlocle/filesling"
 # Connection types
 CONN_TYPE_SSH = "ssh"
 CONN_TYPE_ADB = "adb"
+CONN_TYPE_IOS = "ios"
 CONN_TYPE_KEY = "connection_type"
 
 # Defaults

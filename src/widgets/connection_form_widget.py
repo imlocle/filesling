@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from src.services.connection_manager_service import ConnectionManagerService
 from src.utils.constants import (
     CONN_TYPE_ADB,
+    CONN_TYPE_IOS,
     CONN_TYPE_KEY,
     CONN_TYPE_SSH,
     DEFAULT_ADB_BASE_DIR,
@@ -71,8 +72,12 @@ class ConnectionFormWidget(QWidget):
         self.connection_type_combo.setView(QListView())
         self.connection_type_combo.addItem("SSH (Remote Server)", CONN_TYPE_SSH)
         self.connection_type_combo.addItem("USB (Android Device)", CONN_TYPE_ADB)
+        self.connection_type_combo.addItem("USB (iPhone/iPad)", CONN_TYPE_IOS)
         current_type = self._config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
-        self.connection_type_combo.setCurrentIndex(0 if current_type == "ssh" else 1)
+        type_index = {CONN_TYPE_SSH: 0, CONN_TYPE_ADB: 1, CONN_TYPE_IOS: 2}
+        self.connection_type_combo.setCurrentIndex(
+            type_index.get(current_type, 0)
+        )
         self.connection_type_combo.currentIndexChanged.connect(self._on_type_changed)
         layout.addWidget(self.connection_type_combo)
 
@@ -174,12 +179,46 @@ class ConnectionFormWidget(QWidget):
 
         layout.addWidget(self.adb_group)
 
+        # --- iOS fields ---
+        self.ios_group = QWidget()
+        ios_layout = QVBoxLayout(self.ios_group)
+        ios_layout.setContentsMargins(0, 6, 0, 0)
+        ios_layout.setSpacing(6)
+
+        ios_layout.addWidget(QLabel("Device"))
+        ios_row = QHBoxLayout()
+        ios_row.setSpacing(8)
+        self.ios_device_combo = QComboBox()
+        self.ios_device_combo.setView(QListView())
+        self.ios_device_combo.setPlaceholderText("No iPhone detected — plug in via USB")
+        self._refresh_ios_devices()
+        self.ios_refresh_btn = QPushButton("↻")
+        self.ios_refresh_btn.setObjectName("icon_btn")
+        self.ios_refresh_btn.setToolTip("Refresh devices")
+        self.ios_refresh_btn.clicked.connect(self._refresh_ios_devices)
+        ios_row.addWidget(self.ios_device_combo, stretch=1)
+        ios_row.addWidget(self.ios_refresh_btn)
+        ios_layout.addLayout(ios_row)
+
+        ios_hint = QLabel(
+            "Unlock the device and tap 'Trust This Computer' when prompted."
+        )
+        ios_hint.setObjectName("secondary_label")
+        ios_hint.setWordWrap(True)
+        ios_layout.addWidget(ios_hint)
+
+        layout.addWidget(self.ios_group)
+
         # --- Base directory ---
         layout.addWidget(QLabel("Base Directory"))
         default_base = (
-            DEFAULT_ADB_BASE_DIR
-            if current_type == CONN_TYPE_ADB
-            else DEFAULT_REMOTE_BASE_DIR
+            "/DCIM"
+            if current_type == CONN_TYPE_IOS
+            else (
+                DEFAULT_ADB_BASE_DIR
+                if current_type == CONN_TYPE_ADB
+                else DEFAULT_REMOTE_BASE_DIR
+            )
         )
         self.remote_base_dir_input = QLineEdit(
             self._config.get("remote_base_dir", default_base)
@@ -196,6 +235,7 @@ class ConnectionFormWidget(QWidget):
         # Show/hide
         self.adb_group.setVisible(current_type == CONN_TYPE_ADB)
         self.ssh_group.setVisible(current_type == CONN_TYPE_SSH)
+        self.ios_group.setVisible(current_type == CONN_TYPE_IOS)
 
         # Test connection
         test_btn = QPushButton("Test Connection")
@@ -225,6 +265,13 @@ class ConnectionFormWidget(QWidget):
                 "device_id": self.adb_device_combo.currentData() or "",
                 "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip()
                 or DEFAULT_ADB_BASE_DIR,
+            }
+        elif conn_type == CONN_TYPE_IOS:
+            return {
+                CONN_TYPE_KEY: CONN_TYPE_IOS,
+                "device_id": self.ios_device_combo.currentData() or "",
+                "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip()
+                or "/DCIM",
             }
         else:
             config = {
@@ -263,20 +310,34 @@ class ConnectionFormWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _on_type_changed(self, index: int) -> None:
-        is_adb = self.connection_type_combo.currentData() == CONN_TYPE_ADB
-        self.adb_group.setVisible(is_adb)
-        self.ssh_group.setVisible(not is_adb)
+        conn_type = self.connection_type_combo.currentData()
+        self.adb_group.setVisible(conn_type == CONN_TYPE_ADB)
+        self.ssh_group.setVisible(conn_type == CONN_TYPE_SSH)
+        self.ios_group.setVisible(conn_type == CONN_TYPE_IOS)
         current_text = self.remote_base_dir_input.text().strip()
-        if is_adb and current_text in ("", DEFAULT_REMOTE_BASE_DIR):
+        if conn_type == CONN_TYPE_ADB and current_text in (
+            "", DEFAULT_REMOTE_BASE_DIR, "/DCIM"
+        ):
             self.remote_base_dir_input.setText(DEFAULT_ADB_BASE_DIR)
-        elif not is_adb and current_text in ("", DEFAULT_ADB_BASE_DIR):
+        elif conn_type == CONN_TYPE_IOS and current_text in (
+            "", DEFAULT_REMOTE_BASE_DIR, DEFAULT_ADB_BASE_DIR
+        ):
+            self.remote_base_dir_input.setText("/DCIM")
+        elif conn_type == CONN_TYPE_SSH and current_text in (
+            "", DEFAULT_ADB_BASE_DIR, "/DCIM"
+        ):
             self.remote_base_dir_input.setText(DEFAULT_REMOTE_BASE_DIR)
         self._update_base_dir_hint()
 
     def _update_base_dir_hint(self) -> None:
         """Update the hint text below Base Directory based on connection type."""
-        is_adb = self.connection_type_combo.currentData() == CONN_TYPE_ADB
-        if is_adb:
+        conn_type = self.connection_type_combo.currentData()
+        if conn_type == CONN_TYPE_IOS:
+            self._base_dir_hint.setText(
+                "iPhone camera roll is at /DCIM. Other folders: "
+                "/Downloads, /Photos, /iTunes_Control."
+            )
+        elif conn_type == CONN_TYPE_ADB:
             self._base_dir_hint.setText(
                 "Android internal storage is typically /storage/emulated/0. "
                 "Common folders: Download, DCIM, Movies, Music."
@@ -329,6 +390,41 @@ class ConnectionFormWidget(QWidget):
             self.adb_device_combo.setCurrentIndex(0)
         else:
             self.adb_device_combo.setPlaceholderText(PLACEHOLDER_NO_DEVICES)
+
+    def _refresh_ios_devices(self) -> None:
+        from src.services.ios_client import get_connected_ios_devices
+
+        self.ios_device_combo.clear()
+        saved_device_id = self._config.get("device_id", "")
+        saved_name = self._config.get("name", "")
+
+        try:
+            devices = get_connected_ios_devices()
+        except Exception:
+            devices = []
+
+        if devices:
+            for device in devices:
+                label = f"{device['name']}"
+                if device["model"]:
+                    label += f" ({device['model']})"
+                self.ios_device_combo.addItem(label, device["id"])
+
+            # Select saved device if in list
+            if saved_device_id:
+                for i in range(self.ios_device_combo.count()):
+                    if self.ios_device_combo.itemData(i) == saved_device_id:
+                        self.ios_device_combo.setCurrentIndex(i)
+                        return
+        elif saved_device_id:
+            disconnected_label = (
+                f"{saved_name} (disconnected)" if saved_name else saved_device_id
+            )
+            self.ios_device_combo.addItem(disconnected_label, saved_device_id)
+        else:
+            self.ios_device_combo.setPlaceholderText(
+                "No iPhone detected — plug in via USB"
+            )
 
     def _test_ssh(self) -> None:
         from src.config.settings import SettingsConfig

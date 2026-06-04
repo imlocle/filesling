@@ -14,46 +14,15 @@
 
 ## 🔮 Future Directions
 
-### 1. SCP / rsync — Faster Transfers
+### 1. ~~SCP / rsync — Faster Transfers~~ ✅ Done
 
-> Highest priority. Directly improves the core job: moving files fast.
-
-- [x] **rsync backend for SSH servers** — only transfers the changed parts of files (delta sync)
-  - Example: re-uploading a 4GB video after a small edit transfers only the diff, not the whole file
-  - Much faster for large files and folders that partially exist on the remote
-- [x] **Auto-pick the fastest method** — use rsync if available on the server, fall back to SFTP
-- [x] Show "delta: only 12 MB of 4 GB transferred" savings in the diagnostics log
-- [x] ~~SCP for raw speed~~ — subsumed by rsync (rsync handles single files too, with delta + resume that SCP lacks)
-
-> Implementation: `src/services/rsync_service.py` runs `rsync -az --partial --stats` over
-> SSH. Requires SSH key auth (BatchMode); password-auth servers fall back to SFTP. macOS
-> ships with rsync; most Linux servers have it too. Falls back gracefully if unavailable.
+> See [CHANGELOG.md](CHANGELOG.md). Implemented June 2026.
 
 ---
 
-### 2. iPhone / iOS — Back Up Photos & Videos
+### 2. ~~iPhone / iOS — Back Up Photos & Videos~~ ✅ Done
 
-> The use case: an iPhone with a full camera roll and full iCloud. Plug it into the Mac,
-> browse the photos/videos, and offload them to any server you've attached (NAS, SSH, S3).
-> This pairs with the existing Android support to make FileSling the device backup tool
-> for Mac — both major phone platforms covered.
-
-- [ ] **iOS backend** via `libimobiledevice` (open source, USB over the AFC protocol)
-  - Exposes the iPhone's camera roll (DCIM — all photos and videos) as a browsable filesystem
-  - No jailbreak required; the media folder is accessible once the device is paired/trusted
-- [ ] Browse the camera roll in the same explorer UI (like ADB for Android)
-- [ ] Select photos/videos → transfer to any attached server
-- [ ] Handle the trust prompt: detect "device locked / not trusted" and tell the user to
-      unlock the phone and tap "Trust This Computer"
-- [ ] Auto-detect a connected iPhone like we do for Android USB devices
-
-> **Feasibility:** Solid for photos/videos. `libimobiledevice` + AFC reads the media
-> partition without special access. **Limits:** it can only reach the camera roll and a few
-> media folders — not app data, Messages, or hidden iCloud-only content (photos that were
-> offloaded to iCloud and aren't physically on the device won't appear until downloaded).
-> Full device backups (`idevicebackup2`) produce an encrypted blob, not browsable files —
-> out of scope. Requires `libimobiledevice` installed (Homebrew); FileSling would prompt to
-> install it, same pattern as the ADB install helper.
+> See [CHANGELOG.md](CHANGELOG.md). Implemented June 2026.
 
 ---
 

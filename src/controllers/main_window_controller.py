@@ -20,6 +20,7 @@ from src.models.errors import (
 from src.services.connection_manager_service import ConnectionManagerService
 from src.utils.constants import (
     CONN_TYPE_ADB,
+    CONN_TYPE_IOS,
     CONN_TYPE_KEY,
     CONN_TYPE_SSH,
     DEFAULT_ADB_BASE_DIR,
@@ -203,10 +204,11 @@ class MainWindowController:
     def _check_connection_health(self) -> None:
         """Periodic connection health check with auto-reconnect."""
         from src.services.adb_client import ADBClient
+        from src.services.ios_client import IOSClient
 
-        # Skip health check for ADB connections (stateless)
+        # Skip health check for ADB/iOS connections (stateless USB)
         if self.view.remote_explorer.sftp and isinstance(
-            self.view.remote_explorer.sftp, ADBClient
+            self.view.remote_explorer.sftp, (ADBClient, IOSClient)
         ):
             return
 
@@ -312,6 +314,10 @@ class MainWindowController:
             self._connect_adb(server_config)  # type: ignore
             return
 
+        if connection_type == CONN_TYPE_IOS:
+            self._connect_ios(server_config)  # type: ignore
+            return
+
         self._connect_ssh()
 
     def _connect_adb(self, server_config: dict) -> None:
@@ -381,6 +387,83 @@ class MainWindowController:
                 self.view.connection_status_label
             )
             logger.error(f"ADB connection failed: {e}")
+
+    def _connect_ios(self, server_config: dict) -> None:
+        """Connect to an iPhone/iPad via USB (AFC protocol)."""
+        from src.services.ios_client import IOSClient, get_connected_ios_devices
+
+        device_id = server_config.get("device_id")
+        device_name = server_config.get("name", "iPhone")
+        root_path = server_config.get("remote_base_dir", "/DCIM")
+
+        # Check for connected devices
+        devices = get_connected_ios_devices()
+        if not devices:
+            self.view.connection_status_label.setText("● No iPhone found")
+            self.view.connection_status_label.setObjectName("connection_disconnected")
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
+            )
+            logger.error("iOS: No device connected via USB")
+            QMessageBox.warning(
+                self.view,
+                "No iPhone Found",
+                "No iPhone or iPad detected.\n\n"
+                "Make sure the device is:\n"
+                "• Plugged in via USB\n"
+                "• Unlocked\n"
+                "• Trusted (tap 'Trust This Computer' on the device)\n\n"
+                "If pymobiledevice3 is not installed, run:\n"
+                "pip install pymobiledevice3",
+            )
+            return
+
+        # Use specified device or first available
+        if device_id:
+            matching = [d for d in devices if d["id"] == device_id]
+            if not matching:
+                logger.warn(
+                    f"iOS: Device {device_id} not found, using first available"
+                )
+                device_id = devices[0]["id"]
+        else:
+            device_id = devices[0]["id"]
+
+        try:
+            client = IOSClient(device_id)
+            # Test connection by listing root
+            client.listdir(root_path)
+
+            # Success — bind to explorer
+            self.view.connection_status_label.setText(
+                f"● Connected: {device_name} (iPhone)"
+            )
+            self.view.connection_status_label.setObjectName("connection_connected")
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
+            )
+
+            start_path = self._get_initial_explorer_path(root_path)
+            self.view.remote_explorer.root_path = root_path
+            self.view.remote_explorer.set_sftp(client)
+            self.view.remote_explorer.refresh(start_path)
+
+            logger.success(f"Connected: {device_name} (iPhone)")
+
+        except Exception as e:
+            self.view.connection_status_label.setText("● iOS Error")
+            self.view.connection_status_label.setObjectName("connection_disconnected")
+            self.view.connection_status_label.style().polish(
+                self.view.connection_status_label
+            )
+            logger.error(f"iOS connection failed: {e}")
+            QMessageBox.critical(
+                self.view,
+                "iOS Connection Error",
+                f"Failed to connect to iPhone:\n\n{e}\n\n"
+                "Make sure pymobiledevice3 is installed:\n"
+                "pip install pymobiledevice3",
+            )
 
     def _prompt_install_adb(self) -> None:
         """Show dialog to help user install ADB."""
