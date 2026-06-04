@@ -1,290 +1,248 @@
-# FileSling — Feature Ideas & Improvements
+# FileSling — Roadmap
 
-> A living document of ideas for advancing the application.
+> Ideas for advancing the application. For completed work, see [CHANGELOG.md](CHANGELOG.md).
 
----
-
-## ✅ Completed
-
-### Transfer Queue
-
-- [x] Visual queue panel showing pending/in-progress/completed transfers
-- [x] Show transfer speed (MB/s) and ETA
-- [x] Retry failed transfers with one click
-- [x] Cancel individual queued transfers
-
-### Keyboard Shortcuts
-
-- [x] `⌘+Delete` — Delete selected items
-- [x] `⌘+R` — Refresh explorer
-- [x] `Enter` — Navigate into folder / execute search
-- [x] `⌘+↑` — Go back / up one directory
-- [x] `⌘+N` — New folder
-- [x] `⌘+F` — Focus search bar
-- [x] `Escape` — Clear search / deselect all
-
-### Disk Space Indicator
-
-- [x] Visual bar below explorer showing used/total
-- [x] Color-coded: blue → orange (75%) → red (90%)
-- [x] Updates for the current browsed filesystem, including mounted drives
-
-### Search & Filter
-
-- [x] Always-visible search bar above explorer
-- [x] Recursive search across subdirectories (3 levels deep)
-- [x] Background thread search with loading spinner
-- [x] Enter to search, Escape to clear
-
-### Android Device Support (USB via ADB)
-
-- [x] ADB transport backend — `adb push/pull/shell`
-- [x] Auto-detect connected devices via `adb devices`
-- [x] Browse device filesystem via `adb shell ls`
-- [x] Transfer files via `adb push` (upload)
-- [x] Same explorer UI, just a different connection backend
-- [x] Works with phones, tablets, Quest VR headsets
-- [x] Add Server UI supports USB device type selection
-- [x] Test Connection works for both SSH and ADB
-- [x] Device picker with refresh button
-
-### UI/UX Improvements
-
-- [x] Inline rename (slow-click to edit)
-- [x] Multi-select delete
-- [x] Folder picker dialog for Move To
-- [x] Auto-connect to default server on launch
-- [x] "Don't ask again" on exit confirmation
-- [x] Tightened button sizes, tooltips, toolbar layout
-- [x] Modern dropdown styling with hover highlights
-- [x] Input hover/focus border highlights
-- [x] Loading spinner for remote directory browsing
-- [x] Sortable columns (name, size)
-
-### Code Cleanup
-
-- [x] Removed all auto-sync/monitoring code
-- [x] Removed watchdog, pillow, pydantic-settings dependencies
-- [x] Removed 16 unused error classes
-- [x] Renamed pi_user → username, pi_ip → host (no legacy fields)
-- [x] Removed path_mapper, monitor_thread, file_monitor_repository
-- [x] Cleaned up log format (concise, no duplicates)
-- [x] Extracted ConnectionFormWidget from settings_window
-- [x] Centralized hardcoded strings into constants.py
-- [x] Removed local watch directory / Transfers folder creation
-
-### Duplicate Detection
-
-- [x] Warn before uploading a file that already exists on remote
-- [x] Options: skip, overwrite, cancel
-- [x] Compare by name (stat check on remote)
-
-### Download from Server
-
-- [x] Right-click → "Download" to pull files back to Mac
-- [x] Configurable download directory in Settings → Files tab
-- [x] Download progress in the same queue system
-- [x] Duplicate detection (warns if file already exists locally)
-- [x] Downloads show as "⬇️ Downloading" in transfer queue
-
-### Transfer History
-
-- [x] Persist transfer history between sessions (JSON log)
-- [x] Records uploads and downloads with filename, size, timestamp, server
-- [x] Search history by filename
-- [x] "Did I already upload this?" lookup
-
-### Bookmarked Folders
-
-- [x] Right-click folder → "⭐ Bookmark" to save
-- [x] Bookmark bar above explorer with quick-access buttons
-- [x] Click bookmark to navigate directly
-- [x] Remove bookmark via right-click → "⭐ Remove Bookmark"
-- [x] Persists per server between sessions
-- [x] Set a bookmarked folder as the default start folder for that server
-
-### Transfer Resilience
-
-- [x] Retry failed uploads automatically (3 attempts)
-- [x] Queue persistence — don't lose queued upload items if app crashes
-
-### UI/Diagnostics
-
-- [x] Removed duplicate explorer title
-- [x] Made Transfers panel larger and expandable
-- [x] Hid diagnostics logs from the main screen
-- [x] Diagnostics log available from View menu
-- [x] Added macOS-style light/dark themes with a Follow System option
-- [x] Reduced custom dark widget styling so themes can apply consistently
-
-### ADB (Android) Fixes
-
-- [x] Explorer refreshes after upload completes
-- [x] File sizes showing correctly (single-call listdir_attr)
-- [x] Disk usage bar works for Android devices
-- [x] All file operations (create, rename, delete, move, upload) work with ADB
-- [x] No crash when navigating away while a large folder is loading
-- [x] Auto-connect to USB device when plugged in (prioritizes over default server)
-- [x] Progressive/chunked directory loading for large folders (streams items in batches of 50)
-
-### Theme Support
-
-- [x] Light mode option
-- [x] Follow system appearance (dark/light)
-
-### Multi-Select Transfers
-
-- [x] Select multiple files → right-click → Download all
-- [x] Select multiple files → right-click → Move all to folder
-- [x] Select multiple files → right-click → Delete all (context menu + ⌘+Delete)
-
-### Notifications
-
-- [x] macOS notification when transfer completes (uploads and downloads)
-- [x] Notification on transfer failure
-- [x] Toggle in Settings → Files tab
-
-### Bug Fixes
-
-- [x] Fix crash when closing window during initial server selection (controller not yet initialized)
-
-### Quality of Life
-
-- [x] Remember window size/position between sessions
-- [x] Confirm before deleting files (single and multi-select)
-- [x] "Open in Finder" for downloaded files (auto-reveals after download)
-- [x] Breadcrumb path bar is clickable (navigate to any parent folder)
-- [x] Transfer history panel (View menu → Transfer History)
-
----
-
-## 🚀 v3.0.0
-
-### Connection Health
-
-- [x] Auto-reconnect when connection drops
-- [x] Visual indicator for connection quality
-- [x] Show latency in status bar
-
-### File Previews
-
-- [x] Show file type icons (video, subtitle, image, etc.)
-- [x] File info tooltip on hover (full path, modified date, size)
-
-### Batch Rename
-
-- [x] Select multiple files → batch rename with pattern
-- [x] Find & replace in filenames
-
-### Drag from Explorer to Finder
-
-- [x] Drag a remote file to Finder to download it
-
-### Transfer Resilience
-
-- [x] Resume interrupted transfers (track partial uploads)
-- [x] Extend retry/persistence behavior to downloads
-
-### Notifications
-
-- [x] Sound on completion (optional, toggle in settings)
-- [x] Badge app icon with pending transfer count
-
-### Drag-and-Drop Improvements
-
-- [x] Drop onto a folder in the tree to upload directly into it
-- [x] Visual drop target highlight on specific folders
-- [x] Drop multiple folders — preserve structure
-
-### Settings & Config
-
-- [x] Export/import settings (share config between machines)
-- [x] Per-server file extension filters
-- [x] Per-server download directory
-
-### Performance
-
-- [x] Parallel uploads (configurable: 1-4 simultaneous transfers) — setting added, sequential processing for stability
-- [x] Compress before transfer option (zip folder → upload)
-- [x] Skip unchanged files (compare size on remote before re-uploading)
-
-### Security
-
-- [x] SSH key passphrase support
-- [x] Password-based SSH auth as fallback
-- [x] Remember last N connected servers securely in keychain
+> FileSling's architecture (backend abstraction where ADBClient mimics SFTPClient) means
+> new connection types can be added without changing the explorer UI. Each backend just
+> needs: listdir, stat, put, get, rename, mkdir, remove.
+>
+> **Design philosophy:** FileSling is a manual, power-user tool. You stay in control of
+> every transfer. No background syncing, no "magic" that moves your files without you
+> asking. Automation ideas live at the very bottom and are opt-in only.
 
 ---
 
 ## 🔮 Future Directions
 
-> FileSling's architecture (backend abstraction where ADBClient mimics SFTPClient) means
-> new connection types can be added without changing the explorer UI. Each backend just
-> needs: listdir, stat, put, get, rename, mkdir, remove.
+### 1. SCP / rsync — Faster Transfers
+
+> Highest priority. Directly improves the core job: moving files fast.
+
+- [ ] **rsync backend for SSH servers** — only transfers the changed parts of files (delta sync)
+  - Example: re-uploading a 4GB video after a small edit transfers only the diff, not the whole file
+  - Much faster for large files and folders that partially exist on the remote
+- [ ] **SCP for raw speed** — skips SFTP protocol overhead for straight copies
+  - Good for one-shot bulk transfers where you don't need to browse mid-transfer
+- [ ] **Auto-pick the fastest method** — use rsync if available on the server, fall back to SFTP
+- [ ] Show "delta: only 12 MB of 4 GB transferred" in the queue so you see the savings
+
+> Note: rsync/scp require the binaries on both ends. macOS ships with both; most Linux
+> servers have rsync. FileSling would detect availability and fall back gracefully.
+
+---
+
+### 2. iPhone / iOS — Back Up Photos & Videos
+
+> The use case: an iPhone with a full camera roll and full iCloud. Plug it into the Mac,
+> browse the photos/videos, and offload them to any server you've attached (NAS, SSH, S3).
+> This pairs with the existing Android support to make FileSling the device backup tool
+> for Mac — both major phone platforms covered.
+
+- [ ] **iOS backend** via `libimobiledevice` (open source, USB over the AFC protocol)
+  - Exposes the iPhone's camera roll (DCIM — all photos and videos) as a browsable filesystem
+  - No jailbreak required; the media folder is accessible once the device is paired/trusted
+- [ ] Browse the camera roll in the same explorer UI (like ADB for Android)
+- [ ] Select photos/videos → transfer to any attached server
+- [ ] Handle the trust prompt: detect "device locked / not trusted" and tell the user to
+      unlock the phone and tap "Trust This Computer"
+- [ ] Auto-detect a connected iPhone like we do for Android USB devices
+
+> **Feasibility:** Solid for photos/videos. `libimobiledevice` + AFC reads the media
+> partition without special access. **Limits:** it can only reach the camera roll and a few
+> media folders — not app data, Messages, or hidden iCloud-only content (photos that were
+> offloaded to iCloud and aren't physically on the device won't appear until downloaded).
+> Full device backups (`idevicebackup2`) produce an encrypted blob, not browsable files —
+> out of scope. Requires `libimobiledevice` installed (Homebrew); FileSling would prompt to
+> install it, same pattern as the ADB install helper.
+
+---
+
+### 3. SMB/CIFS — Connect to Windows PCs and NAS Devices
+
+> You asked what a NAS is: a **N**etwork **A**ttached **S**torage device — basically a
+> small always-on box (Synology, QNAP, etc.) or even an old PC that holds files and shares
+> them over your home network. SMB is the protocol Windows and NAS devices use for file
+> sharing. This lets FileSling browse them like any other server.
+
+- [ ] **SMB/CIFS backend** (via `pysmb` or `smbprotocol`)
+  - Example: connect to `\\192.168.1.50\Media` on your Windows PC and drag files in
+  - Example: browse a Synology/QNAP NAS share without their clunky web UI
+- [ ] Username/password auth (SMB doesn't use SSH keys)
+- [ ] Auto-discover SMB shares on the local network (optional, via mDNS/WS-Discovery)
+- [ ] Remember mounted shares per server like SSH/ADB
+
+---
+
+### 4. S3 — AWS Bucket Transfers
+
+> Useful since you already know AWS. The main question you raised — "how do I sign in?" —
+> is handled below.
+
+- [ ] **S3 backend** (via `boto3`)
+- [ ] **Auth flow** — FileSling reads standard AWS credentials, in this order:
+  1. A profile from `~/.aws/credentials` (what you get after running `aws configure`)
+  2. Manually entered Access Key ID + Secret Access Key in the Add Server dialog
+  3. Stored securely in the macOS Keychain (reuse the existing keychain service)
+  - You'd pick a profile or paste keys once; FileSling never sends them anywhere but AWS
+- [ ] Browse buckets and "folders" (S3 prefixes) in the same explorer
+- [ ] Upload/download with multipart for large files (boto3 handles this)
+- [ ] Show storage class (Standard, Glacier) and let you set it on upload
+- [ ] Optional: region selector per bucket
+
+---
+
+### 5. Google Drive — Cloud Backup Target
+
+> Another good backup destination, especially if the goal is getting photos/videos off a
+> full iCloud and into a place with more room. Cleanly fits the backend model.
+
+- [ ] **Google Drive backend** (via `google-api-python-client`)
+- [ ] **Auth flow (OAuth2):**
+  1. Click "Connect Google Drive" → opens your browser to Google's login/consent screen
+  2. You approve access once; Google hands back a token
+  3. Token stored in the macOS Keychain and refreshed automatically — you won't re-login each time
+- [ ] Browse Drive folders in the same explorer (maps Drive's ID-based model to paths)
+- [ ] Upload/download with resumable transfers (the Drive API supports this for big files)
+- [ ] Handle Google's quirks: a file can technically live in multiple folders, and folders
+      are a special MIME type — the adapter normalizes this to a normal tree
+- [ ] Optional later: support Shared Drives (Team Drives)
+
+> **Feasibility:** Well-supported API. The extra work vs. S3 is the OAuth browser flow and
+> mapping Drive's non-hierarchical model to a folder tree. **Alternative considered:** shell
+> out to `rclone` (which already speaks Drive, S3, Dropbox, etc.). That would add many
+> backends at once but changes the architecture to "drive rclone" instead of native Python
+> adapters — worth weighing if cloud backends pile up.
+
+---
+
+### 6. Multi-Server Quick-Switch
+
+> The dialog-free switching you liked.
+
+- [ ] **Server dropdown in the toolbar** — switch active server with one click, no dialog
+- [ ] Show connection status dot next to each server name (green/red/connecting)
+- [ ] Remember the last-browsed path per server so switching feels instant
+- [ ] **Split-pane mode** (later) — two servers side by side, drag files directly between them
+  - Example: NAS on the left, S3 bucket on the right, drag to copy between them
+  - This is the power-user dream: server-to-server transfers without round-tripping through your Mac
+
+---
+
+### 7. macOS Native Polish
+
+> Everything here except the Touch Bar (agreed — that was a bad idea Apple killed anyway).
+> These are small, native touches that make it feel like a real Mac app.
+
+- [ ] **Menu bar icon with a drop zone** — drag a file onto the menu bar icon to quick-send
+      to your default server without opening the full window
+- [ ] **Finder extension** — right-click any file in Finder → "Send with FileSling"
+- [ ] **Quick Look preview** — press spacebar on a remote file to preview it (downloads a
+      temp copy and hands it to macOS Quick Look, just like Finder)
+- [ ] **Native share sheet** — "Share → FileSling" from other apps
+- [ ] **Spotlight-style transfer history search** — fast in-app search of everything you've sent
+- [ ] ~~Touch Bar support~~ — skipped on purpose
+
+---
+
+### 8. MTP — Android Without Developer Mode
+
+> You asked: is it worth it, and can ADB and MTP coexist? Short answer: **yes they can
+> coexist** (MTP would just be another backend type), but it's **lower priority** because
+> `libmtp` is genuinely flaky on macOS — slow enumeration, random disconnects. ADB is more
+> reliable whenever the user can enable USB Debugging.
+
+- [ ] **MTP backend** (via `libmtp`) as a fallback when ADB isn't available
+  - Use case: a friend's phone where you can't enable Developer Mode
+- [ ] Keep ADB as the default/preferred Android path; offer MTP only if ADB fails
+- [ ] Clearly label it "experimental" so expectations are set
+
+---
+
+### 9. WebDAV — Self-Hosted & Cloud Drives
+
+> You said you don't know what this is for — that's fine, it's niche. WebDAV is a protocol
+> used by self-hosted cloud apps (Nextcloud), some NAS devices (Synology), and services
+> like Box. If you don't run any of those, you don't need it. Leaving it here for
+> completeness since it's cheap to add once SMB/S3 exist.
+
+- [ ] **WebDAV backend** (via `webdavclient3` or similar)
+- [ ] Username/password or token auth
+- [ ] Useful mainly for people already running Nextcloud/Synology
+
+---
+
+### 10. Integrity & Control (New Ideas)
+
+> These fit your "full control, know exactly what happened" mindset.
+
+- [ ] **Checksum verification** — optionally verify a transfer by comparing MD5/SHA of both
+      sides, not just file size. Catches silent corruption on big media files
+- [ ] **Manual folder compare** — point at a local folder and a remote folder, see a diff
+      (what's only here, only there, or different) and pick what to transfer. This is the
+      _opposite_ of auto-sync: it shows you everything and you decide, nothing moves on its own
+- [ ] **Bandwidth limit** — cap transfer speed (e.g. 5 MB/s) so a big upload doesn't choke
+      your network while you're working
+- [ ] **Per-transfer "reveal source"** — jump from a queue item back to the file in Finder
+- [ ] **Dry run** — preview exactly what a multi-file transfer will do before committing
+
+---
+
+### 11. Plugin System
+
+> You wanted examples to judge if it's useful or overkill. Here's what a plugin could
+> actually do — all **manual, triggered by you**, never background:
+
+- [ ] **Post-transfer hooks** — run a script after a transfer _you_ started
+  - Example: after uploading a video to your NAS, run a script that kicks off Plex to
+    rescan its library
+  - Example: after uploading a `.apk` to a test device, run `adb install` automatically
+- [ ] **Notification integrations** — ping Slack/Discord when a big transfer finishes
+  - Example: "✅ 12 GB backup uploaded to NAS" posted to your private Discord
+- [ ] **Custom destination resolvers** — a plugin that decides where a file goes based on
+      your own rules (you write the logic)
+
+> Verdict: probably **overkill for v1**, but post-transfer hooks alone (run a script after
+> upload) might be worth doing as a single small feature rather than a whole plugin system.
+> Recommend starting with just "run this command after transfer completes" in Settings.
+
+---
+
+## 🧊 Deferred — Automation (Not a Priority)
+
+> Intentionally at the bottom. FileSling is built for people who want manual control. The
+> whole point is _you_ decide when files move — not the app guessing or syncing behind your
+> back. (Same reason you hate auto-synced texts showing up on every Apple device.)
+>
+> If these ever get built, they'd be **strictly opt-in, off by default, and clearly
+> visible** — never silent.
 
 ### Workflow Automation (Rules Engine)
 
-> The next major feature direction. Deterministic, reliable, no AI needed.
-
 - [ ] **Watch Folders** — monitor a local folder, auto-upload new files to a destination
   - Example: `~/Movies/OBS/` → auto-upload to NAS `/recordings/`
-- [ ] **Transfer Rules** — pattern-based routing
-  - Example: `*.mp4` → always send to Android tablet `"/storage/emulated/0/Movies/`
-  - Example: `*.apk` → always send to test device
+- [ ] **Transfer Rules** — pattern-based routing (`*.mp4` → always send to a set folder)
 - [ ] **Device-Aware Actions** — when a specific device connects, run a rule
-  - Example: when Pixel connects → sync latest screenshots
-- [ ] **Smart Destinations** — remember last upload location per file type
-  - "You sent .blend files to /projects/ last 12 times — use that?"
-- [ ] **Auto-Rename Templates** — rename on transfer using patterns
-  - Example: `IMG_*.jpg` → `{date}_{counter}.jpg` using EXIF data
+- [ ] **Auto-Rename Templates** — rename on transfer using patterns (EXIF date, counters)
 - [ ] **Rules UI** — simple list of if/then rules in Settings
 
-### AI-Assisted Suggestions (Phase 3 — Later)
+### AI-Assisted Suggestions
 
-> Built on top of TransferHistoryService data. Minimal, assistive, deterministic.
-
-- [ ] Suggest rules based on repeated transfer patterns
-  - "You've uploaded OBS recordings to Media NAS 12 times. Create a rule?"
+- [ ] Suggest rules based on repeated transfer patterns (built on transfer history)
 - [ ] Suggest destinations based on file type + history
 - [ ] Flag potential duplicates using filename similarity
 - [ ] NOT a chatbot, NOT semantic search, NOT an assistant sidebar
 
-### Additional Backends
+---
 
-- [ ] **SMB/CIFS** — Connect to Windows PCs and NAS devices (pysmb / smbprotocol)
-- [ ] **WebDAV** — Connect to Nextcloud, Synology, Box, etc.
-- [ ] **S3** — Browse and transfer to AWS S3 buckets (boto3)
-- [ ] **MTP** — Android without Developer Mode (libmtp, flaky on macOS)
-- [ ] **SCP/rsync** — Faster bulk transfers for SSH servers
-
-### Multi-Server Dashboard
-
-- [ ] Show all servers at a glance with connection status
-- [ ] Quick-switch between servers without dialog
-- [ ] Split-pane: two servers side by side for server-to-server transfers
-
-### Plugin System
-
-- [ ] Post-transfer hooks (run a script after upload)
-- [ ] Notification integrations (Slack, Discord)
-- [ ] Custom transfer rules (auto-sort by file type on remote)
-
-### macOS Native Polish
-
-- [ ] Menu bar icon with quick-transfer drop zone
-- [ ] Finder extension (right-click → "Send with FileSling")
-- [ ] Spotlight integration for transfer history search
-- [ ] Touch Bar support (if applicable)
-- [ ] Native macOS share sheet integration
-
-### Positioning
+## Positioning
 
 FileSling isn't just "Android File Transfer replacement" — it's a native macOS transfer
-hub for devices and servers. The unified backend abstraction means it can grow into:
+hub for devices and servers, built for people who want to stay in control. The unified
+backend abstraction means it can grow into:
 
-- Dev/homelab tool (SSH servers, Docker, Raspberry Pi)
-- Creator workflow (camera → phone → NAS → cloud)
-- Power-user file manager (multi-protocol, queue-based)
+- Dev/homelab tool (SSH servers, Docker, Raspberry Pi, NAS)
+- Creator workflow (camera → phone → NAS → S3)
+- Power-user file manager (multi-protocol, queue-based, manual by design)
 
 ---
 

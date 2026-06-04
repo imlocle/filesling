@@ -2,13 +2,14 @@ import json
 import os
 import traceback
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-# Logs directory path (relative to project root)
-_LOGS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs"
-)
+from src.utils.constants import SOFTWARE_NAME
+
+# Logs directory — stored alongside config in the user's home (~/.FileSling/logs)
+_LOGS_DIR = str(Path.home() / f".{SOFTWARE_NAME}" / "logs")
 
 
 def _ensure_logs_dir() -> None:
@@ -63,7 +64,7 @@ class Logger(QObject):
     - Icons for visual identification
     - HTML formatting for rich text display
 
-    Errors are also persisted to logs/errors.json.
+    Errors are also persisted to ~/.FileSling/logs/errors.json.
     """
 
     log_signal = Signal(str)  # For text logs (HTML formatted)
@@ -89,7 +90,7 @@ class Logger(QObject):
         self.log_signal.emit(formatted)
 
     def error(self, msg: str) -> None:
-        """Log error message and persist to logs/errors.json."""
+        """Log error message and persist to ~/.FileSling/logs/errors.json."""
         formatted = self._format_message("❌", msg, "#f48771")
         self.log_signal.emit(formatted)
         _write_error_log(msg)

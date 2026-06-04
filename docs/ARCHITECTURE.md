@@ -140,6 +140,7 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 - Bookmarked folders and default start folder are stored per server
 - Transfer history stored in `~/.FileSling/transfer_history.json` (last 200 records)
 - Pending and in-progress upload queue recovery stored in `~/.FileSling/transfer_queue.json`
+- Error logs stored in `~/.FileSling/logs/errors.json` (last 500 entries)
 - Settings can be exported/imported as JSON for sharing between machines
 
 ## Main Window UI
@@ -168,7 +169,7 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 ## Error Handling
 
 - Custom exception hierarchy in `errors.py`
-- Errors logged to `logs/errors.json` (last 500 entries)
+- Errors logged to `~/.FileSling/logs/errors.json` (last 500 entries)
 - Global crash handler catches unhandled exceptions and shows a user-friendly dialog
 - Crash reports saved to `~/.FileSling/crash.log` with one-click GitHub issue reporting
 - Previous session crashes detected on next launch with option to view report
