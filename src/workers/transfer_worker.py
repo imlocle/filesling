@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import QObject, Signal
@@ -12,6 +12,7 @@ from src.models.errors import (
     RemoteDirectoryError,
     TransferVerificationError,
 )
+from src.services.rsync_service import RsyncConfig, RsyncTransfer, is_rsync_available
 from src.utils.logging_signal import logger
 
 
@@ -20,6 +21,10 @@ class TransferWorker(QObject):
     Performs manual uploads (drag-and-drop or 'Upload All') on a background thread.
 
     NOTE: This does NOT delete local files. It's copy semantics.
+
+    When an `rsync_config` is provided and rsync is available, uploads use the
+    rsync fast path (delta transfers, compression, resume). Otherwise they fall
+    back to SFTP via the provided client.
     """
 
     finished = Signal()
@@ -33,6 +38,7 @@ class TransferWorker(QObject):
         remote_root: str,
         total_bytes: int = 0,
         compress_folders: bool = False,
+        rsync_config: Optional[RsyncConfig] = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -42,6 +48,8 @@ class TransferWorker(QObject):
         self._total_bytes = total_bytes
         self._cumulative_bytes = 0
         self._compress_folders = compress_folders
+        self._rsync_config = rsync_config
+        self._active_rsync: Optional[RsyncTransfer] = None
 
     # ----------------------------
     #  Internal helpers
@@ -278,11 +286,61 @@ class TransferWorker(QObject):
             except Exception:
                 pass
 
+    def _upload_via_rsync(self) -> None:
+        """
+        Upload all paths in a single rsync invocation.
+
+        rsync handles recursion, delta transfers, compression, and resume on
+        its own, so we hand it every path at once and let it do the work.
+
+        Raises:
+            RuntimeError: If the rsync transfer fails (caller falls back/handles)
+        """
+        assert self._rsync_config is not None
+
+        # Ensure the remote destination exists first. rsync can create the
+        # final directory but not always intermediate ones, so create it via
+        # SFTP which we already have a session for.
+        try:
+            self._ensure_remote_directory(self.remote_root)
+        except (RemoteDirectoryError, ConnectionLostError):
+            raise
+
+        def progress_cb(pct: int) -> None:
+            self.progress.emit(min(pct, 100))
+
+        transfer = RsyncTransfer(
+            config=self._rsync_config,
+            local_paths=self.local_paths,
+            remote_dir=self.remote_root,
+        )
+        self._active_rsync = transfer
+        transfer.run(progress_cb=progress_cb)
+
     # ----------------------------
     #  Public entrypoint for QThread
     # ----------------------------
     def run(self) -> None:
         """Execute the transfer operation."""
+        # Fast path: rsync for SSH key-based connections when available.
+        # Compression-to-zip is a separate, mutually exclusive feature, so we
+        # only use rsync when the user hasn't asked to zip folders first.
+        use_rsync = (
+            self._rsync_config is not None
+            and not self._compress_folders
+            and is_rsync_available()
+        )
+
+        if use_rsync:
+            try:
+                self._upload_via_rsync()
+                self.finished.emit()
+                return
+            except Exception as e:
+                # rsync failed — log and fall back to SFTP rather than failing
+                logger.warn(f"rsync failed, falling back to SFTP: {e}")
+                self._cumulative_bytes = 0
+
         try:
             for path in self.local_paths:
                 if os.path.isdir(path):

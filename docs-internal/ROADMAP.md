@@ -18,16 +18,16 @@
 
 > Highest priority. Directly improves the core job: moving files fast.
 
-- [ ] **rsync backend for SSH servers** — only transfers the changed parts of files (delta sync)
+- [x] **rsync backend for SSH servers** — only transfers the changed parts of files (delta sync)
   - Example: re-uploading a 4GB video after a small edit transfers only the diff, not the whole file
   - Much faster for large files and folders that partially exist on the remote
-- [ ] **SCP for raw speed** — skips SFTP protocol overhead for straight copies
-  - Good for one-shot bulk transfers where you don't need to browse mid-transfer
-- [ ] **Auto-pick the fastest method** — use rsync if available on the server, fall back to SFTP
-- [ ] Show "delta: only 12 MB of 4 GB transferred" in the queue so you see the savings
+- [x] **Auto-pick the fastest method** — use rsync if available on the server, fall back to SFTP
+- [x] Show "delta: only 12 MB of 4 GB transferred" savings in the diagnostics log
+- [x] ~~SCP for raw speed~~ — subsumed by rsync (rsync handles single files too, with delta + resume that SCP lacks)
 
-> Note: rsync/scp require the binaries on both ends. macOS ships with both; most Linux
-> servers have rsync. FileSling would detect availability and fall back gracefully.
+> Implementation: `src/services/rsync_service.py` runs `rsync -az --partial --stats` over
+> SSH. Requires SSH key auth (BatchMode); password-auth servers fall back to SFTP. macOS
+> ships with rsync; most Linux servers have it too. Falls back gracefully if unavailable.
 
 ---
 

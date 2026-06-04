@@ -44,6 +44,7 @@ class TransferItem:
     total_bytes: int = 0
     transferred_bytes: int = 0
     destination: str = ""
+    transfer_method: str = ""  # "rsync", "sftp", "adb", or ""
     status: TransferStatus = TransferStatus.PENDING
     error_message: str = ""
     start_time: float = 0.0
@@ -119,6 +120,13 @@ class TransferItemWidget(QFrame):
         self.status_label = QLabel()
         self.status_label.setStyleSheet("font-size: 11px;")
 
+        # Transfer method indicator dot (green=rsync, blue=sftp, orange=adb)
+        self.method_dot = QLabel("●")
+        self.method_dot.setFixedWidth(12)
+        self.method_dot.setStyleSheet("font-size: 8px;")
+        self.method_dot.setVisible(False)
+        self._update_method_dot()
+
         self.cancel_btn = QPushButton("x")
         self.cancel_btn.setObjectName("subtle_btn")
         self.cancel_btn.setMaximumWidth(20)
@@ -135,6 +143,7 @@ class TransferItemWidget(QFrame):
         self.finder_btn.clicked.connect(self._reveal_in_finder)
 
         top_row.addWidget(self.name_label, stretch=1)
+        top_row.addWidget(self.method_dot)
         top_row.addWidget(self.status_label)
         top_row.addWidget(self.cancel_btn)
         top_row.addWidget(self.finder_btn)
@@ -223,6 +232,7 @@ class TransferItemWidget(QFrame):
             self.detail_label.setVisible(True)
             self.retry_btn.setVisible(False)
             self.cancel_btn.setVisible(False)
+            self.method_dot.setVisible(False)
 
             # Show "Show in Finder" for completed downloads
             is_download = item.display_name.startswith("⬇")
@@ -250,6 +260,27 @@ class TransferItemWidget(QFrame):
             self.detail_label.style().polish(self.detail_label)
             self.retry_btn.setVisible(True)
             self.cancel_btn.setVisible(False)
+            self.method_dot.setVisible(False)
+
+    def _update_method_dot(self) -> None:
+        """Update the method indicator dot color and tooltip."""
+        method = self.item.transfer_method
+        if not method:
+            self.method_dot.setVisible(False)
+            return
+
+        # Dot is visible during pending and in-progress states
+        self.method_dot.setVisible(True)
+        if method == "rsync":
+            self.method_dot.setStyleSheet("font-size: 8px; color: #22c55e;")
+            self.method_dot.setToolTip("rsync (fast delta transfer)")
+        elif method == "adb":
+            self.method_dot.setStyleSheet("font-size: 8px; color: #f59e0b;")
+            self.method_dot.setToolTip("ADB (USB transfer)")
+        else:
+            # sftp or unknown
+            self.method_dot.setStyleSheet("font-size: 8px; color: #3b82f6;")
+            self.method_dot.setToolTip("SFTP (standard transfer)")
 
     def _reveal_in_finder(self) -> None:
         """Open the downloaded file's location in Finder."""
@@ -341,13 +372,18 @@ class TransferQueueWidget(QWidget):
         self._update_timer.setInterval(500)
 
     def add_transfer(
-        self, display_name: str, total_bytes: int = 0, destination: str = ""
+        self,
+        display_name: str,
+        total_bytes: int = 0,
+        destination: str = "",
+        transfer_method: str = "",
     ) -> int:
         """Add a new transfer to the queue. Returns its index."""
         item = TransferItem(
             display_name=display_name,
             total_bytes=total_bytes,
             destination=destination,
+            transfer_method=transfer_method,
         )
         self._items.append(item)
         index = len(self._items) - 1

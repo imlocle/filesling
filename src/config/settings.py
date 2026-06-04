@@ -48,6 +48,7 @@ class SettingsConfig(BaseModel):
     notify_on_transfer_complete: bool = True
     notify_sound: bool = True
     compress_folders_before_transfer: bool = False
+    use_rsync: bool = True
     skip_patterns: set[str] = Field(
         default_factory=lambda: {".DS_Store", "Thumbs.db", ".Trashes", "._*"}
     )
@@ -354,6 +355,7 @@ class Settings:
             "notify_on_transfer_complete": self.config.notify_on_transfer_complete,
             "notify_sound": self.config.notify_sound,
             "compress_folders_before_transfer": self.config.compress_folders_before_transfer,
+            "use_rsync": self.config.use_rsync,
             "skip_patterns": list(self.config.skip_patterns),
             "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,

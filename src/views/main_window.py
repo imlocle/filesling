@@ -470,6 +470,10 @@ class MainWindow(QMainWindow):
         shortcuts_action.triggered.connect(self._show_shortcuts)
         help_menu.addAction(shortcuts_action)
 
+        transfer_legend_action = QAction("Transfer Indicators", self)
+        transfer_legend_action.triggered.connect(self._show_transfer_legend)
+        help_menu.addAction(transfer_legend_action)
+
     def _show_about(self) -> None:
         """Show About dialog."""
         QMessageBox.about(
@@ -496,6 +500,18 @@ class MainWindow(QMainWindow):
         )
 
         QMessageBox.information(self, "Keyboard Shortcuts", shortcuts)
+
+    def _show_transfer_legend(self) -> None:
+        """Show transfer method indicator legend."""
+        legend = (
+            "Transfer queue indicators:\n\n"
+            "● Green — rsync (fast delta transfer)\n"
+            "● Blue — SFTP (standard transfer)\n"
+            "● Orange — ADB (USB transfer)\n\n"
+            "The dot appears next to the status while a transfer\n"
+            "is active. Hover the dot for a tooltip description."
+        )
+        QMessageBox.information(self, "Transfer Indicators", legend)
 
     def _navigate_selected(self) -> None:
         """Navigate into the selected folder."""
@@ -864,8 +880,13 @@ class MainWindow(QMainWindow):
         if len(names) > 2:
             display_name += f" (+{len(names) - 2})"
 
+        # Determine transfer method for the indicator dot
+        transfer_method = self.controller.manual_transfer.get_transfer_method()
+
         # Add to visual queue
-        self.transfer_queue.add_transfer(display_name, total_bytes, remote_dir)
+        self.transfer_queue.add_transfer(
+            display_name, total_bytes, remote_dir, transfer_method
+        )
 
         # Start the transfer
         self.controller.manual_transfer.queue_transfer(

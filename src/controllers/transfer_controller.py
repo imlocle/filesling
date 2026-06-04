@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from src.config.settings import Settings
 from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
+from src.services.rsync_service import RsyncConfig
 from src.utils.constants import SOFTWARE_NAME
 from src.utils.logging_signal import logger
 from src.workers.transfer_worker import TransferWorker
@@ -209,6 +210,30 @@ class ManualTransferController(QObject):
         """Number of pending transfers (not including current)."""
         return len(self._queue)
 
+    def get_transfer_method(self) -> str:
+        """
+        Determine which transfer method will be used for the current server.
+
+        Returns: "rsync", "sftp", or "adb"
+        """
+        from src.services.rsync_service import is_rsync_available
+
+        server_config = self.settings.get_server(
+            self.settings.config.current_server_id
+        )
+        connection_type = (
+            server_config.get("connection_type", "ssh") if server_config else "ssh"
+        )
+
+        if connection_type == "adb":
+            return "adb"
+
+        rsync_config = self._build_rsync_config(connection_type, server_config)
+        if rsync_config and is_rsync_available():
+            return "rsync"
+
+        return "sftp"
+
     def queue_transfer(
         self,
         local_paths: List[str],
@@ -317,12 +342,18 @@ class ManualTransferController(QObject):
         # Create thread and worker
         try:
             self._active_thread = QThread(self)
+
+            # Build rsync config for SSH key-based connections (fast path).
+            # rsync needs a key file — skip it for password auth and ADB.
+            rsync_config = self._build_rsync_config(connection_type, server_config)
+
             self._active_worker = TransferWorker(
                 sftp=sftp,
                 local_paths=transfer.local_paths,
                 remote_root=transfer.remote_destination,
                 total_bytes=transfer.total_bytes,
                 compress_folders=self.settings.config.compress_folders_before_transfer,
+                rsync_config=rsync_config,
             )
             self._active_worker.moveToThread(self._active_thread)
 
@@ -418,6 +449,32 @@ class ManualTransferController(QObject):
             self.transfer_failed.emit(transfer.local_paths[0], error_msg)
 
         QTimer.singleShot(100, self._cleanup_and_next)
+
+    def _build_rsync_config(
+        self, connection_type: str, server_config: Optional[dict]
+    ) -> Optional[RsyncConfig]:
+        """
+        Build an RsyncConfig for the current connection if rsync should be used.
+
+        Returns None if:
+        - The connection isn't SSH
+        - Password auth is used (rsync can't read passwords from Paramiko)
+        - The use_rsync setting is off
+        """
+        if connection_type != "ssh":
+            return None
+        if not self.settings.config.use_rsync:
+            return None
+        if server_config and server_config.get("password"):
+            # rsync in BatchMode can't do password auth — skip
+            return None
+
+        return RsyncConfig(
+            host=self.settings.host,
+            username=self.settings.username,
+            ssh_key_path=self.settings.ssh_key_path,
+            ssh_port=self.settings.ssh_port,
+        )
 
     def _on_transfer_error(self, error_msg: str) -> None:
         """Handle transfer error. Marks transfer as errored to prevent deletion."""

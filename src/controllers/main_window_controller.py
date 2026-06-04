@@ -951,7 +951,10 @@ class MainWindowController:
         # Add to visual queue
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
-            index = queue.add_transfer(display_name, total_bytes, local_dir)
+            method = self.manual_transfer.get_transfer_method()
+            index = queue.add_transfer(
+                display_name, total_bytes, local_dir, method
+            )
             queue.set_in_progress(index)
             self._download_queue_index = index
 
