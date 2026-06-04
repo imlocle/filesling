@@ -75,9 +75,7 @@ class ConnectionFormWidget(QWidget):
         self.connection_type_combo.addItem("USB (iPhone/iPad)", CONN_TYPE_IOS)
         current_type = self._config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
         type_index = {CONN_TYPE_SSH: 0, CONN_TYPE_ADB: 1, CONN_TYPE_IOS: 2}
-        self.connection_type_combo.setCurrentIndex(
-            type_index.get(current_type, 0)
-        )
+        self.connection_type_combo.setCurrentIndex(type_index.get(current_type, 0))
         self.connection_type_combo.currentIndexChanged.connect(self._on_type_changed)
         layout.addWidget(self.connection_type_combo)
 
@@ -177,6 +175,28 @@ class ConnectionFormWidget(QWidget):
         adb_hint.setWordWrap(True)
         adb_layout.addWidget(adb_hint)
 
+        # WiFi connect section
+        adb_layout.addWidget(QLabel(""))
+        adb_layout.addWidget(QLabel("Wireless Connection (optional)"))
+        wifi_row = QHBoxLayout()
+        wifi_row.setSpacing(8)
+        self.adb_wifi_ip_input = QLineEdit(self._config.get("wifi_ip", ""))
+        self.adb_wifi_ip_input.setPlaceholderText("192.168.1.42")
+        wifi_row.addWidget(self.adb_wifi_ip_input, stretch=1)
+        self.adb_wifi_connect_btn = QPushButton("Connect WiFi")
+        self.adb_wifi_connect_btn.setMaximumWidth(110)
+        self.adb_wifi_connect_btn.clicked.connect(self._connect_adb_wifi)
+        wifi_row.addWidget(self.adb_wifi_connect_btn)
+        adb_layout.addLayout(wifi_row)
+
+        wifi_hint = QLabel(
+            "Enter your phone's IP address to connect wirelessly. "
+            "Phone must have USB Debugging or Wireless Debugging enabled."
+        )
+        wifi_hint.setObjectName("secondary_label")
+        wifi_hint.setWordWrap(True)
+        adb_layout.addWidget(wifi_hint)
+
         layout.addWidget(self.adb_group)
 
         # --- iOS fields ---
@@ -260,12 +280,16 @@ class ConnectionFormWidget(QWidget):
         conn_type = self.get_connection_type()
 
         if conn_type == CONN_TYPE_ADB:
-            return {
+            config = {
                 CONN_TYPE_KEY: CONN_TYPE_ADB,
                 "device_id": self.adb_device_combo.currentData() or "",
                 "remote_base_dir": self.remote_base_dir_input.text().rstrip("/").strip()
                 or DEFAULT_ADB_BASE_DIR,
             }
+            wifi_ip = self.adb_wifi_ip_input.text().strip()
+            if wifi_ip:
+                config["wifi_ip"] = wifi_ip
+            return config
         elif conn_type == CONN_TYPE_IOS:
             return {
                 CONN_TYPE_KEY: CONN_TYPE_IOS,
@@ -316,15 +340,21 @@ class ConnectionFormWidget(QWidget):
         self.ios_group.setVisible(conn_type == CONN_TYPE_IOS)
         current_text = self.remote_base_dir_input.text().strip()
         if conn_type == CONN_TYPE_ADB and current_text in (
-            "", DEFAULT_REMOTE_BASE_DIR, "/DCIM"
+            "",
+            DEFAULT_REMOTE_BASE_DIR,
+            "/DCIM",
         ):
             self.remote_base_dir_input.setText(DEFAULT_ADB_BASE_DIR)
         elif conn_type == CONN_TYPE_IOS and current_text in (
-            "", DEFAULT_REMOTE_BASE_DIR, DEFAULT_ADB_BASE_DIR
+            "",
+            DEFAULT_REMOTE_BASE_DIR,
+            DEFAULT_ADB_BASE_DIR,
         ):
             self.remote_base_dir_input.setText("/DCIM")
         elif conn_type == CONN_TYPE_SSH and current_text in (
-            "", DEFAULT_ADB_BASE_DIR, "/DCIM"
+            "",
+            DEFAULT_ADB_BASE_DIR,
+            "/DCIM",
         ):
             self.remote_base_dir_input.setText(DEFAULT_REMOTE_BASE_DIR)
         self._update_base_dir_hint()
@@ -390,6 +420,37 @@ class ConnectionFormWidget(QWidget):
             self.adb_device_combo.setCurrentIndex(0)
         else:
             self.adb_device_combo.setPlaceholderText(PLACEHOLDER_NO_DEVICES)
+
+    def _connect_adb_wifi(self) -> None:
+        """Attempt to connect to an Android device over WiFi."""
+        from src.services.adb_client import connect_wifi
+
+        ip = self.adb_wifi_ip_input.text().strip()
+        if not ip:
+            self.status_label.setText("● Enter an IP address")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
+            return
+
+        self.status_label.setText("● Connecting via WiFi...")
+        self.status_label.setObjectName("status_pending")
+        self.status_label.style().polish(self.status_label)
+
+        # Force UI update before blocking call
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        if connect_wifi(ip):
+            self.status_label.setText("● Connected via WiFi!")
+            self.status_label.setObjectName("status_success")
+            self.status_label.style().polish(self.status_label)
+            # Refresh device list to show the wireless device
+            self._refresh_adb_devices()
+        else:
+            self.status_label.setText("● WiFi connection failed")
+            self.status_label.setObjectName("status_error")
+            self.status_label.style().polish(self.status_label)
 
     def _refresh_ios_devices(self) -> None:
         from src.services.ios_client import get_connected_ios_devices

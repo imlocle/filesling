@@ -24,6 +24,16 @@
 - [x] Handles trust prompt (guides user to unlock + tap "Trust This Computer")
 - [x] Optional dependency — app works without it, shows helpful install message
 
+### ADB over WiFi — Wireless Android Transfers
+
+- [x] "Connect via WiFi" option in the ADB device setup (enter phone's IP address)
+- [x] Runs `adb connect <ip>:5555` to establish wireless session
+- [x] WiFi-paired devices appear in the device picker automatically
+- [x] `pair_wireless()` and `enable_tcpip()` functions for Android 11+ pairing
+- [x] Shows "(WiFi)" in connection status when connected wirelessly
+- [x] WiFi IP saved per-server so it auto-connects next time
+- [x] All existing features work unchanged over WiFi
+
 ### UI
 
 - [x] Move To dialog auto-expands to current directory

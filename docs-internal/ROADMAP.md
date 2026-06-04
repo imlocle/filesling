@@ -26,6 +26,12 @@
 
 ---
 
+### ~~ADB over WiFi — Wireless Android Transfers~~ ✅ Done
+
+> See [CHANGELOG.md](CHANGELOG.md). Implemented June 2026.
+
+---
+
 ### 3. SMB/CIFS — Connect to Windows PCs and NAS Devices
 
 > You asked what a NAS is: a **N**etwork **A**ttached **S**torage device — basically a

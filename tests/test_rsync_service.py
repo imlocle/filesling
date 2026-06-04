@@ -59,7 +59,28 @@ class TestRemoteSpec:
             ssh_key_path="~/.ssh/id_rsa",
         )
         result = _remote_spec(config, "/mnt/external/Movies")
-        assert result == "user@192.168.1.100:/mnt/external/Movies"
+        assert result == "user@192.168.1.100:'/mnt/external/Movies'"
+
+    def test_special_characters(self):
+        config = RsyncConfig(
+            host="192.168.1.100",
+            username="user",
+            ssh_key_path="~/.ssh/id_rsa",
+        )
+        result = _remote_spec(config, "/mnt/external/TV Shows/Show (2010)/Season 1")
+        assert "(2010)" in result
+        assert result.startswith("user@192.168.1.100:'")
+        assert result.endswith("'")
+
+    def test_path_with_single_quotes(self):
+        config = RsyncConfig(
+            host="host",
+            username="u",
+            ssh_key_path="/key",
+        )
+        result = _remote_spec(config, "/path/it's here")
+        # Single quotes inside are escaped
+        assert "'\\''" in result
 
 
 class TestRsyncTransfer:
@@ -80,11 +101,11 @@ class TestRsyncTransfer:
         assert cmd[0] == "rsync"
         assert "-az" in cmd
         assert "--partial" in cmd
-        assert "--info=progress2" in cmd
+        assert "--progress" in cmd
         assert "/tmp/video.mp4" in cmd
         assert "/tmp/photo.jpg" in cmd
-        # Destination should have trailing slash
-        assert "user@192.168.1.100:/mnt/external/uploads/" in cmd
+        # Destination should have trailing slash and be quoted
+        assert "user@192.168.1.100:'/mnt/external/uploads/'" in cmd
 
     def test_build_command_adds_trailing_slash(self):
         config = RsyncConfig(
@@ -97,7 +118,7 @@ class TestRsyncTransfer:
         )
         cmd = transfer._build_command()
         dest = cmd[-1]
-        assert dest.endswith("/dest/")
+        assert dest.endswith("/dest/'")
 
     def test_build_command_preserves_existing_slash(self):
         config = RsyncConfig(
@@ -110,8 +131,8 @@ class TestRsyncTransfer:
         )
         cmd = transfer._build_command()
         dest = cmd[-1]
-        assert dest.endswith("/dest/")
-        assert not dest.endswith("/dest//")
+        assert dest.endswith("/dest/'")
+        assert "/dest//'" not in dest
 
     @patch("src.services.rsync_service.subprocess.Popen")
     def test_run_success(self, mock_popen):

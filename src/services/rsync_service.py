@@ -23,12 +23,7 @@ from src.utils.logging_signal import logger
 
 # rsync progress lines look like:
 #   1,234,567  45%   1.23MB/s    0:00:12
-# We pull the percentage from the "<num>%" token.
 _PROGRESS_RE = re.compile(r"(\d+)%")
-
-# rsync's total transfer summary (with --info=progress2):
-#   "          3.21M 100%  ..."
-_PROGRESS2_RE = re.compile(r"(\d+)%")
 
 
 @dataclass
@@ -66,8 +61,16 @@ def _build_ssh_option(config: RsyncConfig) -> str:
 
 
 def _remote_spec(config: RsyncConfig, remote_path: str) -> str:
-    """Build the user@host:path destination spec for rsync."""
-    return f"{config.username}@{config.host}:{remote_path}"
+    """Build the user@host:path destination spec for rsync.
+
+    The remote path is wrapped in quotes to handle shell special characters
+    (spaces, parentheses, brackets, etc.) since rsync passes it through
+    a remote shell invocation.
+    """
+    # Single-quote the path to protect all special characters from the remote shell.
+    # Escape any single quotes within the path itself.
+    safe_path = remote_path.replace("'", "'\\''")
+    return f"{config.username}@{config.host}:'{safe_path}'"
 
 
 class RsyncTransfer:
@@ -96,14 +99,12 @@ class RsyncTransfer:
         # -a: archive (recursive, preserve timestamps/perms)
         # -z: compress during transfer
         # --partial: keep partially transferred files for resume
-        # --info=progress2: overall percentage across all files
-        # --stats: print transfer statistics at the end
+        # --progress: per-file progress (compatible with openrsync + GNU rsync)
         cmd = [
             "rsync",
             "-az",
             "--partial",
-            "--info=progress2",
-            "--stats",
+            "--progress",
             "-e",
             ssh_opt,
         ]
@@ -147,6 +148,7 @@ class RsyncTransfer:
             raise RuntimeError(f"Failed to start rsync: {e}")
 
         # Read progress from stdout line by line
+        # --progress outputs per-file lines like: "1,234,567  45%  1.23MB/s  0:00:12"
         assert self._process.stdout is not None
         stdout_lines = []
         for line in self._process.stdout:
@@ -171,9 +173,6 @@ class RsyncTransfer:
                 f"rsync failed (exit {self._process.returncode}): {stderr}"
             )
 
-        # Parse stats from stdout (rsync writes --stats output to stdout)
-        self._parse_stats("".join(stdout_lines))
-
         if progress_cb:
             progress_cb(100)
 
@@ -182,9 +181,7 @@ class RsyncTransfer:
         try:
             # Look for "Total transferred file size: X bytes"
             # and "Total file size: Y bytes" to compute savings
-            total_match = re.search(
-                r"Total file size:\s+([\d,]+)", output
-            )
+            total_match = re.search(r"Total file size:\s+([\d,]+)", output)
             transferred_match = re.search(
                 r"Total transferred file size:\s+([\d,]+)", output
             )

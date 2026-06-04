@@ -58,7 +58,7 @@ def get_connected_ios_devices() -> List[dict]:
         from pymobiledevice3.lockdown import create_using_usbmux
         from pymobiledevice3.usbmux import list_devices
 
-        async def _list():
+        async def _list() -> list:
             return await list_devices()
 
         # Run the async list_devices in a new event loop
@@ -78,13 +78,9 @@ def get_connected_ios_devices() -> List[dict]:
                 lockdown = create_using_usbmux(serial=device.serial)
                 name = lockdown.all_values.get("DeviceName", "iPhone")
                 model = lockdown.all_values.get("ProductType", "")
-                result.append(
-                    {"id": device.serial, "name": name, "model": model}
-                )
+                result.append({"id": device.serial, "name": name, "model": model})
             except Exception:
-                result.append(
-                    {"id": device.serial, "name": "iOS Device", "model": ""}
-                )
+                result.append({"id": device.serial, "name": "iOS Device", "model": ""})
         return result
     except ImportError:
         logger.warn("iOS: pymobiledevice3 not installed")

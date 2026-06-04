@@ -89,6 +89,9 @@ class MainWindowController:
         )
         self.manual_transfer.transfer_failed.connect(self._on_manual_transfer_failed)
         self.manual_transfer.transfer_progress.connect(self._on_transfer_progress)
+        self.manual_transfer.transfer_method_changed.connect(
+            self._on_transfer_method_changed
+        )
         self.manual_transfer.queue_changed.connect(self._on_queue_changed)
 
         # Queue widget signals
@@ -184,6 +187,14 @@ class MainWindowController:
                 item = queue._items[self._current_queue_index]
                 transferred = int(item.total_bytes * percentage / 100)
                 queue.update_progress(self._current_queue_index, transferred, 0)
+
+    def _on_transfer_method_changed(self, method: str) -> None:
+        """Handle transfer method change (e.g. rsync fallback to SFTP)."""
+        if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
+            queue = self.view.transfer_queue
+            if self._current_queue_index < len(queue._items):
+                queue._items[self._current_queue_index].transfer_method = method
+                queue._item_widgets[self._current_queue_index]._update_method_dot()
 
     def _on_queue_changed(self, total: int) -> None:
         """Handle transfer queue size change — update dock badge."""
@@ -321,9 +332,10 @@ class MainWindowController:
         self._connect_ssh()
 
     def _connect_adb(self, server_config: dict) -> None:
-        """Connect to an Android device via ADB."""
+        """Connect to an Android device via ADB (USB or WiFi)."""
         from src.services.adb_client import (
             ADBClient,
+            connect_wifi,
             get_adb_path,
             get_connected_devices,
         )
@@ -338,6 +350,12 @@ class MainWindowController:
         device_id = server_config.get("device_id")
         device_name = server_config.get("name", "Android Device")
         root_path = server_config.get("remote_base_dir", DEFAULT_ADB_BASE_DIR)
+        wifi_ip = server_config.get("wifi_ip")
+
+        # If WiFi IP is configured, try wireless connect first
+        if wifi_ip:
+            logger.info(f"ADB: Attempting WiFi connection to {wifi_ip}...")
+            connect_wifi(wifi_ip)
 
         # Check for connected devices
         devices = get_connected_devices()
@@ -365,8 +383,9 @@ class MainWindowController:
             client.listdir(root_path)
 
             # Success — bind to explorer
+            conn_label = "WiFi" if wifi_ip and ":" in (device_id or "") else "USB"
             self.view.connection_status_label.setText(
-                f"● Connected: {device_name} (USB)"
+                f"● Connected: {device_name} ({conn_label})"
             )
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.style().polish(
@@ -422,9 +441,7 @@ class MainWindowController:
         if device_id:
             matching = [d for d in devices if d["id"] == device_id]
             if not matching:
-                logger.warn(
-                    f"iOS: Device {device_id} not found, using first available"
-                )
+                logger.warn(f"iOS: Device {device_id} not found, using first available")
                 device_id = devices[0]["id"]
         else:
             device_id = devices[0]["id"]
@@ -1035,9 +1052,7 @@ class MainWindowController:
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
             method = self.manual_transfer.get_transfer_method()
-            index = queue.add_transfer(
-                display_name, total_bytes, local_dir, method
-            )
+            index = queue.add_transfer(display_name, total_bytes, local_dir, method)
             queue.set_in_progress(index)
             self._download_queue_index = index
 

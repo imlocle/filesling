@@ -99,6 +99,7 @@ class ManualTransferController(QObject):
     transfer_completed = Signal(str)  # path
     transfer_failed = Signal(str, str)  # path, error
     transfer_progress = Signal(int)  # percentage 0-100
+    transfer_method_changed = Signal(str)  # new method (e.g. "sftp" after fallback)
     queue_changed = Signal(int)  # queue size (including current)
 
     def __init__(
@@ -218,9 +219,7 @@ class ManualTransferController(QObject):
         """
         from src.services.rsync_service import is_rsync_available
 
-        server_config = self.settings.get_server(
-            self.settings.config.current_server_id
-        )
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
             server_config.get("connection_type", "ssh") if server_config else "ssh"
         )
@@ -362,6 +361,7 @@ class ManualTransferController(QObject):
             self._active_worker.finished.connect(self._on_transfer_finished)
             self._active_worker.error.connect(self._on_transfer_error)
             self._active_worker.progress.connect(self._on_transfer_progress)
+            self._active_worker.method_changed.connect(self._on_transfer_method_changed)
             self._active_worker.finished.connect(self._active_thread.quit)
             self._active_worker.error.connect(self._active_thread.quit)
             self._active_thread.finished.connect(self._cleanup_and_next)
@@ -494,6 +494,10 @@ class ManualTransferController(QObject):
     def _on_transfer_progress(self, percentage: int) -> None:
         """Forward progress from worker to UI."""
         self.transfer_progress.emit(percentage)
+
+    def _on_transfer_method_changed(self, method: str) -> None:
+        """Forward method change (e.g. rsync → SFTP fallback) to UI."""
+        self.transfer_method_changed.emit(method)
 
     def _cleanup_and_next(self) -> None:
         """Clean up current transfer and process next in queue."""

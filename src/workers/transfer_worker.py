@@ -30,6 +30,7 @@ class TransferWorker(QObject):
     finished = Signal()
     error = Signal(str)
     progress = Signal(int)  # percentage 0-100
+    method_changed = Signal(str)  # emitted when transfer method changes (e.g. fallback)
 
     def __init__(
         self,
@@ -340,6 +341,7 @@ class TransferWorker(QObject):
                 # rsync failed — log and fall back to SFTP rather than failing
                 logger.warn(f"rsync failed, falling back to SFTP: {e}")
                 self._cumulative_bytes = 0
+                self.method_changed.emit("sftp")
 
         try:
             for path in self.local_paths:

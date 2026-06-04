@@ -429,3 +429,94 @@ def get_adb_path() -> str:
     if not adb_path:
         raise IOError("abd path error")
     return adb_path
+
+
+def connect_wifi(ip_address: str, port: int = 5555) -> bool:
+    """
+    Connect to an Android device over WiFi via ADB.
+
+    The device must have either:
+    - Been switched to TCP mode while on USB (`adb tcpip 5555`)
+    - Or have Wireless Debugging enabled (Android 11+)
+
+    Args:
+        ip_address: The device's local IP address (e.g., "192.168.1.42")
+        port: ADB port (default 5555)
+
+    Returns:
+        True if connection succeeded
+    """
+    try:
+        adb_path = get_adb_path()
+        target = f"{ip_address}:{port}"
+        result = subprocess.run(
+            [adb_path, "connect", target],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = result.stdout.strip().lower()
+        # "connected to X" or "already connected to X" = success
+        return "connected" in output and "cannot" not in output
+    except Exception:
+        return False
+
+
+def pair_wireless(ip_address: str, port: int, pairing_code: str) -> bool:
+    """
+    Pair with a device using Android 11+ Wireless Debugging.
+
+    The user gets the IP:port and pairing code from their phone:
+    Settings → Developer Options → Wireless Debugging → Pair device with pairing code
+
+    Args:
+        ip_address: The device's pairing IP
+        port: The pairing port (shown on phone, not 5555)
+        pairing_code: The 6-digit code shown on the phone
+
+    Returns:
+        True if pairing succeeded
+    """
+    try:
+        adb_path = get_adb_path()
+        target = f"{ip_address}:{port}"
+        result = subprocess.run(
+            [adb_path, "pair", target, pairing_code],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        output = result.stdout.strip().lower()
+        return "successfully paired" in output
+    except Exception:
+        return False
+
+
+def enable_tcpip(device_id: Optional[str] = None, port: int = 5555) -> bool:
+    """
+    Switch a USB-connected device to TCP/IP mode for wireless ADB.
+
+    After this, the USB cable can be unplugged and `connect_wifi()` used.
+
+    Args:
+        device_id: Device serial (from USB connection)
+        port: TCP port to listen on (default 5555)
+
+    Returns:
+        True if successful
+    """
+    try:
+        adb_path = get_adb_path()
+        cmd = [adb_path]
+        if device_id:
+            cmd.extend(["-s", device_id])
+        cmd.extend(["tcpip", str(port)])
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
