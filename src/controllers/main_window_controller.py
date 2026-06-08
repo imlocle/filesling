@@ -10,7 +10,6 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from src.config.settings import Settings
 from src.controllers.transfer_controller import ManualTransferController
-from src.widgets.transfer_queue_widget import TransferStatus
 from src.models.errors import (
     AuthenticationError,
     ConnectionLostError,
@@ -37,6 +36,7 @@ from src.utils.constants import (
 from src.utils.logging_signal import logger
 from src.utils.theme import apply_theme
 from src.views.settings_window import SettingsWindow
+from src.widgets.transfer_queue_widget import TransferStatus
 
 if TYPE_CHECKING:
     from src.views.main_window import MainWindow  # noqa: F401
@@ -729,9 +729,7 @@ class MainWindowController:
         """Update the power button color to reflect connection state."""
         btn = self.view.connect_btn
         if connected:
-            btn.setStyleSheet(
-                "QPushButton#icon_btn { color: #30d158; }"
-            )
+            btn.setStyleSheet("QPushButton#icon_btn { color: #30d158; }")
         else:
             btn.setStyleSheet("")  # Reset to default
 

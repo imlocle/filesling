@@ -928,9 +928,7 @@ class MainWindow(QMainWindow):
                     for f in files:
                         if not f.startswith("."):
                             try:
-                                item_bytes += os.path.getsize(
-                                    os.path.join(root, f)
-                                )
+                                item_bytes += os.path.getsize(os.path.join(root, f))
                             except OSError:
                                 pass
             elif os.path.isfile(p):

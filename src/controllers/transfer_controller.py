@@ -582,9 +582,7 @@ class ManualTransferController(QObject):
 
         self._transfer_errored = True
         if self._current_transfer:
-            logger.info(
-                f"Transfer: Cancelled: {self._current_transfer.display_name}"
-            )
+            logger.info(f"Transfer: Cancelled: {self._current_transfer.display_name}")
             self.transfer_failed.emit(
                 self._current_transfer.local_paths[0], "Cancelled by user"
             )

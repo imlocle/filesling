@@ -186,7 +186,11 @@ class ServerSelectionDialog(QDialog):
             return f"{prefix}{name}\nUSB ({device_id})"
         elif conn_type == "ios":
             device_id = config.get("device_id", "")
-            return f"{prefix}{name}\niOS ({device_id[:8]})" if device_id else f"{prefix}{name}\niOS"
+            return (
+                f"{prefix}{name}\niOS ({device_id[:8]})"
+                if device_id
+                else f"{prefix}{name}\niOS"
+            )
         else:
             user = config.get("username", "")
             ip = config.get("host", "")

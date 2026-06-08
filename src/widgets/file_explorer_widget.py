@@ -823,9 +823,7 @@ class FileExplorerWidget(QWidget):
             btn = QPushButton(label)
             btn.setObjectName("bookmark_btn")
             if is_default:
-                btn.setStyleSheet(
-                    "QPushButton#bookmark_btn { color: #0a84ff; }"
-                )
+                btn.setStyleSheet("QPushButton#bookmark_btn { color: #0a84ff; }")
             btn.setMaximumHeight(24)
             btn.clicked.connect(lambda checked, p=path: self._navigate_to_bookmark(p))
             self._bookmarks_layout.insertWidget(self._bookmarks_layout.count() - 1, btn)
@@ -1310,9 +1308,7 @@ class FileExplorerWidget(QWidget):
             return
 
         if collisions:
-            logger.warn(
-                f"Batch rename: {len(collisions)} name collisions resolved"
-            )
+            logger.warn(f"Batch rename: {len(collisions)} name collisions resolved")
 
         if renamed > 0:
             logger.success(f"Batch rename: {renamed} files renamed")

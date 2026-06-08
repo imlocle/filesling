@@ -76,7 +76,9 @@ class DownloadWorker(QObject):
             self.sftp.get(remote_path, local_path, callback=progress_callback)
             # Verify downloaded size matches remote
             if file_size > 0:
-                local_size = os.path.getsize(local_path) if os.path.exists(local_path) else 0
+                local_size = (
+                    os.path.getsize(local_path) if os.path.exists(local_path) else 0
+                )
                 if local_size != file_size:
                     # Partial download — remove the truncated file
                     try:
