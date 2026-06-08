@@ -11,9 +11,12 @@
 
 - [x] rsync backend for SSH servers — delta sync, only transfers changed bytes
 - [x] Auto-pick fastest method — rsync if available, falls back to SFTP
-- [x] Delta savings shown in diagnostics log ("rsync: delta saved 87%")
+- [x] Per-file progress via `--progress` flag (compatible with openrsync + GNU rsync)
 - [x] Transfer method indicator dot in queue (green=rsync, blue=SFTP, orange=ADB)
+- [x] Dot updates in real-time on fallback (green → blue when rsync fails)
 - [x] Help → Transfer Indicators legend
+- [x] Fixed: remote paths with special characters (parentheses, spaces, brackets) properly quoted
+- [x] Fixed: folder uploads preserve the folder (strip trailing slash from local paths)
 
 ### iPhone / iOS Support
 
@@ -22,7 +25,7 @@
 - [x] Download photos/videos to any attached server
 - [x] Device picker with auto-detect in Add Server dialog
 - [x] Handles trust prompt (guides user to unlock + tap "Trust This Computer")
-- [x] Optional dependency — app works without it, shows helpful install message
+- [x] Bundled in .dmg builds (PyInstaller + CI updated)
 
 ### ADB over WiFi — Wireless Android Transfers
 
@@ -32,12 +35,60 @@
 - [x] `pair_wireless()` and `enable_tcpip()` functions for Android 11+ pairing
 - [x] Shows "(WiFi)" in connection status when connected wirelessly
 - [x] WiFi IP saved per-server so it auto-connects next time
-- [x] All existing features work unchanged over WiFi
 
-### UI
+### Multi-Server Quick-Switch
 
+- [x] Server dropdown in the toolbar — switch with one click, no dialog
+- [x] Instant disconnect → reconnect on selection change
+
+### UI / Theme
+
+- [x] Modern iOS-inspired dark theme (deeper blacks, softer borders, rounder corners)
+- [x] Combo box dropdown with proper padding and rounded items
+- [x] Slimmer progress bars (6px), thinner scroll bars (8px)
+- [x] Tree items with breathing room (margin between rows)
 - [x] Move To dialog auto-expands to current directory
+- [x] External drag-and-drop always uploads to current directory (no accidental sub-folder targeting)
+- [x] Internal drag (rearrange) still highlights folders as drop targets
 - [x] Error logs moved from project-root to `~/.FileSling/logs/errors.json`
+- [x] Removed status bar — connection shown by green power button instead
+- [x] Server dropdown shows just names (no type icons), auto-sizes to fit
+- [x] "Manage Servers…" option at bottom of server dropdown (separator + link to dialog)
+- [x] Search bar left padding fixed (magnifying glass no longer clipped)
+- [x] Transfer queue: each file gets its own row (no more combining into "file1, file2 (+3 more)")
+- [x] Transfer queue ordering: active on top → queued → completed at bottom
+
+### Bug Fixes
+
+- [x] Drop target wrong folder — uses highlighted item only, not pixel position
+- [x] Internal drag also used wrong target — same fix
+- [x] rsync path quoting for parentheses/spaces/brackets in remote paths
+- [x] rsync folder uploads extracted contents — fixed trailing slash stripping
+- [x] `dragMoveEvent` network call on every pixel — now skips when hovering same item
+- [x] Method dot didn't update on fallback — added `method_changed` signal
+- [x] Ghost "Uploading" stuck in queue after transfer completes — fallback scan for in-progress items
+- [x] rsync compression flag removed (`-z` slowed local network transfers)
+- [x] `cancel_active_transfer` double-fires `_cleanup_and_next` — disconnects signal before explicit call
+
+### Deep Audit Fixes (24 bugs found, all resolved)
+
+- [x] DA-01: TransferWorker emits both `error` and `finished` — potential data loss (file deletion after failed transfer). Fixed: only success emits `finished`.
+- [x] DA-02: SFTP sessions leaked after every transfer — eventual SSH channel exhaustion. Fixed: sessions stored and explicitly closed.
+- [x] DA-03: iOS async device detection broken. Fixed: simplified to `asyncio.run()`.
+- [x] DA-06: Fragile `startswith(remote_base_dir)` for remote/local detection. Fixed: uses `sftp is not None`.
+- [x] DA-07: Health check reconnect TOCTOU race with download workers. Fixed: also checks `_download_thread`.
+- [x] DA-08: Search results navigation confusion. Fixed: clears `_is_searching` on navigate.
+- [x] DA-09: Batch rename silent failure on disconnection. Fixed: shows "Connection lost" warning.
+- [x] DA-10/DA-14: `os.sep` used for remote POSIX paths. Fixed: hardcoded `"/"`.
+- [x] DA-12: `clear_completed` invalidates progress index. Fixed: `indices_changed` signal re-syncs.
+- [x] DA-13: `compress_folders_before_transfer` mutates `_total_bytes`. Fixed: local variable, restores original.
+- [x] DA-15: `dragMoveEvent` redundant network calls. Fixed: `_dir_cache` dict, cleared on refresh.
+- [x] DA-17: rsync transfers cannot be cancelled. Fixed: `cancel_active_transfer()` terminates process.
+- [x] DA-18/DA-19: iOS client OOM on large files. Fixed: chunked 1MB streaming.
+- [x] DA-20: Partial download files left as truncated data. Fixed: size verification + cleanup.
+- [x] DA-21: Health check reconnect conflicts with DirectoryLoader. Fixed: returns early if loader running.
+- [x] Batch rename name collisions — appends `_2`, `_3` suffix to resolve.
+- [x] Multi-move self-move check — filters out self-moves with batch warning.
 
 ---
 

@@ -14,7 +14,7 @@
 | Dependency Management       | ✅ Complete  | pip-tools with locked versions              |
 | CI/CD Automation            | ✅ Basic     | Build + release on tag push                 |
 | Documentation               | ✅ Good      | Architecture, roadmap, internal guides      |
-| Testing & QA                | ✅ Complete  | 132 unit tests, pytest, CI on push to dev   |
+| Testing & QA                | ✅ Complete  | 149 unit tests, pytest, CI on push to dev   |
 | Code Quality Tools          | ✅ Enforced  | black, isort, flake8 via `make format/lint` |
 | Release Management          | ✅ Automated | `make release V=X.Y.Z`                      |
 

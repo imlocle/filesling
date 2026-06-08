@@ -22,8 +22,10 @@ src/
 │   ├── connection_manager_service.py   SSH/SFTP connection lifecycle + health monitoring
 │   ├── file_deletion_service.py    Safe deletion via send2trash
 │   ├── activity_history_service.py  Persistent activity log (uploads, downloads, renames, deletes, moves)
+│   ├── ios_client.py               iOS AFC client (mimics SFTPClient interface)
 │   ├── notification_service.py     macOS notifications + Dock badge
-│   └── keychain_service.py         macOS Keychain credential storage
+│   ├── keychain_service.py         macOS Keychain credential storage
+│   └── rsync_service.py            rsync fast-path transfers over SSH
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
 │   ├── crash_handler.py            Global exception handler + crash log
@@ -56,12 +58,21 @@ The app supports two connection types behind the same explorer UI:
 - Password-based authentication as fallback
 - Separate SFTP sessions for explorer vs transfers (thread-safe)
 
-### ADB (Android Devices via USB)
+### ADB (Android Devices via USB or WiFi)
 
 - Uses `ADBClient` class that mimics `SFTPClient` interface
 - Commands: `adb shell ls`, `adb push`, `adb pull`, `adb shell mv/rm/mkdir`
 - No persistent connection — each command is a subprocess call
 - Requires Developer Mode + USB Debugging on device
+- WiFi mode: `adb connect <ip>:5555` for wireless transfers (Android 11+ pairing supported)
+
+### iOS (iPhone/iPad via USB)
+
+- Uses `IOSClient` class that mimics `SFTPClient` interface
+- Talks AFC (Apple File Conduit) protocol via `pymobiledevice3`
+- Accesses the Media partition: DCIM (camera roll), Downloads, Photos
+- No jailbreak required; device must be unlocked and trusted
+- Optional dependency bundled in .dmg builds
 
 ## Data Flow
 
@@ -69,7 +80,7 @@ The app supports two connection types behind the same explorer UI:
 
 ```
 Finder drop → FileExplorerWidget.dropEvent()
-  → Detects target folder (if dropped on a folder, uploads into it)
+  → Always targets current_path (no sub-folder highlighting for external drops)
   → MainWindow._handle_remote_drop()
     → Checks for duplicates (sftp.stat per file)
     → If duplicates found: shows dialog (overwrite / skip / cancel)
@@ -78,7 +89,9 @@ Finder drop → FileExplorerWidget.dropEvent()
       → Queues transfer
       → Persists active/pending queue to ~/.FileSling/transfer_queue.json
       → Processes sequentially:
-        → Opens dedicated SFTP session (or uses ADB)
+        → SSH key auth? Try rsync first (delta, compression, resume)
+          → If rsync fails → fallback to SFTP silently
+        → Opens dedicated SFTP session (or uses ADB/iOS client)
         → TransferWorker runs on QThread (src/workers/)
         → Skips already-uploaded files (resume support)
         → Optionally compresses folders before upload
@@ -145,12 +158,15 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 
 ## Main Window UI
 
+- Server quick-switch dropdown in the toolbar (with "Manage Servers…" at bottom)
+- Power button turns green when connected (no separate status bar)
 - Explorer remains the primary workspace
-- Transfer queue is a first-class bottom panel and expands with the window
+- Transfer queue is a first-class bottom panel (active → queued → done ordering)
 - Clickable breadcrumb path bar for quick navigation to parent folders
 - Diagnostics logs are hidden by default and available from `View → Diagnostics Log...`
 - Transfer history available from `View → Transfer History...`
-- Connection status lives in the status bar with latency indicator (color-coded)
+- Latency indicator shown inline in toolbar (color-coded)
+- Transfer method dot indicator (green=rsync, blue=SFTP, orange=ADB)
 - macOS menu bar with File, Edit, View, Help menus
 - Window size and position remembered between sessions
 - Downloads auto-reveal in Finder on completion
@@ -182,9 +198,10 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 
 ## Dependencies
 
-| Package    | Purpose             |
-| ---------- | ------------------- |
-| PySide6    | Qt UI framework     |
-| Paramiko   | SSH/SFTP            |
-| Pydantic   | Settings validation |
-| send2trash | Safe file deletion  |
+| Package         | Purpose                 |
+| --------------- | ----------------------- |
+| PySide6         | Qt UI framework         |
+| Paramiko        | SSH/SFTP                |
+| Pydantic        | Settings validation     |
+| send2trash      | Safe file deletion      |
+| pymobiledevice3 | iOS device access (AFC) |

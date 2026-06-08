@@ -90,16 +90,9 @@
 
 ---
 
-### 6. Multi-Server Quick-Switch
+### ~~6. Multi-Server Quick-Switch~~ ✅ Done
 
-> The dialog-free switching you liked.
-
-- [ ] **Server dropdown in the toolbar** — switch active server with one click, no dialog
-- [ ] Show connection status dot next to each server name (green/red/connecting)
-- [ ] Remember the last-browsed path per server so switching feels instant
-- [ ] **Split-pane mode** (later) — two servers side by side, drag files directly between them
-  - Example: NAS on the left, S3 bucket on the right, drag to copy between them
-  - This is the power-user dream: server-to-server transfers without round-tripping through your Mac
+> See [CHANGELOG.md](CHANGELOG.md). Implemented June 2026.
 
 ---
 

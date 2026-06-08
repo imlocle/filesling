@@ -10,17 +10,19 @@ Built with Python, PySide6, and Paramiko.
 
 ## Features
 
-- 🖥 **Remote file explorer** — Browse, upload, download, and manage files on SSH servers and Android devices
-- 📂 **Drag-and-drop** — Drop files from Finder onto the explorer (or onto specific folders)
-- 📱 **Android USB** — Connect phones, tablets, and VR headsets via ADB
-- 📊 **Transfer queue** — Queued uploads/downloads with speed, ETA, auto-retry, and resume
-- 🔄 **Multi-server** — Save multiple devices with per-server bookmarks and settings
-- 🔁 **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
-- 🔐 **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain
-- 🔔 **Notifications** — macOS alerts on transfer complete/fail, Dock badge for pending count
-- 📦 **Batch operations** — Multi-select download, move, delete, and batch rename
-- 🌓 **Themes** — Follow system, light, or dark
-- ⌨️ **Keyboard shortcuts** — ⌘+R, ⌘+N, ⌘+F, ⌘+Delete, etc.
+- **Remote file explorer** — Browse, upload, download, and manage files on SSH servers and Android devices
+- **Drag-and-drop** — Drop files from Finder into the current directory
+- **Android USB + WiFi** — Connect phones, tablets, and VR headsets via ADB (wired or wireless)
+- **iPhone/iPad USB** — Browse and back up camera roll photos/videos
+- **Transfer queue** — Queued uploads/downloads with speed, ETA, auto-retry, and resume
+- **rsync fast path** — Delta transfers for SSH servers (only sends changed bytes)
+- **Multi-server** — Quick-switch dropdown, per-server bookmarks and settings
+- **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
+- **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain
+- **Notifications** — macOS alerts on transfer complete/fail, Dock badge for pending count
+- **Batch operations** — Multi-select download, move, delete, and batch rename
+- **Themes** — Modern iOS-inspired dark mode, or light
+- **Keyboard shortcuts** — ⌘+R, ⌘+N, ⌘+F, ⌘+Delete, etc.
 
 ## Quick Start
 
