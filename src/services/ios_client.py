@@ -23,6 +23,7 @@ The user must unlock the device and tap "Trust This Computer" on first connect.
 
 from __future__ import annotations
 
+import os
 import posixpath
 import stat as stat_module
 from dataclasses import dataclass
@@ -61,16 +62,9 @@ def get_connected_ios_devices() -> List[dict]:
         async def _list() -> list:
             return await list_devices()
 
-        # Run the async list_devices in a new event loop
-        try:
-            loop = asyncio.get_running_loop()
-            # If we're already in an async context, can't use asyncio.run
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                devices = loop.run_in_executor(pool, asyncio.run, _list())
-        except RuntimeError:
-            devices = asyncio.run(_list())
+        # Qt's main thread doesn't have a running asyncio loop,
+        # so asyncio.run() is safe here.
+        devices = asyncio.run(_list())
 
         result = []
         for device in devices:
@@ -194,9 +188,29 @@ class IOSClient:
         local_path: str,
         callback: Optional[Callable] = None,
     ) -> None:
-        """Download a file from the device."""
+        """Download a file from the device using chunked reading."""
         self._ensure_connected()
         try:
+            # Get file size for progress
+            info = self._afc.stat(remote_path)
+            total_size = int(info.get("st_size", 0))
+
+            # Stream the file in chunks to avoid loading it all into memory
+            with self._afc.open(remote_path, "r") as remote_file:
+                with open(local_path, "wb") as local_file:
+                    transferred = 0
+                    while True:
+                        chunk = remote_file.read(1024 * 1024)  # 1MB chunks
+                        if not chunk:
+                            break
+                        local_file.write(chunk)
+                        transferred += len(chunk)
+                        if callback and total_size > 0:
+                            callback(transferred, total_size)
+            if callback:
+                callback(total_size, total_size)
+        except AttributeError:
+            # Fallback if .open() is not available in this version
             data = self._afc.get_file_contents(remote_path)
             with open(local_path, "wb") as f:
                 f.write(data)
@@ -211,9 +225,26 @@ class IOSClient:
         remote_path: str,
         callback: Optional[Callable] = None,
     ) -> None:
-        """Upload a file to the device."""
+        """Upload a file to the device using chunked writing."""
         self._ensure_connected()
         try:
+            total_size = os.path.getsize(local_path)
+            # Stream the file in chunks
+            with open(local_path, "rb") as local_file:
+                with self._afc.open(remote_path, "w") as remote_file:
+                    transferred = 0
+                    while True:
+                        chunk = local_file.read(1024 * 1024)  # 1MB chunks
+                        if not chunk:
+                            break
+                        remote_file.write(chunk)
+                        transferred += len(chunk)
+                        if callback and total_size > 0:
+                            callback(transferred, total_size)
+            if callback:
+                callback(total_size, total_size)
+        except AttributeError:
+            # Fallback if .open() is not available in this version
             with open(local_path, "rb") as f:
                 data = f.read()
             self._afc.set_file_contents(remote_path, data)

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from src.config.settings import Settings
 from src.controllers.transfer_controller import ManualTransferController
+from src.widgets.transfer_queue_widget import TransferStatus
 from src.models.errors import (
     AuthenticationError,
     ConnectionLostError,
@@ -102,6 +103,10 @@ class MainWindowController:
         if self._queue_signals_connected or not hasattr(self.view, "transfer_queue"):
             return
         self.view.transfer_queue.cancel_transfer.connect(self._on_cancel_transfer)
+        self.view.transfer_queue.cancel_active.connect(
+            self.manual_transfer.cancel_active_transfer
+        )
+        self.view.transfer_queue.indices_changed.connect(self._on_queue_indices_changed)
         self._queue_signals_connected = True
 
     def initialize_transfer_queue(self) -> None:
@@ -128,11 +133,21 @@ class MainWindowController:
     # --------------------------------------------------------------
     def _on_manual_transfer_started(self, path: str) -> None:
         """Handle manual transfer started — mark current item as in-progress."""
-        # Mark the first pending item as in-progress
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
+
+            # If the previous item hasn't been marked complete yet (race condition),
+            # force-complete it now before starting the next one.
+            if self._current_queue_index >= 0:
+                if self._current_queue_index < len(queue._items):
+                    prev = queue._items[self._current_queue_index]
+                    if prev.status == TransferStatus.IN_PROGRESS:
+                        queue.set_completed(self._current_queue_index)
+                self._current_queue_index = -1
+
+            # Find the first pending item and mark it as in-progress.
             for i, item in enumerate(queue._items):
-                if item.status.value == "pending":
+                if item.status == TransferStatus.PENDING:
                     queue.set_in_progress(i)
                     self._current_queue_index = i
                     break
@@ -142,8 +157,19 @@ class MainWindowController:
 
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed — mark item as done."""
-        if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
-            self.view.transfer_queue.set_completed(self._current_queue_index)
+        if hasattr(self.view, "transfer_queue"):
+            queue = self.view.transfer_queue
+            # Find the in-progress item and mark it complete.
+            # Don't rely solely on _current_queue_index — it can be stale.
+            if self._current_queue_index >= 0:
+                if self._current_queue_index < len(queue._items):
+                    queue.set_completed(self._current_queue_index)
+            else:
+                # Fallback: find any in-progress item and complete it
+                for i, item in enumerate(queue._items):
+                    if item.status == TransferStatus.IN_PROGRESS:
+                        queue.set_completed(i)
+                        break
             self._current_queue_index = -1
         self.refresh_explorers()
 
@@ -163,9 +189,18 @@ class MainWindowController:
 
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
         """Handle manual transfer failed — mark item as failed."""
-        if hasattr(self.view, "transfer_queue") and self._current_queue_index >= 0:
+        if hasattr(self.view, "transfer_queue"):
+            queue = self.view.transfer_queue
             short_error = error.split("\n")[0][:80]
-            self.view.transfer_queue.set_failed(self._current_queue_index, short_error)
+            if self._current_queue_index >= 0:
+                if self._current_queue_index < len(queue._items):
+                    queue.set_failed(self._current_queue_index, short_error)
+            else:
+                # Fallback: find any in-progress item and fail it
+                for i, item in enumerate(queue._items):
+                    if item.status == TransferStatus.IN_PROGRESS:
+                        queue.set_failed(i, short_error)
+                        break
             self._current_queue_index = -1
 
         # Update dock badge
@@ -204,6 +239,18 @@ class MainWindowController:
         """Handle cancel request from queue widget."""
         self.manual_transfer.cancel_queued_item(pending_index)
 
+    def _on_queue_indices_changed(self) -> None:
+        """Re-sync _current_queue_index after items were removed from the queue."""
+        if not hasattr(self.view, "transfer_queue"):
+            return
+        queue = self.view.transfer_queue
+        # Find the in-progress item's new index
+        self._current_queue_index = -1
+        for i, item in enumerate(queue._items):
+            if item.status == TransferStatus.IN_PROGRESS:
+                self._current_queue_index = i
+                break
+
     def _update_dock_badge(self) -> None:
         """Update the Dock icon badge with pending transfer count."""
         from src.services.notification_service import set_dock_badge
@@ -231,6 +278,17 @@ class MainWindowController:
         if self.manual_transfer.is_busy():
             return
 
+        # Skip if a download is in progress (BUG-DA-07: TOCTOU with workers)
+        if hasattr(self, "_download_thread") and self._download_thread:
+            return
+
+        # Skip if DirectoryLoader is running (BUG-DA-21: conflicts with loader)
+        if (
+            self.view.remote_explorer._loader_thread
+            and self.view.remote_explorer._loader_thread.isRunning()
+        ):
+            return
+
         # Check if connection is alive
         if self.connection_manager.check_alive():
             # Measure latency
@@ -254,21 +312,7 @@ class MainWindowController:
                     )
                     self.view.remote_explorer.refresh()
 
-                server_name = ""
-                server_config = self.settings.get_server(
-                    self.settings.config.current_server_id
-                )
-                if server_config:
-                    server_name = server_config.get("name", "")
-
-                if server_name:
-                    self.view.connection_status_label.setText(
-                        f"● Connected: {server_name}"
-                    )
-                else:
-                    self.view.connection_status_label.setText(
-                        f"● Connected: {self.settings.host}"
-                    )
+                self.view.connection_status_label.setText("")
                 self.view.connection_status_label.setObjectName("connection_connected")
                 self.view.connection_status_label.style().polish(
                     self.view.connection_status_label
@@ -287,17 +331,9 @@ class MainWindowController:
     def _update_connection_status_with_latency(self, latency: float) -> None:
         """Update the status bar with latency info and color-coded quality."""
         label = self.view.connection_status_label
-        current_text = label.text()
-
-        # Strip any existing latency suffix
-        if " (" in current_text:
-            base_text = current_text.split(" (")[0]
-        else:
-            base_text = current_text
 
         if latency >= 0:
-            label.setText(f"{base_text} ({latency:.0f}ms)")
-            # Color code: green < 100ms, orange 100-300ms, red > 300ms
+            label.setText(f"{latency:.0f}ms")
             if latency < 100:
                 label.setObjectName("connection_connected")
             elif latency < 300:
@@ -305,6 +341,7 @@ class MainWindowController:
             else:
                 label.setObjectName("connection_slow")
             label.style().polish(label)
+            self._update_connect_btn_from_label()
 
     # --------------------------------------------------------------
     #  CONNECTION MANAGEMENT
@@ -383,10 +420,7 @@ class MainWindowController:
             client.listdir(root_path)
 
             # Success — bind to explorer
-            conn_label = "WiFi" if wifi_ip and ":" in (device_id or "") else "USB"
-            self.view.connection_status_label.setText(
-                f"● Connected: {device_name} ({conn_label})"
-            )
+            self.view.connection_status_label.setText("")
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.style().polish(
                 self.view.connection_status_label
@@ -452,9 +486,7 @@ class MainWindowController:
             client.listdir(root_path)
 
             # Success — bind to explorer
-            self.view.connection_status_label.setText(
-                f"● Connected: {device_name} (iPhone)"
-            )
+            self.view.connection_status_label.setText("")
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.style().polish(
                 self.view.connection_status_label
@@ -582,21 +614,7 @@ class MainWindowController:
             # Connection successful - reset attempt counter
             self.view.connection_attempts = 0
 
-            server_name = ""
-            server_config = self.settings.get_server(
-                self.settings.config.current_server_id
-            )
-            if server_config:
-                server_name = server_config.get("name", "")
-
-            if server_name:
-                self.view.connection_status_label.setText(
-                    f"● Connected: {server_name} ({self.settings.host})"
-                )
-            else:
-                self.view.connection_status_label.setText(
-                    f"● Connected: {self.settings.host}"
-                )
+            self.view.connection_status_label.setText("")
             self.view.connection_status_label.setObjectName("connection_connected")
             self.view.connection_status_label.style().polish(
                 self.view.connection_status_label
@@ -707,6 +725,21 @@ class MainWindowController:
         self.selected_item = path or None
         self.view.delete_btn.setEnabled(bool(self.selected_item))
 
+    def _set_connection_state(self, connected: bool) -> None:
+        """Update the power button color to reflect connection state."""
+        btn = self.view.connect_btn
+        if connected:
+            btn.setStyleSheet(
+                "QPushButton#icon_btn { color: #30d158; }"
+            )
+        else:
+            btn.setStyleSheet("")  # Reset to default
+
+    def _update_connect_btn_from_label(self) -> None:
+        """Sync the power button color with the connection status label state."""
+        obj_name = self.view.connection_status_label.objectName()
+        self._set_connection_state(obj_name == "connection_connected")
+
     # --------------------------------------------------------------
     #  DELETE
     # --------------------------------------------------------------
@@ -749,7 +782,7 @@ class MainWindowController:
 
         for path in paths:
             try:
-                is_remote = path.startswith(self.settings.remote_base_dir)
+                is_remote = self.view.remote_explorer.sftp is not None
                 if is_remote:
                     self._delete_remote(path)
                 else:
@@ -768,7 +801,7 @@ class MainWindowController:
             path: Path to file or folder to delete
         """
         basename = os.path.basename(path)
-        is_remote = path.startswith(self.settings.remote_base_dir)
+        is_remote = self.view.remote_explorer.sftp is not None
 
         reply = QMessageBox.question(
             self.view,
@@ -1066,6 +1099,7 @@ class MainWindowController:
 
         if connection_type == CONN_TYPE_ADB:
             download_sftp = sftp
+            self._download_sftp = None  # ADB doesn't need closing
         else:
             try:
                 download_sftp = self.connection_manager.open_sftp_session()
@@ -1076,6 +1110,7 @@ class MainWindowController:
                             self._download_queue_index, "Could not open SFTP session"
                         )
                     return
+                self._download_sftp = download_sftp
             except Exception as e:
                 logger.error(f"Download: Failed to open session: {e}")
                 if hasattr(self, "_download_queue_index"):
@@ -1291,6 +1326,14 @@ class MainWindowController:
 
     def _cleanup_download(self) -> None:
         """Clean up download worker and thread after thread has stopped."""
+        # Close the SFTP session used for this download (prevents channel leak)
+        if hasattr(self, "_download_sftp") and self._download_sftp:
+            try:
+                self._download_sftp.close()
+            except Exception:
+                pass
+            self._download_sftp = None
+
         if hasattr(self, "_download_worker") and self._download_worker:
             self._download_worker.deleteLater()
             self._download_worker = None
@@ -1391,7 +1434,7 @@ class MainWindowController:
             dest_path: Destination path for the item
             confirm: Whether to show a confirmation dialog
         """
-        is_remote = src_path.startswith(self.settings.remote_base_dir)
+        is_remote = self.view.remote_explorer.sftp is not None
 
         # Validate that source and destination are in the same filesystem
         if is_remote != dest_path.startswith(self.settings.remote_base_dir):
@@ -1405,7 +1448,8 @@ class MainWindowController:
             return
 
         # Prevent moving into itself or its subdirectories
-        if dest_path.startswith(src_path + os.sep) or src_path == dest_path:
+        # Use "/" (POSIX separator) — remote paths are always POSIX
+        if dest_path.startswith(src_path + "/") or src_path == dest_path:
             logger.error("Cannot move item into itself")
             QMessageBox.critical(
                 self.view,

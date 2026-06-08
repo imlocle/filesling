@@ -273,12 +273,19 @@ class TransferWorker(QObject):
         try:
             # Create zip archive
             archive_path = shutil.make_archive(zip_path, "zip", local_folder)
-            # Update total bytes to reflect zip size
+            # Use local variable for zip progress — don't overwrite _total_bytes
+            # which tracks the overall transfer across all items.
             zip_size = os.path.getsize(archive_path)
-            self._total_bytes = zip_size
+            original_total = self._total_bytes
+            if self._total_bytes <= 0:
+                self._total_bytes = zip_size
 
             # Upload the zip file
             self._upload_file(archive_path, remote_root)
+
+            # Restore original total if we had to set it temporarily
+            if original_total > 0:
+                self._total_bytes = original_total
 
         finally:
             # Clean up temp zip
@@ -361,7 +368,6 @@ class TransferWorker(QObject):
                 msg += f"\nDetails: {e.details}"
             logger.error(msg)
             self.error.emit(msg)
-            self.finished.emit()
 
         except (FileUploadError, RemoteDirectoryError, TransferVerificationError) as e:
             msg = f"{e.message}"
@@ -371,10 +377,8 @@ class TransferWorker(QObject):
                 msg += f"\nDetails: {e.details}"
             logger.error(msg)
             self.error.emit(msg)
-            self.finished.emit()
 
         except Exception as e:
             msg = f"Manual transfer failed: {e}"
             logger.error(msg)
             self.error.emit(msg)
-            self.finished.emit()

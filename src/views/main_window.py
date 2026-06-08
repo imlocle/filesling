@@ -11,6 +11,7 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -88,7 +89,6 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         self._setup_toolbar(main_layout)
-        self._setup_status_bar(main_layout)
         self._setup_content_area(main_layout)
         self._setup_diagnostics_log()
         self._setup_progress_bar(main_layout)
@@ -270,13 +270,69 @@ class MainWindow(QMainWindow):
 
         selection_dialog = ServerSelectionDialog(self)
         if selection_dialog.exec() != QDialog.DialogCode.Accepted:
-            # User cancelled — reconnect to current server
             return
 
         server_id = selection_dialog.get_selected_server_id()
         if not server_id:
             return
 
+        self._switch_to_server(server_id)
+
+    def _populate_server_combo(self) -> None:
+        """Populate the server dropdown with all configured servers.
+
+        NOTE (BUG-DA-23): This method depends on blockSignals(True) being called
+        before clear()/addItem() and blockSignals(False) after. It also depends on
+        _setup_connections having been called before this method. Reordering these
+        calls will cause spurious _on_server_combo_changed signals.
+        """
+        self.server_combo.blockSignals(True)
+        self.server_combo.clear()
+
+        servers = self.settings.get_servers()
+        current_id = self.settings.config.current_server_id
+
+        for server_id, config in servers.items():
+            name = config.get("name", server_id)
+            self.server_combo.addItem(name, server_id)
+
+        # Separator + "Manage Servers" option
+        self.server_combo.insertSeparator(self.server_combo.count())
+        self.server_combo.addItem("Manage Servers", "__manage__")
+
+        # Select current server
+        for i in range(self.server_combo.count()):
+            if self.server_combo.itemData(i) == current_id:
+                self.server_combo.setCurrentIndex(i)
+                break
+
+        self.server_combo.blockSignals(False)
+
+    def _on_server_combo_changed(self, index: int) -> None:
+        """Handle server selection from the dropdown."""
+        if index < 0:
+            return
+        server_id = self.server_combo.itemData(index)
+        if not server_id:
+            return
+        if server_id == "__manage__":
+            # Reset combo to current server (don't stay on "Manage Servers…")
+            self.server_combo.blockSignals(True)
+            current_id = self.settings.config.current_server_id
+            for i in range(self.server_combo.count()):
+                if self.server_combo.itemData(i) == current_id:
+                    self.server_combo.setCurrentIndex(i)
+                    break
+            self.server_combo.blockSignals(False)
+            # Open the server selection dialog
+            self.change_server()
+            return
+        if server_id == self.settings.config.current_server_id:
+            return
+        self._switch_to_server(server_id)
+
+    def _switch_to_server(self, server_id: str) -> None:
+        """Switch to a different server by ID."""
         if not self.settings.load_server(server_id):
             return
 
@@ -288,6 +344,14 @@ class MainWindow(QMainWindow):
         self.connection_manager_service = ConnectionManagerService(self.settings)
         self.controller.connection_manager = self.connection_manager_service
 
+        # Update combo selection (in case triggered from dialog)
+        self.server_combo.blockSignals(True)
+        for i in range(self.server_combo.count()):
+            if self.server_combo.itemData(i) == server_id:
+                self.server_combo.setCurrentIndex(i)
+                break
+        self.server_combo.blockSignals(False)
+
         # Connect to new server
         self.controller.connect()
 
@@ -297,7 +361,7 @@ class MainWindow(QMainWindow):
     def _setup_connections(self) -> None:
         """Wire UI signals to controller actions."""
         self.connect_btn.clicked.connect(self.controller.connect)
-        self.change_server_btn.clicked.connect(self.change_server)
+        self.server_combo.currentIndexChanged.connect(self._on_server_combo_changed)
         self.refresh_btn.clicked.connect(self.controller.refresh_explorers)
         self.settings_btn.clicked.connect(self.controller.open_settings)
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
@@ -553,22 +617,34 @@ class MainWindow(QMainWindow):
         toolbar.setObjectName("toolbar")
 
         toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(12, 8, 12, 8)
+        toolbar_layout.setContentsMargins(12, 6, 12, 6)
         toolbar_layout.setSpacing(8)
 
-        # Left side buttons
+        # Left side: connect button + server dropdown
         self.connect_btn = QPushButton("⏻")
         self.connect_btn.setObjectName("icon_btn")
         self.connect_btn.setToolTip("Connect")
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.change_server_btn = QPushButton("⇄")
-        self.change_server_btn.setObjectName("icon_btn")
-        self.change_server_btn.setToolTip("Change Server")
-        self.change_server_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Server quick-switch dropdown
+        self.server_combo = QComboBox()
+        self.server_combo.setMinimumWidth(150)
+        self.server_combo.setMaximumWidth(280)
+        self.server_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self.server_combo.setToolTip("Switch server")
+        self.server_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._populate_server_combo()
+
+        # Connection status (minimal — just latency, shown inline)
+        self.connection_status_label = QLabel("")
+        self.connection_status_label.setObjectName("connection_disconnected")
+        self.connection_status_label.setStyleSheet("font-size: 11px;")
 
         toolbar_layout.addWidget(self.connect_btn)
-        toolbar_layout.addWidget(self.change_server_btn)
+        toolbar_layout.addWidget(self.server_combo)
+        toolbar_layout.addWidget(self.connection_status_label)
         toolbar_layout.addStretch()
 
         # Right side buttons
@@ -594,24 +670,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(toolbar)
 
-    def _setup_status_bar(self, layout: QVBoxLayout) -> None:
-        """Create status bar with connection and monitoring status."""
-        status_bar = QFrame()
-        status_bar.setObjectName("status_bar")
-
-        status_layout = QHBoxLayout(status_bar)
-        status_layout.setContentsMargins(12, 6, 12, 6)
-        status_layout.setSpacing(16)
-
-        # Connection status
-        self.connection_status_label = QLabel("● Disconnected")
-        self.connection_status_label.setObjectName("connection_disconnected")
-
-        status_layout.addWidget(self.connection_status_label)
-        status_layout.addStretch()
-
-        layout.addWidget(status_bar)
-
     def _setup_content_area(self, layout: QVBoxLayout) -> None:
         """Create main content area with file explorer."""
         content_container = QWidget()
@@ -621,7 +679,7 @@ class MainWindow(QMainWindow):
         self.remote_explorer = FileExplorerWidget(
             settings=self.settings,
             root_path=self.settings.remote_base_dir,
-            title="🖥 Remote Server",
+            title="Remote Server",
             is_remote=True,
             sftp=None,
         )
@@ -857,41 +915,36 @@ class MainWindow(QMainWindow):
                 return
             # action == DUP_ACTION_OVERWRITE → proceed with all files
 
-        # Calculate total size for the queue widget
-        total_bytes = 0
+        # Determine transfer method for the indicator dot
+        transfer_method = self.controller.manual_transfer.get_transfer_method()
+
+        # Add each file/folder as its own queue row and queue individually
         for p in local_paths:
+            name = os.path.basename(p.rstrip("/"))
+            # Calculate size for this item
+            item_bytes = 0
             if os.path.isdir(p):
                 for root, _, files in os.walk(p):
                     for f in files:
                         if not f.startswith("."):
                             try:
-                                total_bytes += os.path.getsize(os.path.join(root, f))
+                                item_bytes += os.path.getsize(
+                                    os.path.join(root, f)
+                                )
                             except OSError:
                                 pass
             elif os.path.isfile(p):
                 try:
-                    total_bytes += os.path.getsize(p)
+                    item_bytes = os.path.getsize(p)
                 except OSError:
                     pass
 
-        # Build display name
-        names = [os.path.basename(p.rstrip("/")) for p in local_paths]
-        display_name = ", ".join(names[:2])
-        if len(names) > 2:
-            display_name += f" (+{len(names) - 2})"
-
-        # Determine transfer method for the indicator dot
-        transfer_method = self.controller.manual_transfer.get_transfer_method()
-
-        # Add to visual queue
-        self.transfer_queue.add_transfer(
-            display_name, total_bytes, remote_dir, transfer_method
-        )
-
-        # Start the transfer
-        self.controller.manual_transfer.queue_transfer(
-            local_paths=local_paths, remote_destination=remote_dir
-        )
+            self.transfer_queue.add_transfer(
+                name, item_bytes, remote_dir, transfer_method
+            )
+            self.controller.manual_transfer.queue_transfer(
+                local_paths=[p], remote_destination=remote_dir
+            )
 
     def _show_duplicate_dialog(self, duplicates: list[str]) -> str:
         """

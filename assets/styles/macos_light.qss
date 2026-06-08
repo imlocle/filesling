@@ -16,12 +16,6 @@ QFrame#toolbar {
     padding: 0;
 }
 
-QFrame#status_bar {
-    background-color: #ffffff;
-    border: 1px solid #d2d2d7;
-    border-radius: 7px;
-}
-
 QPushButton {
     background-color: #ffffff;
     color: #1d1d1f;
@@ -56,12 +50,6 @@ QPushButton#primary_btn {
 QPushButton#primary_btn:hover:!disabled {
     background-color: #0a84ff;
     border-color: #0a84ff;
-}
-
-QPushButton#danger_btn {
-    background-color: #ff3b30;
-    color: #ffffff;
-    border-color: #ff3b30;
 }
 
 QPushButton#icon_btn {

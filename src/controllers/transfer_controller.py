@@ -120,6 +120,7 @@ class ManualTransferController(QObject):
         # Active transfer state
         self._active_worker: Optional[TransferWorker] = None
         self._active_thread: Optional[QThread] = None
+        self._active_sftp = None  # SFTP session opened for this transfer
         self._current_transfer: Optional[QueuedTransfer] = None
         self._transfer_errored = False
         self._retry_current_transfer = False
@@ -333,6 +334,7 @@ class ManualTransferController(QObject):
                     logger.error("Transfer: Could not open SFTP session")
                     self._handle_start_failure("Could not open SFTP session")
                     return
+                self._active_sftp = sftp
             except Exception as e:
                 logger.error(f"Transfer: Failed to start: {e}")
                 self._handle_start_failure(str(e))
@@ -501,6 +503,14 @@ class ManualTransferController(QObject):
 
     def _cleanup_and_next(self) -> None:
         """Clean up current transfer and process next in queue."""
+        # Close the SFTP session opened for this transfer (prevents channel leak)
+        if self._active_sftp:
+            try:
+                self._active_sftp.close()
+            except Exception:
+                pass
+            self._active_sftp = None
+
         if self._active_worker:
             self._active_worker.deleteLater()
             self._active_worker = None
@@ -519,8 +529,9 @@ class ManualTransferController(QObject):
         self._current_transfer = None
         self._persist_queue()
 
-        # Process next item
-        QTimer.singleShot(100, self._process_next)
+        # Process next item — delay gives the main thread event loop time to
+        # process the transfer_completed signal before transfer_started fires.
+        QTimer.singleShot(250, self._process_next)
 
     def clear_queue(self) -> None:
         """Clear all pending (not in-progress) transfers."""
@@ -538,9 +549,6 @@ class ManualTransferController(QObject):
         Args:
             queue_index: Index relative to pending items (0 = next pending)
         """
-        # The visual queue index includes completed/in-progress items,
-        # but the internal queue only has pending items.
-        # We need to map: count how many pending items precede this visual index.
         if 0 <= visual_index < len(self._queue):
             removed = self._queue.pop(visual_index)
             self._persist_queue()
@@ -548,3 +556,37 @@ class ManualTransferController(QObject):
             self.queue_changed.emit(
                 len(self._queue) + (1 if self._is_processing else 0)
             )
+
+    def cancel_active_transfer(self) -> None:
+        """Cancel the currently in-progress transfer (rsync or SFTP)."""
+        if not self._is_processing:
+            return
+
+        # Cancel rsync if active
+        if self._active_worker and hasattr(self._active_worker, "_active_rsync"):
+            rsync = self._active_worker._active_rsync
+            if rsync:
+                rsync.cancel()
+
+        # Disconnect thread.finished from _cleanup_and_next to prevent double-fire
+        if self._active_thread:
+            try:
+                self._active_thread.finished.disconnect(self._cleanup_and_next)
+            except (RuntimeError, TypeError):
+                pass
+
+        # Kill the thread
+        if self._active_thread and self._active_thread.isRunning():
+            self._active_thread.quit()
+            self._active_thread.wait(2000)  # Wait up to 2s
+
+        self._transfer_errored = True
+        if self._current_transfer:
+            logger.info(
+                f"Transfer: Cancelled: {self._current_transfer.display_name}"
+            )
+            self.transfer_failed.emit(
+                self._current_transfer.local_paths[0], "Cancelled by user"
+            )
+
+        self._cleanup_and_next()

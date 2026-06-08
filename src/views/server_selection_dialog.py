@@ -179,15 +179,18 @@ class ServerSelectionDialog(QDialog):
         name = config.get("name", server_id)
         conn_type = config.get("connection_type", "ssh")
         is_default = self.settings.config.default_server_id == server_id
-        prefix = "⭐ " if is_default else ""
+        prefix = "● " if is_default else ""
 
         if conn_type == "adb":
             device_id = config.get("device_id", "")
-            return f"{prefix}{name}\n📱 USB ({device_id})"
+            return f"{prefix}{name}\nUSB ({device_id})"
+        elif conn_type == "ios":
+            device_id = config.get("device_id", "")
+            return f"{prefix}{name}\niOS ({device_id[:8]})" if device_id else f"{prefix}{name}\niOS"
         else:
             user = config.get("username", "")
             ip = config.get("host", "")
-            return f"{prefix}{name}\n🖥 {user}@{ip}"
+            return f"{prefix}{name}\n{user}@{ip}"
 
     def _on_selection_changed(self) -> None:
         """Handle server selection change."""

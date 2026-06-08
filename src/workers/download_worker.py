@@ -74,9 +74,30 @@ class DownloadWorker(QObject):
 
         try:
             self.sftp.get(remote_path, local_path, callback=progress_callback)
+            # Verify downloaded size matches remote
+            if file_size > 0:
+                local_size = os.path.getsize(local_path) if os.path.exists(local_path) else 0
+                if local_size != file_size:
+                    # Partial download — remove the truncated file
+                    try:
+                        os.remove(local_path)
+                    except OSError:
+                        pass
+                    raise IOError(
+                        f"Download incomplete: got {local_size} bytes, "
+                        f"expected {file_size} bytes"
+                    )
             self._cumulative_bytes += file_size
             logger.success(f"Downloaded: {filename}")
         except IOError as e:
+            # Clean up partial file on any failure
+            if os.path.exists(local_path) and file_size > 0:
+                local_size = os.path.getsize(local_path)
+                if local_size < file_size:
+                    try:
+                        os.remove(local_path)
+                    except OSError:
+                        pass
             if "Socket is closed" in str(e) or "not open" in str(e).lower():
                 raise ConnectionLostError(
                     "Connection lost during download", details=str(e)
@@ -118,10 +139,8 @@ class DownloadWorker(QObject):
             msg = f"Connection lost during download: {e.message}"
             logger.error(msg)
             self.error.emit(msg)
-            self.finished.emit()
 
         except Exception as e:
             msg = f"Download failed: {e}"
             logger.error(msg)
             self.error.emit(msg)
-            self.finished.emit()

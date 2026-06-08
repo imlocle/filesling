@@ -314,6 +314,8 @@ class TransferQueueWidget(QWidget):
 
     retry_transfer = Signal(int)  # index of failed transfer to retry
     cancel_transfer = Signal(int)  # index of pending transfer to cancel
+    cancel_active = Signal()  # cancel the in-progress transfer
+    indices_changed = Signal()  # emitted when items are removed (clear_completed)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -421,22 +423,34 @@ class TransferQueueWidget(QWidget):
             # Don't update widget here — timer handles it
 
     def set_completed(self, index: int) -> None:
-        """Mark a transfer as completed."""
+        """Mark a transfer as completed and move to the bottom of the list."""
         if 0 <= index < len(self._items):
             self._items[index].status = TransferStatus.COMPLETED
             self._items[index].end_time = time.time()
             self._items[index].transferred_bytes = self._items[index].total_bytes
             self._item_widgets[index].update_display()
+
+            # Move widget to bottom (before the stretch)
+            widget = self._item_widgets[index]
+            self.items_layout.removeWidget(widget)
+            self.items_layout.insertWidget(self.items_layout.count() - 1, widget)
+
             self._check_stop_timer()
             self._update_visibility()
 
     def set_failed(self, index: int, error: str) -> None:
-        """Mark a transfer as failed."""
+        """Mark a transfer as failed and move to the bottom of the list."""
         if 0 <= index < len(self._items):
             self._items[index].status = TransferStatus.FAILED
             self._items[index].end_time = time.time()
             self._items[index].error_message = error
             self._item_widgets[index].update_display()
+
+            # Move widget to bottom (before the stretch)
+            widget = self._item_widgets[index]
+            self.items_layout.removeWidget(widget)
+            self.items_layout.insertWidget(self.items_layout.count() - 1, widget)
+
             self._check_stop_timer()
             self._update_visibility()
 
@@ -460,12 +474,19 @@ class TransferQueueWidget(QWidget):
 
         self._update_visibility()
 
+        # Notify controller to re-sync its index
+        self.indices_changed.emit()
+
     def _cancel_item(self, index: int) -> None:
         """Cancel a pending transfer and remove it from the queue."""
         if 0 <= index < len(self._items):
             item = self._items[index]
+            if item.status == TransferStatus.IN_PROGRESS:
+                # Cancel the active transfer — emit special signal
+                self.cancel_active.emit()
+                return
             if item.status != TransferStatus.PENDING:
-                return  # Can only cancel pending items
+                return  # Can only cancel pending or in-progress items
 
             # Count how many pending items come before this one
             # (this maps to the internal queue index in the controller)

@@ -99,7 +99,7 @@ class TestRsyncTransfer:
         cmd = transfer._build_command()
 
         assert cmd[0] == "rsync"
-        assert "-az" in cmd
+        assert "-a" in cmd
         assert "--partial" in cmd
         assert "--progress" in cmd
         assert "/tmp/video.mp4" in cmd

@@ -97,12 +97,13 @@ class RsyncTransfer:
         ssh_opt = _build_ssh_option(self.config)
 
         # -a: archive (recursive, preserve timestamps/perms)
-        # -z: compress during transfer
         # --partial: keep partially transferred files for resume
         # --progress: per-file progress (compatible with openrsync + GNU rsync)
+        # NOTE: no -z (compression) — on local networks it slows things down
+        # by adding CPU overhead without meaningful size reduction for media files.
         cmd = [
             "rsync",
-            "-az",
+            "-a",
             "--partial",
             "--progress",
             "-e",
@@ -114,7 +115,12 @@ class RsyncTransfer:
         if not remote_dir.endswith("/"):
             remote_dir += "/"
 
-        cmd.extend(self.local_paths)
+        # Strip trailing slashes from local paths — rsync treats
+        # "folder/" as "copy contents of folder" vs "folder" as "copy the folder"
+        # NOTE: brackets [] in local paths are safe because we pass args as a list
+        # (not through shell). rsync only interprets wildcards in filter patterns.
+        clean_paths = [p.rstrip("/") for p in self.local_paths]
+        cmd.extend(clean_paths)
         cmd.append(_remote_spec(self.config, remote_dir))
         return cmd
 
@@ -175,30 +181,6 @@ class RsyncTransfer:
 
         if progress_cb:
             progress_cb(100)
-
-    def _parse_stats(self, output: str) -> None:
-        """Parse rsync --stats output and log delta savings."""
-        try:
-            # Look for "Total transferred file size: X bytes"
-            # and "Total file size: Y bytes" to compute savings
-            total_match = re.search(r"Total file size:\s+([\d,]+)", output)
-            transferred_match = re.search(
-                r"Total transferred file size:\s+([\d,]+)", output
-            )
-            if total_match and transferred_match:
-                total = int(total_match.group(1).replace(",", ""))
-                transferred = int(transferred_match.group(1).replace(",", ""))
-                if total > 0 and transferred < total:
-                    saved_pct = int((1 - transferred / total) * 100)
-                    saved_mb = (total - transferred) / (1024 * 1024)
-                    logger.info(
-                        f"rsync: delta saved {saved_pct}% "
-                        f"({saved_mb:.1f} MB skipped)"
-                    )
-                elif total > 0:
-                    logger.info("rsync: full transfer (no delta savings)")
-        except Exception:
-            pass  # Stats parsing is best-effort
 
     def cancel(self) -> None:
         """Cancel the running rsync process."""
