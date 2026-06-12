@@ -80,14 +80,13 @@ class TestConnectionManagerService:
         assert service.check_alive() is False
 
     def test_measure_latency_success(self, service):
-        mock_ssh = MagicMock()
-        mock_transport = MagicMock()
-        mock_transport.is_active.return_value = True
-        mock_ssh.get_transport.return_value = mock_transport
-        service.ssh_client = mock_ssh
+        mock_sftp = MagicMock()
+        mock_sftp.stat.return_value = MagicMock()
+        service.sftp_client = mock_sftp
 
         latency = service.measure_latency()
         assert latency >= 0
+        mock_sftp.stat.assert_called_once_with(".")
 
     def test_disconnect_closes_clients(self, service):
         mock_sftp = MagicMock()

@@ -286,10 +286,15 @@ class TransferItemWidget(QFrame):
         """Open the downloaded file's location in Finder."""
         import subprocess
 
-        from src.config.settings import Settings
+        # Use the destination stored on the transfer item (set when queued)
+        # instead of looking up Settings on every click.
+        download_dir = self.item.destination
+        if not download_dir:
+            # Fallback: get from Settings singleton (already loaded, no re-parse)
+            from src.config.settings import Settings
 
-        settings = Settings()
-        download_dir = settings.download_directory
+            download_dir = Settings().download_directory
+
         # Strip the "⬇ " prefix to get the filename
         filename = self.item.display_name.lstrip("⬇ ").strip()
         path = os.path.join(download_dir, filename)

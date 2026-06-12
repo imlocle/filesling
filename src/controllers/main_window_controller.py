@@ -1377,7 +1377,7 @@ class MainWindowController:
         Args:
             folder_path: Full path to the new folder to create
         """
-        is_remote = folder_path.startswith(self.settings.remote_base_dir)
+        is_remote = self.view.remote_explorer.sftp is not None
 
         try:
             if is_remote:
@@ -1547,10 +1547,8 @@ class MainWindowController:
     def open_settings(self) -> None:
         settings_window = SettingsWindow(self.settings)
         if settings_window.exec() == QDialog.DialogCode.Accepted:
-            # Reload settings since the singleton was reset during save
-            self.settings = Settings()
-            self.view.settings = self.settings
-            self.manual_transfer.settings = self.settings
+            # Config is reloaded in-place by SettingsWindow — all references
+            # already point to the updated singleton. Just apply theme and refresh.
             app = QApplication.instance()
             if app:
                 apply_theme(app, self.settings.config.theme_mode)  # type: ignore

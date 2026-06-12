@@ -177,6 +177,15 @@ class Settings:
         except Exception:
             return {}
 
+    def reload_config(self, config_data: dict) -> None:
+        """
+        Reload configuration in-place without resetting the singleton.
+
+        This ensures all existing references to the Settings instance
+        see the updated config without needing to re-acquire the singleton.
+        """
+        self.config = SettingsConfig.from_json(config_data)
+
     # Properties
     @property
     def username(self) -> str:

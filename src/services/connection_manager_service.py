@@ -245,19 +245,19 @@ class ConnectionManagerService:
         """
         Measure round-trip latency to the server in milliseconds.
 
+        Uses an SFTP stat(".") call which forces a full round-trip,
+        unlike send_ignore() which only measures local buffer write time.
+
         Returns:
             Latency in ms, or -1 if not connected
         """
         import time
 
-        if not self.ssh_client:
+        if not self.sftp_client:
             return -1.0
         try:
-            transport = self.ssh_client.get_transport()
-            if transport is None or not transport.is_active():
-                return -1.0
             start = time.perf_counter()
-            transport.send_ignore()
+            self.sftp_client.stat(".")
             elapsed = (time.perf_counter() - start) * 1000
             return round(elapsed, 1)
         except Exception:

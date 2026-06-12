@@ -1310,6 +1310,7 @@ class FileExplorerWidget(QWidget):
         # Perform renames — check for collisions first
         renamed = 0
         collisions = []
+        rename_records = []  # Track (old_path, new_path) for history
         for path in paths:
             old_name = os.path.basename(path)
             new_name = old_name.replace(find_text, replace_text)
@@ -1358,6 +1359,7 @@ class FileExplorerWidget(QWidget):
                 elif not self.is_remote:
                     os.rename(path, new_path)
                 renamed += 1
+                rename_records.append((path, new_path))
             except Exception as e:
                 logger.error(f"Rename failed: {old_name}: {e}")
 
@@ -1377,6 +1379,20 @@ class FileExplorerWidget(QWidget):
 
         if renamed > 0:
             logger.success(f"Batch rename: {renamed} files renamed")
+
+            # Record renames in activity history
+            from src.services.activity_history_service import ActivityHistoryService
+
+            history = ActivityHistoryService()
+            for old_path, new_path in rename_records:
+                history.add(
+                    filename=os.path.basename(old_path),
+                    action="rename",
+                    source=old_path,
+                    destination=new_path,
+                    server_name=self.settings.config.current_server_id,
+                )
+
             self.refresh()
 
     def _handle_convert_video(self, remote_path: str) -> None:
@@ -1615,6 +1631,9 @@ class FileExplorerWidget(QWidget):
 
         # Show spinner and clear tree for fresh load
         self.tree_widget.clear()
+        # Disable sorting during async load to prevent items jumping around
+        # as batches arrive (re-enabled in _on_load_finished)
+        self.tree_widget.setSortingEnabled(False)
         self._spinner.resize(self.tree_widget.size())
         self._spinner.start()
 
@@ -1658,6 +1677,9 @@ class FileExplorerWidget(QWidget):
     def _on_load_finished(self, results: list) -> None:
         """Handle background load completion."""
         self._spinner.stop()
+
+        # Re-enable sorting now that all items are loaded
+        self.tree_widget.setSortingEnabled(True)
 
         # If batches were used, tree is already populated — just sort and update
         if self.tree_widget.topLevelItemCount() > 0 and results:
@@ -1818,6 +1840,15 @@ class FileExplorerWidget(QWidget):
         """When search text is cleared, restore normal view."""
         if not text.strip() and self._is_searching:
             self._is_searching = False
+            # Cancel any in-progress search worker to prevent its results
+            # from overwriting the refresh we're about to trigger.
+            if self._loader_thread is not None and self._loader_thread.isRunning():
+                try:
+                    if self._loader_worker:
+                        self._loader_worker.finished.disconnect()  # type: ignore
+                        self._loader_worker.error.disconnect()  # type: ignore
+                except (RuntimeError, TypeError):
+                    pass
             self.refresh()
 
     def _execute_search(self) -> None:

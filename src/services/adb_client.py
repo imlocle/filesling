@@ -111,7 +111,7 @@ class ADBClient:
     def listdir(self, path: str) -> List[str]:
         """List directory contents."""
         # Use ls -1 for simple listing
-        output = self._shell(f'ls -1 "{path}"')
+        output = self._shell(f"ls -1 {shlex.quote(path)}")
         entries = [line.strip() for line in output.splitlines() if line.strip()]
         return entries
 
@@ -131,7 +131,7 @@ class ADBClient:
         Yields lists of ADBStat objects, `batch_size` items at a time.
         """
         batch = []
-        for line in self._shell_stream(f'ls -la "{path}"'):
+        for line in self._shell_stream(f"ls -la {shlex.quote(path)}"):
             line = line.rstrip("\n\r")
             parts = line.split()
             if len(parts) < 7:
@@ -192,11 +192,12 @@ class ADBClient:
         """Get file/directory info (robust Android-safe version)."""
 
         path = self._normalize_remote_path(path)
+        quoted = shlex.quote(path)
 
         output = self._shell(
-            f'if [ -d "{path}" ]; then echo "dir"; '
-            f'elif [ -f "{path}" ]; then stat -c "%s" "{path}" 2>/dev/null || echo "0"; '
-            f'else echo "missing"; fi'
+            f"if [ -d {quoted} ]; then echo dir; "
+            f'elif [ -f {quoted} ]; then stat -c "%s" {quoted} 2>/dev/null || echo 0; '
+            f"else echo missing; fi"
         ).strip()
 
         if output == "missing":
@@ -215,7 +216,7 @@ class ADBClient:
         """Rename/move a file or directory."""
         old_path = self._normalize_remote_path(old_path)
         new_path = self._normalize_remote_path(new_path)
-        self._shell(f'mv "{old_path}" "{new_path}"')
+        self._shell(f"mv {shlex.quote(old_path)} {shlex.quote(new_path)}")
 
     def remove(self, path: str) -> None:
         """Delete a file."""
@@ -244,7 +245,7 @@ class ADBClient:
     def mkdir(self, path: str) -> None:
         """Create a directory."""
         path = self._normalize_remote_path(path)
-        self._shell(f'mkdir -p "{path}"')
+        self._shell(f"mkdir -p {shlex.quote(path)}")
 
     def get(
         self, remote_path: str, local_path: str, callback: Optional[Callable] = None

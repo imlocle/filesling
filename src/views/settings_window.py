@@ -324,8 +324,8 @@ class SettingsWindow(QDialog):
             SettingsConfig.from_json(config_data)
             self.settings.save_config(config_data)
 
-            # Reset singleton so next access picks up new config
-            Settings._instance = None
+            # Reload config in-place so all existing references stay valid
+            self.settings.reload_config(config_data)
 
             logger.success(f"Settings imported from: {path}")
             QMessageBox.information(
@@ -464,8 +464,8 @@ class SettingsWindow(QDialog):
             SettingsConfig.from_json(config_data)
             self.settings.save_config(config_data)
 
-            Settings._instance = None
-            self.settings = Settings()
+            # Reload config in-place so all existing references stay valid
+            self.settings.reload_config(config_data)
 
             logger.success("Settings saved")
             self.accept()

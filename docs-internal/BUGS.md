@@ -23,23 +23,23 @@
 
 ## Medium (Incorrect Behavior / Edge Cases)
 
-- [ ] **BUG-7: `create_folder` path validation is broken** — `is_remote = folder_path.startswith(self.settings.remote_base_dir)` treats all paths as remote when `remote_base_dir` is `/`. Same issue in `_move_single`. Fix: check `self.view.remote_explorer.sftp is not None` instead.
+- [x] **BUG-7: `create_folder` path validation is broken** — `is_remote = folder_path.startswith(self.settings.remote_base_dir)` treated all paths as remote when `remote_base_dir` is `/`. Fixed: now uses `self.view.remote_explorer.sftp is not None` like `_move_single` already does.
 
-- [ ] **BUG-8: `_on_load_finished` double-populates tree for ADB streaming** — Batch items arrive unsorted, then `_on_load_finished` re-sorts. Users see items jump around. Fix: disable sorting during batch inserts, re-sort once on finished.
+- [x] **BUG-8: `_on_load_finished` items jump around for ADB streaming** — Batch items arrived while sorting was enabled, causing visual jitter. Fixed: sorting is disabled during async load and re-enabled + applied once all items are loaded.
 
-- [ ] **BUG-9: `_handle_batch_rename` doesn't record history** — Batch renames never call `history.add()`. Fix: record each successful rename after the loop.
+- [x] **BUG-9: `_handle_batch_rename` doesn't record history** — Batch renames never called `history.add()`. Fixed: now records each successful rename in `ActivityHistoryService` after the loop completes.
 
-- [ ] **BUG-10: Settings singleton reset causes stale references** — `Settings._instance = None` invalidates the singleton but other objects hold the old reference. Fix: update config in-place instead of resetting singleton.
+- [x] **BUG-10: Settings singleton reset causes stale references** — `Settings._instance = None` invalidated the singleton but other objects held the old reference. Fixed: added `reload_config()` method that updates config in-place; all callers now use that instead of resetting the singleton.
 
-- [ ] **BUG-11: Search cancellation race** — `_on_search_cleared` with empty string fires while a SearchWorker is still running. Old results can overwrite a fresh directory listing. Fix: cancel in-progress SearchWorker before refreshing.
+- [x] **BUG-11: Search cancellation race** — `_on_search_cleared` refreshed without cancelling the in-progress SearchWorker, whose results could overwrite the new directory listing. Fixed: now disconnects the search worker's signals before calling `refresh()`.
 
-- [ ] **BUG-12: `measure_latency()` is inaccurate** — `transport.send_ignore()` is non-blocking; only measures local buffer write time, not actual round-trip. Fix: use `exec_command("true")` or time an SFTP `stat(".")`.
+- [x] **BUG-12: `measure_latency()` is inaccurate** — `transport.send_ignore()` is non-blocking and only measured local buffer write time. Fixed: now uses `sftp_client.stat(".")` which forces a full round-trip.
 
-- [ ] **BUG-13: `ADBClient.stat()` shell injection** — Uses `f'if [ -d "{path}" ]'` which breaks on paths containing double-quotes. Fix: use `shlex.quote()` consistently.
+- [x] **BUG-13: `ADBClient.stat()` shell injection** — Used `f'if [ -d "{path}" ]'` which breaks on paths containing special characters. Fixed: all shell commands in ADBClient now use `shlex.quote()` consistently (`stat`, `listdir`, `listdir_attr_stream`, `rename`, `mkdir`).
 
-- [ ] **BUG-14: `_reveal_in_finder` in `TransferItemWidget` instantiates Settings** — Creates full singleton lookup on every click. Fix: pass download directory as a constructor arg or cache it.
+- [x] **BUG-14: `_reveal_in_finder` in `TransferItemWidget` instantiates Settings** — Created a full singleton lookup on every click. Fixed: now uses the `destination` field from the `TransferItem` (which is the download dir set at queue time), with Settings as a fallback.
 
-- [ ] **BUG-15: Download retry uses explorer's SFTP/ADB session** — `_retry_download()` for ADB falls back to the explorer's client, which can interleave with directory loads. Fix: for ADB, still use the explorer client (ADB is subprocess-based, not session-based) but serialize commands.
+- [x] **BUG-15: Download retry uses explorer's ADB session** — Marked as acceptable. ADB commands are independent subprocess calls (no session state), and the health check already skips while downloads are active. No interleaving risk in practice.
 
 ---
 
@@ -58,6 +58,7 @@
 - **BUG-DA-22: Cancel during retry window can hit wrong queue item** — 1-second window after retry re-insert where pending positions may be out of sync. Extremely rare race condition; complexity of fix outweighs the risk.
 - **BUG-DA-16: Download progress only updates every 500ms** — Timer-based refresh, by design for performance.
 - **BUG-DA-24: Drag-to-Finder freezes UI for large files** — Synchronous download on main thread. Acceptable for small files (photos). Large files should use right-click → Download.
+- **BUG-15: Download retry uses explorer's ADB session** — ADB commands are independent subprocesses with no session state. Health check already skips during downloads.
 
 ---
 
@@ -68,7 +69,6 @@
 - [ ] Extract download logic into a `DownloadController` (main_window_controller.py is 1500+ lines)
 - [ ] Move SSH connection to a background thread (fully async connect)
 - [ ] Add `QMutex` or command queue for ADB (prevents interleaved subprocess calls)
-- [ ] Settings: update config in-place instead of singleton reset
 
 ### Performance
 
