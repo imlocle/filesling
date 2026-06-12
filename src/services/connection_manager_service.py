@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from time import sleep
 from typing import Optional
 
 from paramiko import (
@@ -143,7 +144,7 @@ class ConnectionManagerService:
                 self.sftp_client = None
 
                 if retries < max_retries:
-                    self._non_blocking_wait(3000)
+                    sleep(3)
 
             except TimeoutError as e:
                 last_error = e
@@ -156,7 +157,7 @@ class ConnectionManagerService:
                 self.sftp_client = None
 
                 if retries < max_retries:
-                    self._non_blocking_wait(3000)
+                    sleep(3)
 
             except Exception as e:
                 last_error = e
@@ -166,7 +167,7 @@ class ConnectionManagerService:
                 self.sftp_client = None
 
                 if retries < max_retries:
-                    self._non_blocking_wait(3000)
+                    sleep(3)
 
         # All retries exhausted
         error_msg = (
@@ -183,19 +184,6 @@ class ConnectionManagerService:
             f"Failed to connect after {max_retries} attempts",
             details=str(last_error) if last_error else "Unknown error",
         )
-
-    @staticmethod
-    def _non_blocking_wait(ms: int) -> None:
-        """Wait without blocking the Qt event loop (keeps UI responsive)."""
-        from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
-
-        loop = QEventLoop()
-        QTimer.singleShot(ms, loop.quit)
-        loop.exec()
-        # Also process any pending events
-        app = QCoreApplication.instance()
-        if app:
-            app.processEvents()
 
     def open_sftp_session(self) -> Optional[SFTPClient]:
         """

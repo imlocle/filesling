@@ -555,13 +555,13 @@ class TransferQueueWidget(QWidget):
 
 
 def _format_speed(bytes_per_sec: float) -> str:
-    """Format transfer speed."""
-    if bytes_per_sec < 1024:
+    """Format transfer speed using decimal units (consistent with macOS/browsers)."""
+    if bytes_per_sec < 1000:
         return f"{bytes_per_sec:.0f} B/s"
-    elif bytes_per_sec < 1024 * 1024:
-        return f"{bytes_per_sec / 1024:.1f} KB/s"
+    elif bytes_per_sec < 1000 * 1000:
+        return f"{bytes_per_sec / 1000:.1f} KB/s"
     else:
-        return f"{bytes_per_sec / (1024 * 1024):.1f} MB/s"
+        return f"{bytes_per_sec / (1000 * 1000):.1f} MB/s"
 
 
 def _format_time(seconds: float) -> str:

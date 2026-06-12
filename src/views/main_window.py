@@ -234,7 +234,26 @@ class MainWindow(QMainWindow):
         return True
 
     def handle_connection_failure(self) -> None:
-        """Handle connection failure — show server selection dialog."""
+        """Handle connection failure — show server selection dialog.
+
+        Only tracks retry attempts for SSH connections. ADB/iOS failures
+        are typically hardware issues (unplugged cable) where "switch server"
+        is not a useful suggestion.
+        """
+        # Skip retry counter for non-SSH connections
+        from src.utils.constants import CONN_TYPE_SSH, CONN_TYPE_KEY
+
+        server_config = self.settings.get_server(
+            self.settings.config.current_server_id
+        )
+        connection_type = (
+            server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
+            if server_config
+            else CONN_TYPE_SSH
+        )
+        if connection_type != CONN_TYPE_SSH:
+            return
+
         self.connection_attempts += 1
 
         if self.connection_attempts >= self.max_connection_attempts:
@@ -886,19 +905,35 @@ class MainWindow(QMainWindow):
         Checks for duplicates on the remote, prompts user, then adds to queue.
         """
         # --- Duplicate detection (files only, not folders) ---
+        # Use a single listdir_attr() instead of N individual stat() calls
+        # to detect duplicates. This reduces N round-trips to 1.
         duplicates = []
         sftp = self.remote_explorer.sftp
         if sftp:
+            file_names_to_check = set()
             for p in local_paths:
-                if os.path.isdir(p):
-                    continue  # Folders merge, not duplicate
-                name = os.path.basename(p)
-                remote_path = os.path.join(remote_dir, name).replace("\\", "/")
+                if not os.path.isdir(p):
+                    file_names_to_check.add(os.path.basename(p))
+
+            if file_names_to_check:
                 try:
-                    sftp.stat(remote_path)
-                    duplicates.append(name)
+                    existing_entries = {
+                        attr.filename
+                        for attr in sftp.listdir_attr(remote_dir)
+                    }
+                    duplicates = [
+                        name for name in file_names_to_check
+                        if name in existing_entries
+                    ]
                 except (IOError, OSError):
-                    pass  # File doesn't exist — no conflict
+                    # If listdir fails, fall back to per-file stat
+                    for name in file_names_to_check:
+                        remote_path = os.path.join(remote_dir, name).replace("\\", "/")
+                        try:
+                            sftp.stat(remote_path)
+                            duplicates.append(name)
+                        except (IOError, OSError):
+                            pass
 
         if duplicates:
             action = self._show_duplicate_dialog(duplicates)

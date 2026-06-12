@@ -688,11 +688,17 @@ class FileExplorerWidget(QWidget):
 
     def _update_breadcrumb(self) -> None:
         """Update bottom breadcrumb with clickable path segments."""
+        import html
+
         parts = self.current_path.strip("/").split("/")
         crumbs = []
         for i, part in enumerate(parts):
             path = "/" + "/".join(parts[: i + 1])
-            crumbs.append(f'<a href="{path}" style="text-decoration:none;">{part}</a>')
+            safe_path = html.escape(path, quote=True)
+            safe_part = html.escape(part)
+            crumbs.append(
+                f'<a href="{safe_path}" style="text-decoration:none;">{safe_part}</a>'
+            )
         self.breadcrumb_label.setText(" / ".join(crumbs) if crumbs else "/")
 
     def _on_breadcrumb_clicked(self, path: str) -> None:
@@ -2217,87 +2223,126 @@ class FileExplorerWidget(QWidget):
 
     def _get_disk_usage(self) -> Optional[str]:
         """
-        Get disk usage information for remote filesystem.
+        Get disk usage information for remote filesystem asynchronously.
 
-        Returns:
-            String like "45.2 GB / 128 GB" or None if unavailable
+        Runs the df command on a background thread so the tree stays interactive.
+        Returns None immediately; updates the disk bar via signal when done.
         """
         if not self.sftp:
             return None
 
-        try:
-            # Get SSH client from SFTP connection
-            channel = self.sftp.get_channel()
-            if not channel:
-                return None
-
-            transport = channel.get_transport()
-            if not transport:
-                return None
-
-            # Execute df command against the current path so mounted drives show
-            # their own filesystem capacity instead of the server base path.
-            # -B1 gives output in bytes for accurate calculation
-            session = transport.open_session()
-            session.exec_command(f"df -B1 {shlex.quote(self.current_path)} | tail -1")
-
-            # Read output
-            output = session.recv(1024).decode("utf-8").strip()
-            session.close()
-
-            if not output:
-                return None
-
-            # Parse df output: Filesystem Size Used Avail Use% Mounted
-            parts = output.split()
-            if len(parts) < 4:
-                return None
-
-            # parts[1] = total size, parts[2] = used size
-            total_bytes = int(parts[1])
-            used_bytes = int(parts[2])
-
-            # Update disk bar
-            if total_bytes > 0:
-                percent = int(used_bytes * 100 / total_bytes)
-                self._disk_bar.setValue(percent)
-                self._disk_label.setText(
-                    f"{self._format_size(used_bytes)} / {self._format_size(total_bytes)}"
-                )
-                self._disk_bar_container.setVisible(True)
-
-                # Color the bar based on usage
-                if percent >= 90:
-                    color = "#ff453a"  # Red
-                elif percent >= 75:
-                    color = "#ff9f0a"  # Orange
-                else:
-                    color = "#0a84ff"  # Blue
-
-                app = QApplication.instance()
-                is_light = (
-                    app is not None and app.property("filesling_theme") == "light"
-                )
-                background = "#e8e8ed" if is_light else "#2b2c30"
-                border = "#d2d2d7" if is_light else "#3d3e44"
-                self._disk_bar.setStyleSheet(f"""
-                    QProgressBar {{
-                        background-color: {background};
-                        border: 1px solid {border};
-                        border-radius: 4px;
-                    }}
-                    QProgressBar::chunk {{
-                        background-color: {color};
-                        border-radius: 3px;
-                    }}
-                """)
-
-            used_str = self._format_size(used_bytes)
-            total_str = self._format_size(total_bytes)
-
-            return f"{used_str} / {total_str}"
-        except Exception:
+        # Don't start another disk usage check if one is running
+        if hasattr(self, "_disk_thread") and self._disk_thread and self._disk_thread.isRunning():
             return None
+
+        from PySide6.QtCore import QObject, QThread, Signal
+
+        class _DiskUsageWorker(QObject):
+            finished = Signal(int, int)  # used_bytes, total_bytes
+            error = Signal()
+
+            def __init__(self, sftp: object, path: str) -> None:
+                super().__init__()
+                self._sftp = sftp
+                self._path = path
+
+            def run(self) -> None:
+                try:
+                    channel = self._sftp.get_channel()
+                    if not channel:
+                        self.error.emit()
+                        return
+                    transport = channel.get_transport()
+                    if not transport:
+                        self.error.emit()
+                        return
+
+                    session = transport.open_session()
+                    session.exec_command(
+                        f"df -B1 {shlex.quote(self._path)} | tail -1"
+                    )
+                    output = session.recv(1024).decode("utf-8").strip()
+                    session.close()
+
+                    if not output:
+                        self.error.emit()
+                        return
+
+                    parts = output.split()
+                    if len(parts) < 4:
+                        self.error.emit()
+                        return
+
+                    total_bytes = int(parts[1])
+                    used_bytes = int(parts[2])
+                    self.finished.emit(used_bytes, total_bytes)
+                except Exception:
+                    self.error.emit()
+
+        self._disk_thread = QThread(self)
+        self._disk_worker = _DiskUsageWorker(self.sftp, self.current_path)
+        self._disk_worker.moveToThread(self._disk_thread)
+
+        self._disk_thread.started.connect(self._disk_worker.run)
+        self._disk_worker.finished.connect(self._on_disk_usage_ready)
+        self._disk_worker.error.connect(self._on_disk_usage_error)
+        self._disk_worker.finished.connect(self._disk_thread.quit)
+        self._disk_worker.error.connect(self._disk_thread.quit)
+        self._disk_thread.finished.connect(self._cleanup_disk_thread)
+
+        self._disk_thread.start()
+        return None
+
+    def _on_disk_usage_ready(self, used_bytes: int, total_bytes: int) -> None:
+        """Update the disk usage bar with results from background thread."""
+        if total_bytes <= 0:
+            return
+
+        percent = int(used_bytes * 100 / total_bytes)
+        self._disk_bar.setValue(percent)
+        self._disk_label.setText(
+            f"{self._format_size(used_bytes)} / {self._format_size(total_bytes)}"
+        )
+        self._disk_bar_container.setVisible(True)
+
+        # Color the bar based on usage
+        if percent >= 90:
+            color = "#ff453a"  # Red
+        elif percent >= 75:
+            color = "#ff9f0a"  # Orange
+        else:
+            color = "#0a84ff"  # Blue
+
+        app = QApplication.instance()
+        is_light = (
+            app is not None and app.property("filesling_theme") == "light"
+        )
+        background = "#e8e8ed" if is_light else "#2b2c30"
+        border = "#d2d2d7" if is_light else "#3d3e44"
+        self._disk_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: {background};
+                border: 1px solid {border};
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {color};
+                border-radius: 3px;
+            }}
+        """)
+
+    def _on_disk_usage_error(self) -> None:
+        """Hide disk bar if usage couldn't be determined."""
+        self._disk_bar_container.setVisible(False)
+
+    def _cleanup_disk_thread(self) -> None:
+        """Clean up disk usage worker after completion."""
+        if hasattr(self, "_disk_worker") and self._disk_worker:
+            self._disk_worker.deleteLater()
+            self._disk_worker = None
+        if hasattr(self, "_disk_thread") and self._disk_thread:
+            self._disk_thread.deleteLater()
+            self._disk_thread = None
 
     # ------------------------------------------------------------------
     # Drag & Drop

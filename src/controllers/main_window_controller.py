@@ -11,11 +11,8 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from src.config.settings import Settings
 from src.controllers.transfer_controller import ManualTransferController
 from src.models.errors import (
-    AuthenticationError,
     ConnectionLostError,
-    FileAccessError,
     FileDeletionError,
-    SSHConnectionError,
 )
 from src.services.connection_manager_service import ConnectionManagerService
 from src.utils.constants import (
@@ -598,38 +595,61 @@ class MainWindowController:
         self.view.connection_status_label.setText("● Disconnected")
 
     def _connect_ssh(self) -> None:
-        """Establish SSH/SFTP connection."""
-        try:
-            if not self.connection_manager.connect():
-                self.view.connection_status_label.setText("● Disconnected")
-                self.view.connection_status_label.setObjectName(
-                    "connection_disconnected"
-                )
-                self.view.connection_status_label.style().polish(
-                    self.view.connection_status_label
-                )
-                self.view.handle_connection_failure()
-                return
+        """Establish SSH/SFTP connection on a background thread."""
+        from PySide6.QtCore import QThread
 
-            # Connection successful - reset attempt counter
-            self.view.connection_attempts = 0
+        from src.workers.connection_worker import ConnectionWorker
 
-            self.view.connection_status_label.setText("")
-            self.view.connection_status_label.setObjectName("connection_connected")
-            self.view.connection_status_label.style().polish(
-                self.view.connection_status_label
+        # Show connecting state
+        self.view.connection_status_label.setText("● Connecting...")
+        self.view.connection_status_label.setObjectName("connection_warning")
+        self.view.connection_status_label.style().polish(
+            self.view.connection_status_label
+        )
+
+        # Disable connect button while connecting
+        self.view.connect_btn.setEnabled(False)
+
+        # Create worker + thread
+        self._connect_thread = QThread(self.view)
+        self._connect_worker = ConnectionWorker(self.connection_manager)
+        self._connect_worker.moveToThread(self._connect_thread)
+
+        self._connect_thread.started.connect(self._connect_worker.run)
+        self._connect_worker.connected.connect(self._on_ssh_connected)
+        self._connect_worker.failed.connect(self._on_ssh_failed)
+        self._connect_worker.connected.connect(self._connect_thread.quit)
+        self._connect_worker.failed.connect(self._connect_thread.quit)
+        self._connect_thread.finished.connect(self._cleanup_connect_thread)
+
+        self._connect_thread.start()
+
+    def _on_ssh_connected(self) -> None:
+        """Handle successful SSH connection (runs on main thread via signal)."""
+        self.view.connect_btn.setEnabled(True)
+        self.view.connection_attempts = 0
+
+        self.view.connection_status_label.setText("")
+        self.view.connection_status_label.setObjectName("connection_connected")
+        self.view.connection_status_label.style().polish(
+            self.view.connection_status_label
+        )
+
+        # Bind SFTP to remote explorer
+        if self.connection_manager.sftp_client:
+            start_path = self._get_initial_explorer_path(
+                self.settings.remote_base_dir
             )
+            self.view.remote_explorer.root_path = self.settings.remote_base_dir
+            self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
+            self.view.remote_explorer.refresh(start_path)
 
-            # bind sftp to remote explorer
-            if self.connection_manager.sftp_client:
-                start_path = self._get_initial_explorer_path(
-                    self.settings.remote_base_dir
-                )
-                self.view.remote_explorer.root_path = self.settings.remote_base_dir
-                self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
-                self.view.remote_explorer.refresh(start_path)
+    def _on_ssh_failed(self, error_type: str, message: str, details: str) -> None:
+        """Handle SSH connection failure (runs on main thread via signal)."""
+        self.view.connect_btn.setEnabled(True)
 
-        except AuthenticationError as e:
+        # Map error types to UI states
+        if error_type == "AuthenticationError":
             self.view.connection_status_label.setText("● Authentication Failed")
             self.view.connection_status_label.setObjectName("connection_disconnected")
             self.view.connection_status_label.style().polish(
@@ -638,11 +658,10 @@ class MainWindowController:
             QMessageBox.critical(
                 self.view,
                 "Authentication Error",
-                f"{e.message}\n\n{e.details if e.details else ''}",
+                f"{message}\n\n{details}" if details else message,
                 QMessageBox.StandardButton.Ok,
             )
-            self.view.handle_connection_failure()
-        except FileAccessError as e:
+        elif error_type == "FileAccessError":
             self.view.connection_status_label.setText("● SSH Key Error")
             self.view.connection_status_label.setObjectName("connection_disconnected")
             self.view.connection_status_label.style().polish(
@@ -651,11 +670,10 @@ class MainWindowController:
             QMessageBox.critical(
                 self.view,
                 "SSH Key Error",
-                f"{e.message}\n\n{e.details if e.details else ''}",
+                f"{message}\n\n{details}" if details else message,
                 QMessageBox.StandardButton.Ok,
             )
-            self.view.handle_connection_failure()
-        except SSHConnectionError as e:
+        elif error_type == "SSHConnectionError":
             self.view.connection_status_label.setText("● Connection Failed")
             self.view.connection_status_label.setObjectName("connection_disconnected")
             self.view.connection_status_label.style().polish(
@@ -664,24 +682,33 @@ class MainWindowController:
             QMessageBox.warning(
                 self.view,
                 DIALOG_CONNECTION_FAILED,
-                f"{e.message}\n\n{e.details if e.details else ''}",
+                f"{message}\n\n{details}" if details else message,
                 QMessageBox.StandardButton.Ok,
             )
-            self.view.handle_connection_failure()
-        except Exception as e:
+        else:
             self.view.connection_status_label.setText("● Error")
             self.view.connection_status_label.setObjectName("connection_disconnected")
             self.view.connection_status_label.style().polish(
                 self.view.connection_status_label
             )
-            logger.error(f"Unexpected connection error: {e}")
+            logger.error(f"Unexpected connection error: {message}")
             QMessageBox.critical(
                 self.view,
                 DIALOG_CONNECTION_ERROR,
-                f"An unexpected error occurred:\n{str(e)}",
+                f"An unexpected error occurred:\n{message}",
                 QMessageBox.StandardButton.Ok,
             )
-            self.view.handle_connection_failure()
+
+        self.view.handle_connection_failure()
+
+    def _cleanup_connect_thread(self) -> None:
+        """Clean up connection worker and thread."""
+        if hasattr(self, "_connect_worker") and self._connect_worker:
+            self._connect_worker.deleteLater()
+            self._connect_worker = None
+        if hasattr(self, "_connect_thread") and self._connect_thread:
+            self._connect_thread.deleteLater()
+            self._connect_thread = None
 
     def handle_remote_explorer_failure(self, error_msg: str) -> None:
         """Handle remote explorer errors by attempting to reconnect."""
