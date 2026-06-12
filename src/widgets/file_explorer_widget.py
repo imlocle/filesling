@@ -461,6 +461,60 @@ class DirectoryLoader(QObject):
             return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
+class _ConvertWorker(QObject):
+    """Background worker for remote ffmpeg video conversion."""
+
+    finished = Signal()
+    error = Signal(str)
+    progress = Signal(int)
+
+    def __init__(
+        self, host: str, username: str, key_path: str, port: int, remote_path: str
+    ) -> None:
+        super().__init__()
+        self.host = host
+        self.username = username
+        self.key_path = key_path
+        self.port = port
+        self.remote_path = remote_path
+
+    def run(self) -> None:
+        try:
+            from paramiko import AutoAddPolicy, SSHClient
+
+            from src.services.ffmpeg_service import convert_video, replace_original
+
+            # Open a dedicated SSH connection for this conversion
+            # so it doesn't block the explorer's SFTP session
+            ssh = SSHClient()
+            ssh.set_missing_host_key_policy(AutoAddPolicy())
+            ssh.connect(
+                hostname=self.host,
+                username=self.username,
+                key_filename=self.key_path,
+                port=self.port,
+                timeout=10,
+            )
+
+            def progress_cb(pct: int) -> None:
+                self.progress.emit(pct)
+
+            try:
+                output_path = convert_video(
+                    ssh_client=ssh,
+                    remote_path=self.remote_path,
+                    preset="fast",
+                    crf=18,
+                    progress_cb=progress_cb,
+                )
+                replace_original(ssh, self.remote_path, output_path)
+                self.finished.emit()
+            finally:
+                ssh.close()
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class FileExplorerWidget(QWidget):
     """
     A reusable file explorer widget for both local and remote (SFTP) directories.
@@ -718,6 +772,15 @@ class FileExplorerWidget(QWidget):
         menu.addSeparator()
         delete_action = menu.addAction("🗑️ Delete")
 
+        # Video conversion option (SSH only, video files only)
+        convert_action = None
+        if self.is_remote and self.sftp:
+            from src.services.ffmpeg_service import is_video_file
+
+            if is_video_file(entry):
+                menu.addSeparator()
+                convert_action = menu.addAction("Convert to H.264")
+
         action = menu.exec(self.tree_widget.mapToGlobal(position))
 
         if action == download_action:
@@ -734,6 +797,8 @@ class FileExplorerWidget(QWidget):
             self._toggle_bookmark(full_path)
         elif default_bookmark_action and action == default_bookmark_action:
             self._toggle_default_bookmark(full_path)
+        elif convert_action and action == convert_action:
+            self._handle_convert_video(full_path)
 
     def _show_multi_select_context_menu(
         self, position: QPoint, selected_items: List[QTreeWidgetItem]
@@ -1313,6 +1378,195 @@ class FileExplorerWidget(QWidget):
         if renamed > 0:
             logger.success(f"Batch rename: {renamed} files renamed")
             self.refresh()
+
+    def _handle_convert_video(self, remote_path: str) -> None:
+        """Handle video conversion request — queue it for sequential processing."""
+        import os
+
+        from PySide6.QtWidgets import QMessageBox
+
+        from src.services.adb_client import ADBClient
+        from src.services.ffmpeg_service import check_ffmpeg_installed
+        from src.services.ios_client import IOSClient
+
+        if isinstance(self.sftp, (ADBClient, IOSClient)):
+            QMessageBox.warning(
+                self,
+                "Not Available",
+                "Video conversion is only available for SSH servers.",
+            )
+            return
+
+        # Verify we have a working SSH transport
+        try:
+            channel = self.sftp.get_channel()
+            if not channel or not channel.get_transport():
+                raise RuntimeError("No transport")
+        except Exception:
+            QMessageBox.warning(
+                self,
+                "Connection Error",
+                "Cannot access SSH connection for remote commands.",
+            )
+            return
+
+        # Check ffmpeg is installed
+        if not check_ffmpeg_installed(self.sftp):
+            QMessageBox.warning(
+                self,
+                "ffmpeg Not Found",
+                "ffmpeg is not installed on the remote server.\n\n"
+                "Install it with:\n"
+                "  sudo apt install ffmpeg",
+            )
+            return
+
+        # Confirm
+        filename = os.path.basename(remote_path)
+        reply = QMessageBox.question(
+            self,
+            "Convert Video",
+            f"Convert '{filename}' to H.264?\n\n"
+            "This runs ffmpeg on the server. The original file will be "
+            "replaced when conversion completes.\n\n"
+            "This may take several minutes for large files.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Add to conversion queue
+        if not hasattr(self, "_convert_queue"):
+            self._convert_queue: list = []
+            self._convert_running = False
+
+        # Add to activity panel
+        main_window = self.window()
+        queue_index = -1
+        if hasattr(main_window, "transfer_queue"):
+            queue = main_window.transfer_queue
+            queue_index = queue.add_transfer(
+                f"🔄 {filename}", 0, os.path.dirname(remote_path)
+            )
+
+        self._convert_queue.append((remote_path, queue_index))
+        logger.info(f"ffmpeg: Queued {filename} for conversion")
+
+        # Start processing if not already running
+        if not self._convert_running:
+            self._process_next_conversion()
+
+    def _process_next_conversion(self) -> None:
+        """Process the next video in the conversion queue."""
+        if not hasattr(self, "_convert_queue") or not self._convert_queue:
+            self._convert_running = False
+            return
+
+        self._convert_running = True
+        remote_path, queue_index = self._convert_queue.pop(0)
+
+        # Mark as in-progress in the activity panel
+        main_window = self.window()
+        if hasattr(main_window, "transfer_queue") and queue_index >= 0:
+            main_window.transfer_queue.set_in_progress(queue_index)
+        self._current_convert_index = queue_index
+
+        # Run in background thread
+        from PySide6.QtCore import QThread
+
+        self._convert_thread = QThread(self)
+        self._convert_worker = _ConvertWorker(
+            host=self.settings.host,
+            username=self.settings.username,
+            key_path=self.settings.ssh_key_path,
+            port=self.settings.ssh_port,
+            remote_path=remote_path,
+        )
+        self._convert_worker.moveToThread(self._convert_thread)
+
+        self._convert_thread.started.connect(self._convert_worker.run)
+        self._convert_worker.finished.connect(self._on_convert_finished)
+        self._convert_worker.finished.connect(self._convert_thread.quit)
+        self._convert_worker.error.connect(self._on_convert_error)
+        self._convert_worker.error.connect(self._convert_thread.quit)
+        self._convert_worker.progress.connect(self._on_convert_progress)
+
+        self._convert_thread.start()
+
+    def _on_convert_progress(self, pct: int) -> None:
+        """Update progress for video conversion."""
+        main_window = self.window()
+        if hasattr(main_window, "transfer_queue") and hasattr(
+            self, "_current_convert_index"
+        ):
+            queue = main_window.transfer_queue
+            idx = self._current_convert_index
+            if 0 <= idx < len(queue._items):
+                queue._items[idx].total_bytes = 1000
+                queue._items[idx].transferred_bytes = pct * 10
+                queue.update_progress(idx, pct * 10, 1000)
+
+    def _on_convert_finished(self) -> None:
+        """Handle successful video conversion."""
+        import os
+
+        # Mark queue item as complete
+        main_window = self.window()
+        if hasattr(main_window, "transfer_queue") and hasattr(
+            self, "_current_convert_index"
+        ):
+            main_window.transfer_queue.set_completed(self._current_convert_index)
+
+        # Record in activity history
+        if hasattr(self, "_convert_worker") and self._convert_worker:
+            remote_path = self._convert_worker.remote_path
+            from src.services.activity_history_service import ActivityHistoryService
+
+            history = ActivityHistoryService()
+            history.add(
+                filename=os.path.basename(remote_path),
+                action="convert",
+                source=remote_path,
+                destination=remote_path.replace(
+                    os.path.splitext(remote_path)[1], ".mp4"
+                ),
+                server_name=self.settings.config.current_server_id,
+            )
+
+        self.refresh()
+        if hasattr(self, "_convert_thread") and self._convert_thread:
+            self._convert_thread.deleteLater()
+            self._convert_thread = None
+        if hasattr(self, "_convert_worker") and self._convert_worker:
+            self._convert_worker.deleteLater()
+            self._convert_worker = None
+
+        # Process next in queue
+        self._process_next_conversion()
+
+    def _on_convert_error(self, error_msg: str) -> None:
+        """Handle failed video conversion."""
+        # Mark queue item as failed
+        main_window = self.window()
+        if hasattr(main_window, "transfer_queue") and hasattr(
+            self, "_current_convert_index"
+        ):
+            main_window.transfer_queue.set_failed(
+                self._current_convert_index, error_msg[:80]
+            )
+
+        logger.error(f"ffmpeg: {error_msg}")
+
+        if hasattr(self, "_convert_thread") and self._convert_thread:
+            self._convert_thread.deleteLater()
+            self._convert_thread = None
+        if hasattr(self, "_convert_worker") and self._convert_worker:
+            self._convert_worker.deleteLater()
+            self._convert_worker = None
+
+        # Process next in queue (don't stop the whole queue for one failure)
+        self._process_next_conversion()
 
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation

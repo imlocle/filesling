@@ -40,6 +40,18 @@
 
 - [x] Server dropdown in the toolbar — switch with one click, no dialog
 - [x] Instant disconnect → reconnect on selection change
+- [x] "Manage Servers…" at bottom of dropdown
+
+### Remote Video Convert (ffmpeg)
+
+- [x] Right-click video file → "Convert to H.264" (runs ffmpeg on the server via SSH)
+- [x] Queued conversions — queue multiple videos, processed one at a time
+- [x] Progress shown in Activity panel with ETA
+- [x] Replaces original file with H.264 version when done
+- [x] Settings: `-preset fast -crf 18` (visually lossless, fast encode)
+- [x] Detects if ffmpeg is installed; prompts to install if missing
+- [x] Logged in activity history (action: "convert")
+- [x] Runs independently from uploads (both can happen simultaneously)
 
 ### UI / Theme
 

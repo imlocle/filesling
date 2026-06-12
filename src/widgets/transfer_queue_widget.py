@@ -331,7 +331,7 @@ class TransferQueueWidget(QWidget):
         header_layout.setSpacing(8)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.header_label = QLabel("Transfers")
+        self.header_label = QLabel("Activity")
         self.header_label.setObjectName("section_header")
 
         self.clear_btn = QPushButton("Clear")
@@ -361,7 +361,7 @@ class TransferQueueWidget(QWidget):
         layout.addWidget(self.scroll_area)
 
         # Empty state
-        self.empty_label = QLabel("No transfers")
+        self.empty_label = QLabel("No activity")
         self.empty_label.setObjectName("secondary_label")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_label)
@@ -544,9 +544,9 @@ class TransferQueueWidget(QWidget):
             if item.status in (TransferStatus.PENDING, TransferStatus.IN_PROGRESS)
         )
         if active > 0:
-            self.header_label.setText(f"Transfers ({active} active)")
+            self.header_label.setText(f"Activity ({active} active)")
         else:
-            self.header_label.setText("Transfers")
+            self.header_label.setText("Activity")
 
 
 def _format_speed(bytes_per_sec: float) -> str:

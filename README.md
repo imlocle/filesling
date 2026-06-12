@@ -16,6 +16,7 @@ Built with Python, PySide6, and Paramiko.
 - **iPhone/iPad USB** — Browse and back up camera roll photos/videos
 - **Transfer queue** — Queued uploads/downloads with speed, ETA, auto-retry, and resume
 - **rsync fast path** — Delta transfers for SSH servers (only sends changed bytes)
+- **Remote video convert** — Right-click → Convert to H.264 (runs ffmpeg on server)
 - **Multi-server** — Quick-switch dropdown, per-server bookmarks and settings
 - **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
 - **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain

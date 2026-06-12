@@ -25,7 +25,8 @@ src/
 │   ├── ios_client.py               iOS AFC client (mimics SFTPClient interface)
 │   ├── notification_service.py     macOS notifications + Dock badge
 │   ├── keychain_service.py         macOS Keychain credential storage
-│   └── rsync_service.py            rsync fast-path transfers over SSH
+│   ├── rsync_service.py            rsync fast-path transfers over SSH
+│   └── ffmpeg_service.py           Remote video conversion via SSH
 ├── utils/
 │   ├── constants.py                App-wide constants and defaults
 │   ├── crash_handler.py            Global exception handler + crash log
@@ -161,7 +162,8 @@ Each transfer gets its own SFTP session via `open_sftp_session()`. The explorer 
 - Server quick-switch dropdown in the toolbar (with "Manage Servers…" at bottom)
 - Power button turns green when connected (no separate status bar)
 - Explorer remains the primary workspace
-- Transfer queue is a first-class bottom panel (active → queued → done ordering)
+- Activity panel (renamed from "Transfers") shows uploads, downloads, and conversions
+- Queue ordering: active on top → queued → completed at bottom
 - Clickable breadcrumb path bar for quick navigation to parent folders
 - Diagnostics logs are hidden by default and available from `View → Diagnostics Log...`
 - Transfer history available from `View → Transfer History...`
