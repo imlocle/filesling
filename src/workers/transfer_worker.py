@@ -349,6 +349,16 @@ class TransferWorker(QObject):
                 logger.warn(f"rsync failed, falling back to SFTP: {e}")
                 self._cumulative_bytes = 0
                 self.method_changed.emit("sftp")
+        elif (
+            self._rsync_config is not None
+            and self._compress_folders
+            and is_rsync_available()
+        ):
+            # Inform user that compress_folders disables rsync fast path
+            logger.info(
+                "Transfer: Using SFTP (folder compression enabled, rsync skipped)"
+            )
+            self.method_changed.emit("sftp")
 
         try:
             for path in self.local_paths:

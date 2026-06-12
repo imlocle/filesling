@@ -575,10 +575,14 @@ class ManualTransferController(QObject):
             except (RuntimeError, TypeError):
                 pass
 
-        # Kill the thread
+        # Ask the thread to stop gracefully, then force-terminate if stuck
         if self._active_thread and self._active_thread.isRunning():
             self._active_thread.quit()
-            self._active_thread.wait(2000)  # Wait up to 2s
+            if not self._active_thread.wait(3000):  # Wait up to 3s
+                # Thread is stuck (e.g., blocked on SFTP put) — force terminate
+                logger.warn("Transfer: Thread did not respond to quit, terminating")
+                self._active_thread.terminate()
+                self._active_thread.wait(1000)  # Brief wait after terminate
 
         self._transfer_errored = True
         if self._current_transfer:

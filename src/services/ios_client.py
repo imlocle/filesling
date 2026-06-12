@@ -210,7 +210,14 @@ class IOSClient:
             if callback:
                 callback(total_size, total_size)
         except AttributeError:
-            # Fallback if .open() is not available in this version
+            # Fallback if .open() is not available in this version.
+            # WARNING: This loads the entire file into memory. For very large
+            # files (>500MB), this can exhaust RAM. Log a warning.
+            if total_size > 500 * 1024 * 1024:
+                logger.warn(
+                    f"iOS: Downloading {total_size // (1024*1024)}MB file via "
+                    f"memory-buffered fallback (pymobiledevice3 .open() unavailable)"
+                )
             data = self._afc.get_file_contents(remote_path)
             with open(local_path, "wb") as f:
                 f.write(data)
@@ -244,7 +251,13 @@ class IOSClient:
             if callback:
                 callback(total_size, total_size)
         except AttributeError:
-            # Fallback if .open() is not available in this version
+            # Fallback if .open() is not available in this version.
+            # WARNING: This loads the entire file into memory.
+            if total_size > 500 * 1024 * 1024:
+                logger.warn(
+                    f"iOS: Uploading {total_size // (1024*1024)}MB file via "
+                    f"memory-buffered fallback (pymobiledevice3 .open() unavailable)"
+                )
             with open(local_path, "rb") as f:
                 data = f.read()
             self._afc.set_file_contents(remote_path, data)

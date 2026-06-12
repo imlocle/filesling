@@ -778,6 +778,8 @@ class MainWindowController:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        deleted = []
+        failed = []
         for path in paths:
             try:
                 is_remote = self.view.remote_explorer.sftp is not None
@@ -786,8 +788,32 @@ class MainWindowController:
                 else:
                     self._delete_local(path)
                 logger.trash(f"Deleted: {os.path.basename(path)}")
+                deleted.append(path)
+            except ConnectionLostError as e:
+                logger.error(f"Delete failed: Connection lost: {e}")
+                QMessageBox.warning(
+                    self.view,
+                    DIALOG_CONNECTION_LOST,
+                    f"Connection was lost during deletion.\n\n"
+                    f"{len(deleted)} of {len(paths)} items deleted before failure.",
+                    QMessageBox.StandardButton.Ok,
+                )
+                break
             except Exception as e:
                 logger.error(f"Delete failed: {os.path.basename(path)}: {e}")
+                failed.append(os.path.basename(path))
+
+        # Record successful deletions in history
+        for path in deleted:
+            self.manual_transfer.history.add(
+                filename=os.path.basename(path),
+                action="delete",
+                source=path,
+                server_name=self.settings.config.current_server_id,
+            )
+
+        if failed:
+            logger.warn(f"Delete: {len(failed)} items failed")
 
         self.view.remote_explorer.refresh()
 
@@ -1285,11 +1311,13 @@ class MainWindowController:
 
         if connection_type == CONN_TYPE_ADB:
             download_sftp = sftp
+            self._download_sftp = None  # ADB doesn't need closing
         else:
             try:
                 download_sftp = self.connection_manager.open_sftp_session()
                 if download_sftp is None:
                     return
+                self._download_sftp = download_sftp  # Store for cleanup
             except Exception:
                 return
 
