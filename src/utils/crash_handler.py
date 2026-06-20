@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Type
+from typing import Optional, Type
 
 from src.utils.constants import GITHUB_REPO_URL, SOFTWARE_NAME, VERSION
 
@@ -21,7 +21,7 @@ CRASH_LOG_PATH = Path.home() / f".{SOFTWARE_NAME}" / "crash.log"
 def write_crash_log(
     exc_type: Type[BaseException],
     exc_value: BaseException,
-    exc_tb: TracebackType | None,
+    exc_tb: Optional[TracebackType],
 ) -> str:
     """Write crash details to file and return the formatted report."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -157,7 +157,7 @@ def install_crash_handler() -> None:
     def handler(
         exc_type: Type[BaseException],
         exc_value: BaseException,
-        exc_tb: TracebackType | None,
+        exc_tb: Optional[TracebackType],
     ) -> None:
         # Don't catch KeyboardInterrupt
         if issubclass(exc_type, KeyboardInterrupt):
