@@ -5,6 +5,7 @@ Settings window with tabbed interface.
 import os
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
@@ -49,11 +50,11 @@ class SettingsWindow(QDialog):
         self,
         settings: Settings,
         server_mode: bool = False,
-        server_id: str | None = None,
+        server_id: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle(f"{SOFTWARE_NAME} - Settings")
-        self.setMinimumSize(500, 450)
+        self.setMinimumSize(550, 650)
 
         self.settings = settings
         self.server_mode = server_mode
@@ -200,6 +201,24 @@ class SettingsWindow(QDialog):
         self.notify_sound_checkbox = QCheckBox("Play sound on completion")
         self.notify_sound_checkbox.setChecked(self.settings.config.notify_sound)
         layout.addWidget(self.notify_sound_checkbox)
+
+        # Hide NFO files
+        self.hide_nfo_checkbox = QCheckBox("Hide .nfo metadata files in explorer")
+        self.hide_nfo_checkbox.setChecked(self.settings.config.hide_nfo_files)
+        self.hide_nfo_checkbox.setToolTip(
+            "When enabled, .nfo sidecar files are hidden in the file browser.\n"
+            "They still exist on the server and Jellyfin still reads them."
+        )
+        layout.addWidget(self.hide_nfo_checkbox)
+
+        # Detail panel
+        self.detail_panel_checkbox = QCheckBox("Show detail panel on startup")
+        self.detail_panel_checkbox.setChecked(self.settings.config.show_detail_panel)
+        self.detail_panel_checkbox.setToolTip(
+            "Show the file info panel on the right side of the explorer.\n"
+            "You can always toggle it with ⌘I."
+        )
+        layout.addWidget(self.detail_panel_checkbox)
 
         # Skip patterns
         layout.addWidget(QLabel("Skip Patterns"))
@@ -450,6 +469,8 @@ class SettingsWindow(QDialog):
                 "reveal_in_finder_after_download": self.reveal_in_finder_checkbox.isChecked(),
                 "notify_on_transfer_complete": self.notify_checkbox.isChecked(),
                 "notify_sound": self.notify_sound_checkbox.isChecked(),
+                "hide_nfo_files": self.hide_nfo_checkbox.isChecked(),
+                "show_detail_panel": self.detail_panel_checkbox.isChecked(),
                 "skip_exit_confirm": self.settings.config.skip_exit_confirm,
                 "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [

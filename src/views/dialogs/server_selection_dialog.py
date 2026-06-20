@@ -5,6 +5,8 @@ Shows a list of saved servers with their connection details.
 Allows adding new servers or editing existing ones.
 """
 
+from typing import Optional
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
@@ -29,7 +31,7 @@ class ServerSelectionDialog(QDialog):
 
     server_selected = Signal(str)  # Emits server_id when selected
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{SOFTWARE_NAME} - Select Server")
         self.setMinimumSize(450, 350)
@@ -303,6 +305,6 @@ class ServerSelectionDialog(QDialog):
             self.settings.delete_server(server_id)
             self._load_servers()
 
-    def get_selected_server_id(self) -> str | None:
+    def get_selected_server_id(self) -> Optional[str]:
         """Get the ID of the selected server."""
         return self.selected_server_id

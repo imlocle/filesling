@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -182,7 +183,7 @@ class MainWindow(QMainWindow):
         Returns:
             True if server selected, False if cancelled
         """
-        from src.views.server_selection_dialog import ServerSelectionDialog
+        from src.views.dialogs.server_selection_dialog import ServerSelectionDialog
 
         selection_dialog = ServerSelectionDialog(self)
         if selection_dialog.exec() != QDialog.DialogCode.Accepted:
@@ -241,11 +242,9 @@ class MainWindow(QMainWindow):
         is not a useful suggestion.
         """
         # Skip retry counter for non-SSH connections
-        from src.utils.constants import CONN_TYPE_SSH, CONN_TYPE_KEY
+        from src.utils.constants import CONN_TYPE_KEY, CONN_TYPE_SSH
 
-        server_config = self.settings.get_server(
-            self.settings.config.current_server_id
-        )
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
             server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
             if server_config
@@ -285,7 +284,7 @@ class MainWindow(QMainWindow):
 
     def change_server(self) -> None:
         """Allow user to change to a different server."""
-        from src.views.server_selection_dialog import ServerSelectionDialog
+        from src.views.dialogs.server_selection_dialog import ServerSelectionDialog
 
         selection_dialog = ServerSelectionDialog(self)
         if selection_dialog.exec() != QDialog.DialogCode.Accepted:
@@ -416,12 +415,12 @@ class MainWindow(QMainWindow):
     def _setup_shortcuts(self) -> None:
         """Set up keyboard shortcuts."""
         # ⌘+Backspace — Delete selected items
-        QShortcut(QKeySequence("Meta+Backspace"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+Backspace"), self).activated.connect(
             self.controller.delete_selected_item
         )
 
         # ⌘+R — Refresh explorer
-        QShortcut(QKeySequence("Meta+R"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(
             self.controller.refresh_explorers
         )
 
@@ -430,18 +429,23 @@ class MainWindow(QMainWindow):
         self._enter_shortcut.activated.connect(self._navigate_or_search)
 
         # ⌘+Up — Go back / up one directory
-        QShortcut(QKeySequence("Meta+Up"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+Up"), self).activated.connect(
             self.remote_explorer.go_back
         )
 
         # ⌘+N — New folder
-        QShortcut(QKeySequence("Meta+N"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(
             self._create_folder_shortcut
         )
 
         # ⌘+F — Focus search/filter
-        QShortcut(QKeySequence("Meta+F"), self).activated.connect(
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(
             self.remote_explorer.show_search
+        )
+
+        # ⌘+I — Toggle detail panel
+        QShortcut(QKeySequence("Ctrl+I"), self).activated.connect(
+            self.remote_explorer.toggle_detail_panel
         )
 
         # Escape — Deselect all / hide search
@@ -460,7 +464,7 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("File")
 
         connect_action = QAction("Connect", self)
-        connect_action.setShortcut(QKeySequence("Meta+Shift+C"))
+        connect_action.setShortcut(QKeySequence("Ctrl+Shift+C"))
         connect_action.triggered.connect(self.controller.connect)
         file_menu.addAction(connect_action)
 
@@ -487,6 +491,35 @@ class MainWindow(QMainWindow):
         # --- Edit Menu ---
         edit_menu = menu_bar.addMenu("Edit")
 
+        # Standard macOS Edit actions (required for Emojis & Symbols to appear)
+        undo_action = QAction("Undo", self)
+        undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        edit_menu.addAction(undo_action)
+
+        redo_action = QAction("Redo", self)
+        redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        edit_menu.addAction(redo_action)
+
+        edit_menu.addSeparator()
+
+        cut_action = QAction("Cut", self)
+        cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        edit_menu.addAction(cut_action)
+
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        edit_menu.addAction(copy_action)
+
+        paste_action = QAction("Paste", self)
+        paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        edit_menu.addAction(paste_action)
+
+        select_all_action = QAction("Select All", self)
+        select_all_action.setShortcut(QKeySequence.StandardKey.SelectAll)
+        edit_menu.addAction(select_all_action)
+
+        edit_menu.addSeparator()
+
         refresh_action = QAction("Refresh", self)
         refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)
         refresh_action.triggered.connect(self.controller.refresh_explorers)
@@ -502,7 +535,7 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
 
         delete_action = QAction("Delete Selected", self)
-        delete_action.setShortcut(QKeySequence("Meta+Backspace"))
+        delete_action.setShortcut(QKeySequence("Ctrl+Backspace"))
         delete_action.triggered.connect(self.controller.delete_selected_item)
         edit_menu.addAction(delete_action)
 
@@ -515,9 +548,16 @@ class MainWindow(QMainWindow):
         view_menu.addAction(search_action)
 
         back_action = QAction("Go Back", self)
-        back_action.setShortcut(QKeySequence("Meta+Up"))
+        back_action.setShortcut(QKeySequence("Ctrl+Up"))
         back_action.triggered.connect(self.remote_explorer.go_back)
         view_menu.addAction(back_action)
+
+        view_menu.addSeparator()
+
+        detail_panel_action = QAction("Toggle Detail Panel", self)
+        detail_panel_action.setShortcut(QKeySequence("Ctrl+I"))
+        detail_panel_action.triggered.connect(self.remote_explorer.toggle_detail_panel)
+        view_menu.addAction(detail_panel_action)
 
         view_menu.addSeparator()
 
@@ -693,7 +733,7 @@ class MainWindow(QMainWindow):
         """Create main content area with file explorer."""
         content_container = QWidget()
         content_layout = QVBoxLayout(content_container)
-        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setContentsMargins(8, 4, 8, 4)
 
         self.remote_explorer = FileExplorerWidget(
             settings=self.settings,
@@ -709,8 +749,8 @@ class MainWindow(QMainWindow):
     def _setup_diagnostics_log(self) -> None:
         """Keep diagnostics logs available without showing them in the main UI."""
         self._log_messages: list[str] = []
-        self._diagnostics_dialog: QDialog | None = None
-        self._diagnostics_log_box: QTextEdit | None = None
+        self._diagnostics_dialog: Optional[QDialog] = None
+        self._diagnostics_log_box: Optional[QTextEdit] = None
 
     def _setup_progress_bar(self, layout: QVBoxLayout) -> None:
         """Create transfer queue panel."""
@@ -718,7 +758,7 @@ class MainWindow(QMainWindow):
 
         queue_container = QWidget()
         queue_layout = QVBoxLayout(queue_container)
-        queue_layout.setContentsMargins(12, 0, 12, 12)
+        queue_layout.setContentsMargins(8, 0, 8, 4)
 
         self.transfer_queue = TransferQueueWidget()
         queue_layout.addWidget(self.transfer_queue)
@@ -760,6 +800,12 @@ class MainWindow(QMainWindow):
         if not records:
             text.setPlainText("No activity yet.")
         else:
+            # Build a lookup from server_id → display name
+            servers = self.settings.get_servers()
+            server_names = {
+                sid: config.get("name", sid) for sid, config in servers.items()
+            }
+
             lines = []
             for r in reversed(records):
                 icon = {
@@ -768,10 +814,12 @@ class MainWindow(QMainWindow):
                     "delete": "🗑️",
                     "rename": "✏️",
                     "move": "↔️",
+                    "convert": "🔄",
                 }.get(r.action, "•")
 
+                display_server = server_names.get(r.server_name, r.server_name)
                 line = f"{icon}  {r.action.capitalize()}  •  {r.filename}"
-                line += f"\n    {r.timestamp}  •  {r.server_name}"
+                line += f"\n    {r.timestamp}  •  {display_server}"
 
                 if r.action == "rename":
                     old_name = os.path.basename(r.source)
@@ -843,7 +891,46 @@ class MainWindow(QMainWindow):
             event.accept()
             return
 
-        # Check if user opted to skip the confirmation
+        # Check if any transfers/conversions are active
+        has_active_work = (
+            self.controller.manual_transfer.is_busy()
+            or self.controller.download_ctrl.is_active
+        )
+
+        if has_active_work:
+            msg = QMessageBox(self)
+            msg.setWindowTitle(f"Exit {SOFTWARE_NAME}")
+            msg.setText("Transfers are still in progress.")
+            msg.setInformativeText("What would you like to do?")
+
+            quit_now_btn = msg.addButton(
+                "Quit Now", QMessageBox.ButtonRole.DestructiveRole
+            )
+            quit_after_btn = msg.addButton(
+                "Quit After Jobs Finish", QMessageBox.ButtonRole.AcceptRole
+            )
+            cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            msg.setDefaultButton(cancel_btn)
+
+            msg.exec()
+            clicked = msg.clickedButton()
+
+            if clicked == cancel_btn:
+                event.ignore()
+                return
+            elif clicked == quit_after_btn:
+                # Wait for transfers to finish, then quit
+                self._quit_after_jobs()
+                event.ignore()
+                return
+            # else: quit_now — fall through to shutdown
+
+            self._save_geometry()
+            self.controller.shutdown()
+            event.accept()
+            return
+
+        # No active work — show normal exit confirmation
         skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
 
         if skip_confirm:
@@ -868,7 +955,6 @@ class MainWindow(QMainWindow):
         reply = msg.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Save preference if checked
             if checkbox.isChecked():
                 self.settings.config.skip_exit_confirm = True
                 self.settings.save_config(self.settings._config_to_dict())
@@ -878,6 +964,30 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
+
+    def _quit_after_jobs(self) -> None:
+        """Poll until all transfers finish, then quit."""
+        from PySide6.QtCore import QTimer
+
+        self._quit_timer = QTimer(self)
+        self._quit_timer.setInterval(1000)
+
+        def _check_done() -> None:
+            still_busy = (
+                self.controller.manual_transfer.is_busy()
+                or self.controller.download_ctrl.is_active
+            )
+            if not still_busy:
+                self._quit_timer.stop()
+                self._save_geometry()
+                self.controller.shutdown()
+                from PySide6.QtWidgets import QApplication
+
+                QApplication.quit()
+
+        self._quit_timer.timeout.connect(_check_done)
+        self._quit_timer.start()
+        logger.info("Will quit after all jobs complete...")
 
     # ------------------------------------------------------------------
     # Window Geometry Persistence
@@ -918,12 +1028,10 @@ class MainWindow(QMainWindow):
             if file_names_to_check:
                 try:
                     existing_entries = {
-                        attr.filename
-                        for attr in sftp.listdir_attr(remote_dir)
+                        attr.filename for attr in sftp.listdir_attr(remote_dir)
                     }
                     duplicates = [
-                        name for name in file_names_to_check
-                        if name in existing_entries
+                        name for name in file_names_to_check if name in existing_entries
                     ]
                 except (IOError, OSError):
                     # If listdir fails, fall back to per-file stat
