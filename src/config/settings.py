@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -49,6 +50,8 @@ class SettingsConfig(BaseModel):
     notify_sound: bool = True
     compress_folders_before_transfer: bool = False
     use_rsync: bool = True
+    hide_nfo_files: bool = False
+    show_detail_panel: bool = False
     skip_patterns: set[str] = Field(
         default_factory=lambda: {".DS_Store", "Thumbs.db", ".Trashes", "._*"}
     )
@@ -136,7 +139,7 @@ class SettingsConfig(BaseModel):
 
 
 class Settings:
-    _instance: "Settings | None" = None
+    _instance: Optional["Settings"] = None
     config: SettingsConfig
 
     def __new__(cls) -> "Settings":
@@ -272,8 +275,21 @@ class Settings:
     def get_servers(self) -> dict[str, dict]:
         return self.config.servers.copy()
 
-    def get_server(self, server_id: str) -> dict | None:
+    def get_server(self, server_id: str) -> Optional[dict]:
         return self.config.servers.get(server_id)
+
+    def get_server_config(self, server_id: str = ""):
+        """Get a typed ServerConfig for the given server (or current server).
+
+        Returns None if the server doesn't exist.
+        """
+        from src.models.server_config import ServerConfig
+
+        sid = server_id or self.config.current_server_id
+        raw = self.config.servers.get(sid)
+        if raw is None:
+            return None
+        return ServerConfig.from_dict(raw)
 
     def add_server(self, server_id: str, server_config: dict) -> None:
         self.config.servers[server_id] = server_config
@@ -365,6 +381,8 @@ class Settings:
             "notify_sound": self.config.notify_sound,
             "compress_folders_before_transfer": self.config.compress_folders_before_transfer,
             "use_rsync": self.config.use_rsync,
+            "hide_nfo_files": self.config.hide_nfo_files,
+            "show_detail_panel": self.config.show_detail_panel,
             "skip_patterns": list(self.config.skip_patterns),
             "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,
