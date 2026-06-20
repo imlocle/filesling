@@ -25,6 +25,8 @@ from src.utils.constants import (
     DEFAULT_ADB_BASE_DIR,
     DIALOG_CONNECTION_ERROR,
     DIALOG_CONNECTION_FAILED,
+    HEALTH_CHECK_INTERVAL_MS,
+    TIMEOUT_FFMPEG_INSTALL,
 )
 from src.utils.logging_signal import logger
 
@@ -60,7 +62,7 @@ class ConnectionController(QObject):
         # Health timer
         self._health_timer = QTimer(self)
         self._health_timer.timeout.connect(self.check_health)
-        self._health_timer.start(15000)
+        self._health_timer.start(HEALTH_CHECK_INTERVAL_MS)
 
         # Connection thread state
         self._connect_thread = None
@@ -488,7 +490,7 @@ class ConnectionController(QObject):
                 ["brew", "install", "android-platform-tools"],
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=TIMEOUT_FFMPEG_INSTALL,
             )
             if result.returncode == 0:
                 logger.success("ADB installed. Connect device and try again.")

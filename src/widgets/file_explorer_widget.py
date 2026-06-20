@@ -48,6 +48,11 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.settings import Settings
+from src.utils.constants import (
+    MAX_DRAG_BYTES,
+    SOFTWARE_NAME,
+    TIMEOUT_SSH_CONNECT,
+)
 from src.utils.logging_signal import logger
 
 
@@ -160,7 +165,6 @@ class DragDropTreeWidget(QTreeWidget):
                 import tempfile
 
                 # Calculate total size to decide if we should download for drag
-                MAX_DRAG_BYTES = 10 * 1024 * 1024  # 10MB per file limit
                 downloadable = []
                 for item_name in item_names:
                     remote_path = os.path.join(parent_widget.current_path, item_name)
@@ -526,7 +530,7 @@ class _ConvertWorker(QObject):
                 username=self.username,
                 key_filename=self.key_path,
                 port=self.port,
-                timeout=10,
+                timeout=TIMEOUT_SSH_CONNECT,
             )
 
             def progress_cb(pct: int) -> None:
@@ -724,7 +728,7 @@ class FileExplorerWidget(QWidget):
         self._disk_bar = QProgressBar()
         self._disk_bar.setRange(0, 100)
         self._disk_bar.setValue(0)
-        self._disk_bar.setMaximumHeight(16)
+        self._disk_bar.setFixedHeight(6)
         self._disk_bar.setTextVisible(False)
 
         self._disk_label = QLabel("")
@@ -1043,19 +1047,10 @@ class FileExplorerWidget(QWidget):
 
     def _show_media_info(self, remote_path: str, open_tab: str = "info") -> None:
         """Show video metadata via ffprobe and allow editing tags."""
+        import json
         import shlex
 
-        from PySide6.QtWidgets import (
-            QDialog,
-            QGridLayout,
-            QLabel,
-            QLineEdit,
-            QPlainTextEdit,
-            QPushButton,
-            QTabWidget,
-            QVBoxLayout,
-            QWidget,
-        )
+        from src.views.dialogs.media_info_dialog import MediaInfoDialog
 
         if not self.sftp:
             return
@@ -1089,135 +1084,11 @@ class FileExplorerWidget(QWidget):
                 logger.warn("Media Info: ffprobe returned no output")
                 return
 
-            import json
+            probe_data = json.loads(raw_json)
 
-            data = json.loads(raw_json)
-            fmt = data.get("format", {})
-            tags = fmt.get("tags", {})
-            filename = os.path.basename(remote_path)
-
-            # --- Build dialog ---
-            dialog = QDialog(self)
-            dialog.setWindowTitle(f"Media Info — {filename}")
-            dialog.setMinimumSize(550, 500)
-
-            dlg_layout = QVBoxLayout(dialog)
-
-            tabs = QTabWidget()
-            dlg_layout.addWidget(tabs)
-
-            # === Tab 1: Info ===
-            info_widget = QWidget()
-            info_layout = QVBoxLayout(info_widget)
-            info_text = QPlainTextEdit()
-            info_text.setReadOnly(True)
-            info_text.setStyleSheet("font-family: monospace; font-size: 12px;")
-
-            lines = []
-            lines.append(f"File: {filename}")
-            lines.append(f"Format: {fmt.get('format_long_name', 'Unknown')}")
-
-            duration_secs = float(fmt.get("duration", 0))
-            if duration_secs > 0:
-                hours = int(duration_secs // 3600)
-                mins = int((duration_secs % 3600) // 60)
-                secs = int(duration_secs % 60)
-                lines.append(f"Duration: {hours:02d}:{mins:02d}:{secs:02d}")
-
-            size_bytes = int(fmt.get("size", 0))
-            if size_bytes > 0:
-                size_mb = size_bytes / (1024 * 1024)
-                lines.append(f"Size: {size_mb:.1f} MB")
-
-            bitrate = int(fmt.get("bit_rate", 0))
-            if bitrate > 0:
-                lines.append(f"Overall Bitrate: {bitrate // 1000} kbps")
-
-            lines.append("")
-
-            streams = data.get("streams", [])
-            for i, stream in enumerate(streams):
-                codec_type = stream.get("codec_type", "unknown")
-                codec_name = stream.get("codec_name", "unknown")
-                codec_long = stream.get("codec_long_name", "")
-
-                if codec_type == "video":
-                    width = stream.get("width", "?")
-                    height = stream.get("height", "?")
-                    fps_str = stream.get("r_frame_rate", "")
-                    fps = ""
-                    if fps_str and "/" in fps_str:
-                        num, den = fps_str.split("/")
-                        try:
-                            fps = f"{int(num) / int(den):.2f} fps"
-                        except (ValueError, ZeroDivisionError):
-                            fps = fps_str
-
-                    pix_fmt = stream.get("pix_fmt", "")
-                    profile = stream.get("profile", "")
-                    vbitrate = int(stream.get("bit_rate", 0))
-
-                    lines.append(f"━━━ Video Stream #{i} ━━━")
-                    lines.append(f"  Codec: {codec_name} ({codec_long})")
-                    if profile:
-                        lines.append(f"  Profile: {profile}")
-                    lines.append(f"  Resolution: {width}×{height}")
-                    if fps:
-                        lines.append(f"  Frame Rate: {fps}")
-                    if pix_fmt:
-                        lines.append(f"  Pixel Format: {pix_fmt}")
-                    if vbitrate > 0:
-                        lines.append(f"  Bitrate: {vbitrate // 1000} kbps")
-
-                elif codec_type == "audio":
-                    sample_rate = stream.get("sample_rate", "?")
-                    channels = stream.get("channels", "?")
-                    abitrate = int(stream.get("bit_rate", 0))
-                    lang = stream.get("tags", {}).get("language", "")
-
-                    lines.append(f"━━━ Audio Stream #{i} ━━━")
-                    lines.append(f"  Codec: {codec_name} ({codec_long})")
-                    lines.append(f"  Sample Rate: {sample_rate} Hz")
-                    lines.append(f"  Channels: {channels}")
-                    if abitrate > 0:
-                        lines.append(f"  Bitrate: {abitrate // 1000} kbps")
-                    if lang:
-                        lines.append(f"  Language: {lang}")
-
-                elif codec_type == "subtitle":
-                    lang = stream.get("tags", {}).get("language", "")
-                    lines.append(f"━━━ Subtitle Stream #{i} ━━━")
-                    lines.append(f"  Codec: {codec_name}")
-                    if lang:
-                        lines.append(f"  Language: {lang}")
-
-                lines.append("")
-
-            info_text.setPlainText("\n".join(lines))
-            info_layout.addWidget(info_text)
-            tabs.addTab(info_widget, "Info")
-
-            # === Tab 2: Tags (editable via NFO sidecar) ===
-            from PySide6.QtWidgets import QScrollArea
-
-            tags_scroll = QScrollArea()
-            tags_scroll.setWidgetResizable(True)
-            tags_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-
-            tags_widget = QWidget()
-            tags_layout = QVBoxLayout(tags_widget)
-
-            hint = QLabel(
-                "Metadata is saved as an .nfo file next to the video.\n"
-                "Jellyfin reads .nfo files automatically on library scan."
-            )
-            hint.setObjectName("secondary_label")
-            hint.setWordWrap(True)
-            tags_layout.addWidget(hint)
-
-            # --- Read existing NFO if it exists (priority over embedded tags) ---
+            # Read existing NFO sidecar if it exists
             nfo_path = os.path.splitext(remote_path)[0] + ".nfo"
-            nfo_data = {}
+            nfo_data: dict = {}
             try:
                 sess = transport.open_session()
                 sess.exec_command(f"cat {shlex.quote(nfo_path)} 2>/dev/null")
@@ -1235,422 +1106,42 @@ class FileExplorerWidget(QWidget):
                     for elem in root:
                         if elem.text:
                             key = elem.tag.lower()
-                            # Accumulate multiple genre tags
                             if key in nfo_data and key == "genre":
                                 nfo_data[key] += ";" + elem.text.strip()
                             else:
                                 nfo_data[key] = elem.text.strip()
             except Exception:
-                pass  # No NFO or can't read — use embedded tags
+                pass  # No NFO or can't read
 
-            # Merge: NFO takes priority, then embedded tags
-            def _get_value(key: str) -> str:
-                # Map our key names to NFO element names
-                nfo_key_map = {
-                    "sort_name": "sorttitle",
-                    "show": "showtitle",
-                    "season_number": "season",
-                    "episode_sort": "episode",
-                    "date": "year",
-                    "album": "set",
-                    "description": "plot",
-                    "publisher": "studio",
-                }
-                nfo_key = nfo_key_map.get(key, key)
-                # Check NFO first
-                val = nfo_data.get(nfo_key, "") or nfo_data.get(key, "")
-                if val:
-                    return val
-                # Fall back to embedded tags
-                return tags.get(key, "") or tags.get(key.upper(), "") or ""
-
-            # Auto-populate title with filename if no title exists anywhere
-            auto_title = _get_value("title")
-            if not auto_title:
-                auto_title = os.path.splitext(filename)[0]
-
-            # Editable tag fields
-            tag_fields = {}
-            grid = QGridLayout()
-            grid.setSpacing(8)
-
-            # Common tags (always visible)
-            common_tags = [
-                ("title", "Title"),
-                ("sort_name", "Sort Title"),
-                ("artist", "Artist"),
-                ("director", "Director"),
-                ("album", "Album / Series"),
-                ("show", "Show Name"),
-                ("season_number", "Season"),
-                ("episode_sort", "Episode #"),
-                ("date", "Date / Year"),
-                ("genre", "Genre"),
-                ("description", "Description"),
-            ]
-
-            # Advanced tags (hidden by default)
-            advanced_tags = [
-                ("track", "Track Number"),
-                ("disc", "Disc Number"),
-                ("composer", "Composer"),
-                ("performer", "Performer"),
-                ("publisher", "Publisher / Studio"),
-                ("copyright", "Copyright"),
-                ("language", "Language"),
-                ("network", "Network"),
-                ("synopsis", "Synopsis"),
-                ("grouping", "Grouping"),
-                ("lyrics", "Lyrics"),
-                ("rating", "Rating"),
-                ("comment", "Comment"),
-                ("sort_artist", "Sort Artist"),
-                ("sort_album", "Sort Album"),
-                ("compilation", "Compilation"),
-                ("encoded_by", "Encoded By"),
-                ("url", "URL"),
-            ]
-
-            # Placeholder examples and tooltips
-            field_hints = {
-                "title": ("e.g., The Challenge", "Display name in Jellyfin."),
-                "sort_name": (
-                    "e.g., 01",
-                    "Controls sort order. Set to '01' to sort first.",
-                ),
-                "artist": ("e.g., Tony Horton", "Creator, performer, or main actor."),
-                "director": ("e.g., Christopher Nolan", "Director of the video."),
-                "album": ("e.g., P90X3", "Collection or series group."),
-                "show": ("e.g., P90X3", "TV show or series name."),
-                "season_number": ("e.g., 1", "Season or disc number."),
-                "episode_sort": ("e.g., 5", "Episode number for ordering."),
-                "date": ("e.g., 2014", "Year or full date (YYYY-MM-DD)."),
-                "genre": ("e.g., Fitness;Workout", "Use semicolons for multiple."),
-                "description": (
-                    "e.g., Full body strength workout",
-                    "Short summary or plot.",
-                ),
-                "track": ("e.g., 3", "Track number within an album/disc."),
-                "disc": ("e.g., 2", "Disc number in a multi-disc set."),
-                "composer": ("e.g., Hans Zimmer", "Music composer."),
-                "performer": ("e.g., Tony Horton", "Main performer or actor."),
-                "publisher": ("e.g., Beachbody", "Publisher, studio, or distributor."),
-                "copyright": ("e.g., © 2014 Beachbody", "Copyright notice."),
-                "language": ("e.g., eng, jpn", "Primary language (ISO 639 code)."),
-                "network": ("e.g., Netflix, HBO", "Network or streaming platform."),
-                "synopsis": ("e.g., A detailed plot summary...", "Full plot synopsis."),
-                "grouping": ("e.g., Phase 1", "Content grouping or phase."),
-                "lyrics": ("e.g., Song lyrics...", "Lyrics or transcript."),
-                "rating": ("e.g., TV-PG, PG-13", "Content rating."),
-                "comment": ("e.g., Ripped from DVD", "Freeform notes."),
-                "sort_artist": ("e.g., Horton, Tony", "Sort order for artist."),
-                "sort_album": ("e.g., P90X3 Season 1", "Sort order for album."),
-                "compilation": ("e.g., 1", "Set to 1 if part of a compilation."),
-                "encoded_by": ("e.g., HandBrake 1.6", "Encoding software."),
-                "url": ("e.g., https://...", "Related URL."),
-            }
-
-            row = 0
-            for key, label in common_tags:
-                value = auto_title if key == "title" else _get_value(key)
-                grid.addWidget(QLabel(label + ":"), row, 0)
-                field = QLineEdit(value)
-                h = field_hints.get(key)
-                if h:
-                    field.setPlaceholderText(h[0])
-                    field.setToolTip(h[1])
-                grid.addWidget(field, row, 1)
-                tag_fields[key] = field
-                row += 1
-
-            tags_layout.addLayout(grid)
-
-            # "Show More" expandable section
-            advanced_container = QWidget()
-            advanced_layout_inner = QVBoxLayout(advanced_container)
-            advanced_layout_inner.setContentsMargins(0, 0, 0, 0)
-            advanced_layout_inner.setSpacing(4)
-            advanced_container.setVisible(False)
-
-            advanced_grid = QGridLayout()
-            advanced_grid.setSpacing(8)
-            adv_row = 0
-
-            for key, label in advanced_tags:
-                value = _get_value(key)
-                advanced_grid.addWidget(QLabel(label + ":"), adv_row, 0)
-                field = QLineEdit(value)
-                h = field_hints.get(key)
-                if h:
-                    field.setPlaceholderText(h[0])
-                    field.setToolTip(h[1])
-                advanced_grid.addWidget(field, adv_row, 1)
-                tag_fields[key] = field
-                adv_row += 1
-
-            advanced_layout_inner.addLayout(advanced_grid)
-            tags_layout.addWidget(advanced_container)
-
-            show_more_btn = QPushButton("▶ Show All Tags")
-            show_more_btn.setObjectName("subtle_btn")
-            show_more_btn.setMaximumWidth(140)
-
-            def _toggle_advanced() -> None:
-                visible = not advanced_container.isVisible()
-                advanced_container.setVisible(visible)
-                show_more_btn.setText("▼ Show Less" if visible else "▶ Show All Tags")
-
-            show_more_btn.clicked.connect(_toggle_advanced)
-            tags_layout.addWidget(show_more_btn)
-
-            # Show any extra tags from NFO that aren't in our standard lists
-            all_known_keys = {k for k, _ in common_tags + advanced_tags}
-            # Also map NFO element names back to our keys
-            reverse_nfo_map = {
-                v: k
-                for k, v in {
-                    "sort_name": "sorttitle",
-                    "show": "showtitle",
-                    "season_number": "season",
-                    "episode_sort": "episode",
-                    "date": "year",
-                    "album": "set",
-                    "description": "plot",
-                    "publisher": "studio",
-                }.items()
-            }
-            all_nfo_known = set(reverse_nfo_map.keys()) | {
-                k for k, _ in common_tags + advanced_tags
-            }
-
-            extra_nfo_tags = {}
-            skip_nfo_keys = {"actor", "thumb", "fanart", "uniqueid", "fileinfo"}
-            for nfo_key, value in nfo_data.items():
-                if nfo_key in skip_nfo_keys:
-                    continue
-                # Check if this maps to a known field
-                mapped_key = reverse_nfo_map.get(nfo_key, nfo_key)
-                if mapped_key not in all_known_keys and nfo_key not in all_nfo_known:
-                    extra_nfo_tags[nfo_key] = value
-
-            if extra_nfo_tags:
-                for key, value in extra_nfo_tags.items():
-                    advanced_grid.addWidget(QLabel(f"{key}:"), adv_row, 0)
-                    field = QLineEdit(value)
-                    field.setPlaceholderText("(custom tag)")
-                    advanced_grid.addWidget(field, adv_row, 1)
-                    tag_fields[key] = field
-                    adv_row += 1
-                # Show advanced section if there are custom tags
-                advanced_container.setVisible(True)
-                show_more_btn.setText("▼ Show Less")
-
-            # Add custom tag button
-            def _add_custom_tag() -> None:
-                from PySide6.QtWidgets import QInputDialog
-
-                tag_name, ok = QInputDialog.getText(
-                    dialog,
-                    "Add Tag",
-                    "Tag name (e.g., 'composer', 'copyright', 'network'):",
-                )
-                if ok and tag_name.strip():
-                    tag_name = tag_name.strip().lower().replace(" ", "_")
-                    if tag_name in tag_fields:
-                        tag_fields[tag_name].setFocus()
-                        return
-                    nonlocal adv_row
-                    advanced_grid.addWidget(QLabel(f"{tag_name}:"), adv_row, 0)
-                    field = QLineEdit("")
-                    field.setPlaceholderText("(empty)")
-                    field.setFocus()
-                    advanced_grid.addWidget(field, adv_row, 1)
-                    tag_fields[tag_name] = field
-                    adv_row += 1
-                    advanced_container.setVisible(True)
-                    show_more_btn.setText("▼ Show Less")
-
-            add_tag_btn = QPushButton("+ Add Tag")
-            add_tag_btn.setToolTip("Add a custom metadata tag.")
-            add_tag_btn.setMaximumWidth(100)
-            add_tag_btn.clicked.connect(_add_custom_tag)
-            tags_layout.addWidget(add_tag_btn)
-
-            tags_layout.addStretch()
-
-            # Save button — writes .nfo file
-            save_btn = QPushButton("💾 Save")
-            save_btn.setToolTip(
-                "Saves metadata as an .nfo file next to the video.\n"
-                "Jellyfin reads this automatically. Instant, doesn't touch the video."
+            # Show the dialog
+            dialog = MediaInfoDialog(
+                remote_path=remote_path,
+                probe_data=probe_data,
+                nfo_data=nfo_data,
+                sftp=self.sftp,
+                parent=self,
+                open_tab=open_tab,
             )
-
-            def _save_nfo() -> None:
-                # Map our field keys to Jellyfin NFO XML element names
-                key_to_nfo = {
-                    "title": "title",
-                    "sort_name": "sorttitle",
-                    "artist": "artist",
-                    "director": "director",
-                    "album": "set",
-                    "show": "showtitle",
-                    "season_number": "season",
-                    "episode_sort": "episode",
-                    "date": "year",
-                    "genre": "genre",
-                    "description": "plot",
-                    "track": "track",
-                    "disc": "disc",
-                    "composer": "composer",
-                    "performer": "actor",
-                    "publisher": "studio",
-                    "copyright": "copyright",
-                    "language": "language",
-                    "network": "network",
-                    "synopsis": "outline",
-                    "rating": "mpaa",
-                    "comment": "comment",
-                    "sort_artist": "sortartist",
-                    "sort_album": "sortset",
-                    "url": "website",
-                }
-
-                # Auto-detect NFO type from filled fields
-                has_season = bool(
-                    tag_fields.get("season_number", None)
-                    and tag_fields["season_number"].text().strip()
-                )
-                has_episode = bool(
-                    tag_fields.get("episode_sort", None)
-                    and tag_fields["episode_sort"].text().strip()
-                )
-                has_artist = bool(
-                    tag_fields.get("artist", None)
-                    and tag_fields["artist"].text().strip()
-                )
-                has_director = bool(
-                    tag_fields.get("director", None)
-                    and tag_fields["director"].text().strip()
-                )
-
-                if has_season or has_episode:
-                    root_tag = "episodedetails"
-                elif has_artist and not has_director:
-                    root_tag = "musicvideo"
-                else:
-                    root_tag = "movie"
-
-                # Build XML
-                lines = ['<?xml version="1.0" encoding="utf-8"?>', f"<{root_tag}>"]
-                for key, field in tag_fields.items():
-                    value = field.text().strip()
-                    if not value:
-                        continue
-                    nfo_tag = key_to_nfo.get(key, key)
-                    # Genre: split on semicolons into separate elements
-                    if key == "genre":
-                        for g in value.split(";"):
-                            g = g.strip()
-                            if g:
-                                lines.append(f"  <genre>{g}</genre>")
-                    # Skip people fields here — handled below as <actor> entries
-                    elif key in ("artist", "director", "performer", "composer"):
-                        # Still write the dedicated tag (e.g., <director>)
-                        value = (
-                            value.replace("&", "&amp;")
-                            .replace("<", "&lt;")
-                            .replace(">", "&gt;")
-                        )
-                        lines.append(f"  <{nfo_tag}>{value}</{nfo_tag}>")
-                    else:
-                        # Escape XML special chars
-                        value = (
-                            value.replace("&", "&amp;")
-                            .replace("<", "&lt;")
-                            .replace(">", "&gt;")
-                        )
-                        lines.append(f"  <{nfo_tag}>{value}</{nfo_tag}>")
-
-                # Auto-generate <actor> entries for Jellyfin's People section
-                people_roles = {
-                    "director": "Director",
-                    "artist": "Artist",
-                    "performer": "Actor",
-                    "composer": "Composer",
-                }
-                for key, role in people_roles.items():
-                    field = tag_fields.get(key)
-                    if not field:
-                        continue
-                    value = field.text().strip()
-                    if not value:
-                        continue
-                    # Support multiple names separated by semicolons
-                    for name in value.split(";"):
-                        name = name.strip()
-                        if not name:
-                            continue
-                        safe_name = (
-                            name.replace("&", "&amp;")
-                            .replace("<", "&lt;")
-                            .replace(">", "&gt;")
-                        )
-                        lines.append("  <actor>")
-                        lines.append(f"    <name>{safe_name}</name>")
-                        lines.append(f"    <role>{role}</role>")
-                        lines.append("  </actor>")
-
-                lines.append(f"</{root_tag}>")
-                nfo_content = "\n".join(lines) + "\n"
-
-                # Write NFO file directly via SFTP (instant, no shell overhead)
-                try:
-                    with self.sftp.open(nfo_path, "w") as f:
-                        f.write(nfo_content.encode("utf-8"))
-
-                    logger.success(f"NFO saved: {os.path.basename(nfo_path)}")
-                    dialog.accept()
-
-                    # Add the NFO file to the tree directly (no full refresh needed)
-                    nfo_filename = os.path.basename(nfo_path)
-                    if not self.settings.config.hide_nfo_files:
-                        # Check if it's already in the tree
-                        exists = False
-                        for i in range(self.tree_widget.topLevelItemCount()):
-                            if self.tree_widget.topLevelItem(i).text(0) == nfo_filename:
-                                exists = True
-                                break
-                        if not exists:
-                            from src.widgets.file_explorer_widget import (
-                                SortableTreeWidgetItem,
-                                _get_file_icon,
-                            )
-
-                            size_str = f"{len(nfo_content)} B"
-                            item = SortableTreeWidgetItem([nfo_filename, size_str])
-                            item.setIcon(0, _get_file_icon(False, nfo_filename))
-                            item.setData(1, Qt.ItemDataRole.UserRole, len(nfo_content))
-                            self.tree_widget.addTopLevelItem(item)
-                except Exception as e:
-                    logger.error(f"NFO write error: {e}")
-                    from PySide6.QtWidgets import QMessageBox
-
-                    QMessageBox.warning(
-                        dialog,
-                        "Save Failed",
-                        f"Failed to write .nfo file:\n{e}",
-                    )
-
-            save_btn.clicked.connect(_save_nfo)
-            tags_layout.addWidget(save_btn)
-
-            tags_scroll.setWidget(tags_widget)
-            tabs.addTab(tags_scroll, "Tags")
-
-            # Open on requested tab
-            tabs.setCurrentIndex(1 if open_tab == "tags" else 0)
-
             dialog.exec()
+
+            # If dialog was accepted (NFO saved), add NFO to tree if needed
+            if dialog.result() == MediaInfoDialog.DialogCode.Accepted:
+                nfo_filename = os.path.basename(nfo_path)
+                if not self.settings.config.hide_nfo_files:
+                    exists = False
+                    for i in range(self.tree_widget.topLevelItemCount()):
+                        if self.tree_widget.topLevelItem(i).text(0) == nfo_filename:
+                            exists = True
+                            break
+                    if not exists:
+                        from src.widgets.file_explorer_widget import (
+                            SortableTreeWidgetItem,
+                            _get_file_icon,
+                        )
+
+                        item = SortableTreeWidgetItem([nfo_filename, ""])
+                        item.setIcon(0, _get_file_icon(False, nfo_filename))
+                        self.tree_widget.addTopLevelItem(item)
 
         except Exception as e:
             logger.error(f"Media Info: Failed to get metadata: {e}")
@@ -2411,12 +1902,12 @@ class FileExplorerWidget(QWidget):
         app = QApplication.instance()
         is_light = app is not None and app.property("filesling_theme") == "light"
         background = "#e8e8ed" if is_light else "#2b2c30"
-        border = "#d2d2d7" if is_light else "#3d3e44"
         self._disk_bar.setStyleSheet(f"""
             QProgressBar {{
                 background-color: {background};
-                border: 1px solid {border};
-                border-radius: 4px;
+                border: none;
+                border-radius: 3px;
+                height: 4px;
             }}
             QProgressBar::chunk {{
                 background-color: {color};

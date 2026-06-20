@@ -9,8 +9,8 @@ import pytest
 from src.services.activity_history_service import (
     ActivityHistoryService,
     ActivityRecord,
-    MAX_HISTORY,
 )
+from src.utils.constants import MAX_ACTIVITY_HISTORY as MAX_HISTORY
 
 
 class TestActivityRecord:

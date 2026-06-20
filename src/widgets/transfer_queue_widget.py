@@ -22,10 +22,13 @@ from PySide6.QtWidgets import (
 )
 
 from src.utils.constants import (
+    STATUS_CONVERTING,
+    STATUS_DONE,
     STATUS_DOWNLOADING,
     STATUS_FAILED,
     STATUS_QUEUED,
     STATUS_UPLOADING,
+    TRANSFER_REFRESH_INTERVAL_MS,
 )
 
 
@@ -137,7 +140,9 @@ class TransferItemWidget(QFrame):
         self.cancel_btn.setVisible(False)
 
         self.finder_btn = QPushButton("Show in Finder")
-        self.finder_btn.setMaximumHeight(22)
+        self.finder_btn.setObjectName("pill_btn")
+        self.finder_btn.setFixedHeight(22)
+        self.finder_btn.setMaximumWidth(110)
         self.finder_btn.setVisible(False)
         self.finder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.finder_btn.clicked.connect(self._reveal_in_finder)
@@ -158,7 +163,7 @@ class TransferItemWidget(QFrame):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setMaximumHeight(14)
+        self.progress_bar.setMaximumHeight(6)
         self.progress_bar.setTextVisible(False)
         layout.addWidget(self.progress_bar)
 
@@ -197,7 +202,7 @@ class TransferItemWidget(QFrame):
             if is_download:
                 self.status_label.setText(STATUS_DOWNLOADING)
             elif is_convert:
-                self.status_label.setText("🔄 Converting")
+                self.status_label.setText(STATUS_CONVERTING)
             else:
                 self.status_label.setText(STATUS_UPLOADING)
             self.status_label.setObjectName("status_active")
@@ -242,7 +247,7 @@ class TransferItemWidget(QFrame):
                 self.detail_label.setText(" · ".join(parts))
 
         elif item.status == TransferStatus.COMPLETED:
-            self.status_label.setText("✅ Done")
+            self.status_label.setText(STATUS_DONE)
             self.status_label.setObjectName("status_success")
             self.status_label.style().polish(self.status_label)
             self.progress_bar.setVisible(False)
@@ -393,7 +398,7 @@ class TransferQueueWidget(QWidget):
         # Update timer for speed/ETA
         self._update_timer = QTimer(self)
         self._update_timer.timeout.connect(self._refresh_active)
-        self._update_timer.setInterval(500)
+        self._update_timer.setInterval(TRANSFER_REFRESH_INTERVAL_MS)
 
     def add_transfer(
         self,
@@ -424,17 +429,13 @@ class TransferQueueWidget(QWidget):
         return index
 
     def set_in_progress(self, index: int) -> None:
-        """Mark a transfer as in-progress and move it to the top of the list."""
+        """Mark a transfer as in-progress and reorder the list."""
         if 0 <= index < len(self._items):
             self._items[index].status = TransferStatus.IN_PROGRESS
             self._items[index].start_time = time.time()
             self._item_widgets[index].update_display()
             self._update_timer.start()
-
-            # Move widget to top of layout
-            widget = self._item_widgets[index]
-            self.items_layout.removeWidget(widget)
-            self.items_layout.insertWidget(0, widget)
+            self._reorder_widgets()
 
     def update_progress(self, index: int, transferred: int, total: int) -> None:
         """Update transfer progress."""
@@ -445,34 +446,24 @@ class TransferQueueWidget(QWidget):
             # Don't update widget here — timer handles it
 
     def set_completed(self, index: int) -> None:
-        """Mark a transfer as completed and move to the bottom of the list."""
+        """Mark a transfer as completed and reorder the list."""
         if 0 <= index < len(self._items):
             self._items[index].status = TransferStatus.COMPLETED
             self._items[index].end_time = time.time()
             self._items[index].transferred_bytes = self._items[index].total_bytes
             self._item_widgets[index].update_display()
-
-            # Move widget to bottom (before the stretch)
-            widget = self._item_widgets[index]
-            self.items_layout.removeWidget(widget)
-            self.items_layout.insertWidget(self.items_layout.count() - 1, widget)
-
+            self._reorder_widgets()
             self._check_stop_timer()
             self._update_visibility()
 
     def set_failed(self, index: int, error: str) -> None:
-        """Mark a transfer as failed and move to the bottom of the list."""
+        """Mark a transfer as failed and reorder the list."""
         if 0 <= index < len(self._items):
             self._items[index].status = TransferStatus.FAILED
             self._items[index].end_time = time.time()
             self._items[index].error_message = error
             self._item_widgets[index].update_display()
-
-            # Move widget to bottom (before the stretch)
-            widget = self._item_widgets[index]
-            self.items_layout.removeWidget(widget)
-            self.items_layout.insertWidget(self.items_layout.count() - 1, widget)
-
+            self._reorder_widgets()
             self._check_stop_timer()
             self._update_visibility()
 
@@ -532,6 +523,32 @@ class TransferQueueWidget(QWidget):
 
             # Emit signal with the pending position for the controller
             self.cancel_transfer.emit(pending_position)
+
+    def _reorder_widgets(self) -> None:
+        """Reorder widgets: active on top → queued → completed/failed at bottom."""
+        # Define sort priority: in_progress=0, pending=1, completed=2, failed=2
+        priority = {
+            TransferStatus.IN_PROGRESS: 0,
+            TransferStatus.PENDING: 1,
+            TransferStatus.COMPLETED: 2,
+            TransferStatus.FAILED: 2,
+        }
+
+        # Build sorted order of widget indices
+        sorted_indices = sorted(
+            range(len(self._items)),
+            key=lambda i: priority.get(self._items[i].status, 3),
+        )
+
+        # Remove all widgets from layout (except the trailing stretch)
+        for widget in self._item_widgets:
+            self.items_layout.removeWidget(widget)
+
+        # Re-insert in sorted order (before the stretch at the end)
+        for idx in sorted_indices:
+            self.items_layout.insertWidget(
+                self.items_layout.count() - 1, self._item_widgets[idx]
+            )
 
     def _refresh_active(self) -> None:
         """Refresh display of active transfers (called by timer)."""

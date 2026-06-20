@@ -36,6 +36,8 @@ from src.utils.constants import (
     DUP_ACTION_OVERWRITE,
     DUP_ACTION_SKIP,
     GITHUB_REPO_URL,
+    MAX_CONNECTION_RETRIES,
+    QUIT_CHECK_INTERVAL_MS,
     SOFTWARE_NAME,
     VERSION,
 )
@@ -68,7 +70,7 @@ class MainWindow(QMainWindow):
 
         # Connection retry tracking
         self.connection_attempts = 0
-        self.max_connection_attempts = 3
+        self.max_connection_attempts = MAX_CONNECTION_RETRIES
 
         # === 1. Load Settings ===
         self.settings = Settings()
@@ -157,7 +159,7 @@ class MainWindow(QMainWindow):
         """
         QMessageBox.information(
             self,
-            "Welcome to FileSling",
+            f"Welcome to {SOFTWARE_NAME}",
             "Welcome! Let's set up your first server connection.",
             QMessageBox.StandardButton.Ok,
         )
@@ -167,7 +169,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 DIALOG_SETUP_REQUIRED,
-                "At least one server must be configured to use FileSling.",
+                f"At least one server must be configured to use {SOFTWARE_NAME}.",
                 QMessageBox.StandardButton.Ok,
             )
             self.close()
@@ -226,7 +228,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(
                     self,
                     DIALOG_SETUP_FAILED,
-                    "Settings are required to run FileSling.",
+                    f"Settings are required to run {SOFTWARE_NAME}.",
                     QMessageBox.StandardButton.Ok,
                 )
                 self.close()
@@ -482,7 +484,7 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        quit_action = QAction("Quit FileSling", self)
+        quit_action = QAction(f"Quit {SOFTWARE_NAME}", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.setMenuRole(QAction.MenuRole.QuitRole)
         quit_action.triggered.connect(self.close)
@@ -572,7 +574,7 @@ class MainWindow(QMainWindow):
         # --- Help Menu ---
         help_menu = menu_bar.addMenu("Help")
 
-        about_action = QAction("About FileSling", self)
+        about_action = QAction(f"About {SOFTWARE_NAME}", self)
         about_action.setMenuRole(QAction.MenuRole.AboutRole)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
@@ -601,9 +603,9 @@ class MainWindow(QMainWindow):
         """Show About dialog."""
         QMessageBox.about(
             self,
-            "About FileSling",
+            f"About {SOFTWARE_NAME}",
             (
-                f"FileSling v{VERSION}\n\n"
+                f"{SOFTWARE_NAME} v{VERSION}\n\n"
                 "A native macOS transfer hub for devices and servers.\n\n"
                 "Built with Python, PySide6, and Paramiko.\n"
                 f"{GITHUB_REPO_URL}"
@@ -970,7 +972,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtCore import QTimer
 
         self._quit_timer = QTimer(self)
-        self._quit_timer.setInterval(1000)
+        self._quit_timer.setInterval(QUIT_CHECK_INTERVAL_MS)
 
         def _check_done() -> None:
             still_busy = (

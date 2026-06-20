@@ -15,8 +15,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 from src.controllers.download_controller import (
     DownloadController,
     _DownloadSlot,
-    MAX_PARALLEL,
 )
+from src.utils.constants import MAX_PARALLEL_DOWNLOADS as MAX_PARALLEL
 
 
 # ---------------------------------------------------------------------------

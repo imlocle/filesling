@@ -29,6 +29,7 @@ import stat as stat_module
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
+from src.utils.constants import IOS_CHUNK_SIZE
 from src.utils.logging_signal import logger
 
 # Connection type constant
@@ -200,7 +201,7 @@ class IOSClient:
                 with open(local_path, "wb") as local_file:
                     transferred = 0
                     while True:
-                        chunk = remote_file.read(1024 * 1024)  # 1MB chunks
+                        chunk = remote_file.read(IOS_CHUNK_SIZE)  # 1MB chunks
                         if not chunk:
                             break
                         local_file.write(chunk)
@@ -241,7 +242,7 @@ class IOSClient:
                 with self._afc.open(remote_path, "w") as remote_file:
                     transferred = 0
                     while True:
-                        chunk = local_file.read(1024 * 1024)  # 1MB chunks
+                        chunk = local_file.read(IOS_CHUNK_SIZE)  # 1MB chunks
                         if not chunk:
                             break
                         remote_file.write(chunk)

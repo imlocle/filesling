@@ -6,10 +6,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from src.utils.constants import SOFTWARE_NAME
+from src.utils.constants import (
+    ERROR_LOG_FILE,
+    LOGS_DIR_NAME,
+    MAX_ERROR_LOG_ENTRIES,
+    SOFTWARE_NAME,
+)
 
 # Logs directory — stored alongside config in the user's home (~/.FileSling/logs)
-_LOGS_DIR = str(Path.home() / f".{SOFTWARE_NAME}" / "logs")
+_LOGS_DIR = str(Path.home() / f".{SOFTWARE_NAME}" / LOGS_DIR_NAME)
 
 
 def _ensure_logs_dir() -> None:
@@ -21,7 +26,7 @@ def _write_error_log(msg: str) -> None:
     """Append an error entry to the JSON log file."""
     try:
         _ensure_logs_dir()
-        log_file = os.path.join(_LOGS_DIR, "errors.json")
+        log_file = os.path.join(_LOGS_DIR, ERROR_LOG_FILE)
 
         # Load existing entries
         entries = []
@@ -44,8 +49,8 @@ def _write_error_log(msg: str) -> None:
         }
         entries.append(entry)
 
-        # Keep last 500 entries to prevent unbounded growth
-        entries = entries[-500:]
+        # Keep last N entries to prevent unbounded growth
+        entries = entries[-MAX_ERROR_LOG_ENTRIES:]
 
         with open(log_file, "w") as f:
             json.dump(entries, f, indent=2)

@@ -301,7 +301,7 @@ class SettingsWindow(QDialog):
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Settings",
-            os.path.expanduser("~/FileSling_settings.json"),
+            os.path.expanduser(f"~/{SOFTWARE_NAME}_settings.json"),
             "JSON Files (*.json)",
         )
         if not path:
@@ -351,7 +351,7 @@ class SettingsWindow(QDialog):
                 self,
                 "Import Complete",
                 "Settings imported successfully.\n\n"
-                "Please restart FileSling for all changes to take effect.",
+                f"Please restart {SOFTWARE_NAME} for all changes to take effect.",
             )
             self.accept()
         except Exception as e:

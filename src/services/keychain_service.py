@@ -10,7 +10,7 @@ from __future__ import annotations
 import subprocess
 from typing import Optional
 
-from src.utils.constants import SOFTWARE_NAME
+from src.utils.constants import SOFTWARE_NAME, TIMEOUT_KEYCHAIN
 from src.utils.logging_signal import logger
 
 SERVICE_NAME = SOFTWARE_NAME
@@ -39,7 +39,7 @@ def store_password(account: str, password: str) -> bool:
                 account,
             ],
             capture_output=True,
-            timeout=5,
+            timeout=TIMEOUT_KEYCHAIN,
         )
 
         # Add new entry — use stdin for the password to avoid it appearing
@@ -60,7 +60,7 @@ def store_password(account: str, password: str) -> bool:
             stderr=subprocess.PIPE,
             text=True,
         )
-        _, stderr = proc.communicate(input=password, timeout=5)
+        _, stderr = proc.communicate(input=password, timeout=TIMEOUT_KEYCHAIN)
         if proc.returncode == 0:
             logger.info(f"Keychain: Stored credentials for {account}")
             return True
@@ -95,7 +95,7 @@ def retrieve_password(account: str) -> Optional[str]:
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=TIMEOUT_KEYCHAIN,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -127,7 +127,7 @@ def delete_password(account: str) -> bool:
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=TIMEOUT_KEYCHAIN,
         )
         return result.returncode == 0
     except Exception as e:

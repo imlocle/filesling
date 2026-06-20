@@ -19,6 +19,11 @@ from src.models.errors import (
     SFTPConnectionError,
     SSHConnectionError,
 )
+from src.utils.constants import (
+    MAX_CONNECTION_RETRIES,
+    TIMEOUT_SSH_CONNECT,
+    TIMEOUT_SSH_RETRY_DELAY,
+)
 from src.utils.logging_signal import logger
 
 
@@ -77,7 +82,7 @@ class ConnectionManagerService:
                 logger.warn(f"Connection: Could not check SSH key permissions: {e}")
 
         retries = 0
-        max_retries = 3
+        max_retries = MAX_CONNECTION_RETRIES
         last_error: Optional[Exception] = None
 
         while retries < max_retries:
@@ -159,7 +164,7 @@ class ConnectionManagerService:
                 self.sftp_background = None
 
                 if retries < max_retries:
-                    sleep(3)
+                    sleep(TIMEOUT_SSH_RETRY_DELAY)
 
             except TimeoutError as e:
                 last_error = e
@@ -174,7 +179,7 @@ class ConnectionManagerService:
                 self.sftp_background = None
 
                 if retries < max_retries:
-                    sleep(3)
+                    sleep(TIMEOUT_SSH_RETRY_DELAY)
 
             except Exception as e:
                 last_error = e
@@ -186,7 +191,7 @@ class ConnectionManagerService:
                 self.sftp_background = None
 
                 if retries < max_retries:
-                    sleep(3)
+                    sleep(TIMEOUT_SSH_RETRY_DELAY)
 
         # All retries exhausted
         error_msg = (
@@ -325,7 +330,7 @@ class ConnectionManagerService:
                 hostname=self.settings.host,
                 username=self.settings.username,
                 key_filename=self.settings.ssh_key_path,
-                timeout=10,
+                timeout=TIMEOUT_SSH_CONNECT,
             )
             logger.success("Test: Connection successful")
             return True

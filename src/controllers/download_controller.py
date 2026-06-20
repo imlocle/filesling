@@ -1,7 +1,7 @@
 """
 Download controller — manages file downloads from remote to local.
 
-Supports parallel downloads (up to MAX_PARALLEL concurrent) with:
+Supports parallel downloads (up to MAX_PARALLEL_DOWNLOADS concurrent) with:
 - Per-download retry logic (up to 3 attempts)
 - Per-download progress tracking via transfer queue widget
 - Activity history recording
@@ -24,14 +24,14 @@ from src.utils.constants import (
     CONN_TYPE_KEY,
     CONN_TYPE_SSH,
     DIALOG_FILE_ALREADY_EXISTS,
+    MAX_DOWNLOAD_RETRIES,
+    MAX_PARALLEL_DOWNLOADS,
 )
 from src.utils.logging_signal import logger
 
 if TYPE_CHECKING:
     from src.controllers.transfer_controller import ManualTransferController
     from src.views.main_window import MainWindow
-
-MAX_PARALLEL = 3
 
 
 @dataclass
@@ -53,7 +53,7 @@ class DownloadController(QObject):
     """
     Controls file download operations from remote devices.
 
-    Supports up to MAX_PARALLEL concurrent downloads. Each download
+    Supports up to MAX_PARALLEL_DOWNLOADS concurrent downloads. Each download
     gets its own SFTP session and QThread.
 
     Inherits QObject so Qt can auto-detect cross-thread signal connections
@@ -173,7 +173,7 @@ class DownloadController(QObject):
             )
 
         # Start or enqueue
-        if len(self._active) < MAX_PARALLEL:
+        if len(self._active) < MAX_PARALLEL_DOWNLOADS:
             self._start_download(paths_to_download, local_dir, total_bytes, queue_index)
         else:
             self._pending.append(
@@ -291,11 +291,11 @@ class DownloadController(QObject):
 
         if error_msg:
             # Retry logic
-            if slot.attempts < 3:
+            if slot.attempts < MAX_DOWNLOAD_RETRIES:
                 slot.attempts += 1
                 slot.error_msg = None
                 logger.warn(
-                    f"Download: Retry {slot.attempts}/3: "
+                    f"Download: Retry {slot.attempts}/{MAX_DOWNLOAD_RETRIES}: "
                     f"{error_msg.split(chr(10))[0][:60]}"
                 )
                 self._cleanup_slot(slot, remove=True)
@@ -384,7 +384,7 @@ class DownloadController(QObject):
 
     def _process_pending(self) -> None:
         """Start the next pending download if a slot is free."""
-        while self._pending and len(self._active) < MAX_PARALLEL:
+        while self._pending and len(self._active) < MAX_PARALLEL_DOWNLOADS:
             remote_paths, local_dir, total_bytes, queue_index = self._pending.pop(0)
             self._start_download(remote_paths, local_dir, total_bytes, queue_index)
 

@@ -1,7 +1,7 @@
 """
 Activity history service — persists file operation records to JSON.
 
-Stores the last 500 actions in ~/.FileSling/activity_history.json.
+Stores the last MAX_ACTIVITY_HISTORY actions in ~/.FileSling/activity_history.json.
 Tracks: uploads, downloads, renames, deletes, moves.
 """
 
@@ -11,10 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from src.utils.constants import SOFTWARE_NAME
-
-HISTORY_FILE = "activity_history.json"
-MAX_HISTORY = 500
+from src.utils.constants import (
+    ACTIVITY_HISTORY_FILE,
+    MAX_ACTIVITY_HISTORY,
+    SOFTWARE_NAME,
+)
 
 
 @dataclass
@@ -39,7 +40,7 @@ class ActivityHistoryService:
     """Manages persistent activity history."""
 
     def __init__(self) -> None:
-        self._history_path = Path.home() / f".{SOFTWARE_NAME}" / HISTORY_FILE
+        self._history_path = Path.home() / f".{SOFTWARE_NAME}" / ACTIVITY_HISTORY_FILE
         self._records: List[ActivityRecord] = []
         self._load()
 
@@ -66,7 +67,7 @@ class ActivityHistoryService:
             self._history_path.parent.mkdir(exist_ok=True)
             with open(self._history_path, "w") as f:
                 json.dump(
-                    [asdict(r) for r in self._records[-MAX_HISTORY:]],
+                    [asdict(r) for r in self._records[-MAX_ACTIVITY_HISTORY:]],
                     f,
                     indent=2,
                 )
@@ -97,8 +98,8 @@ class ActivityHistoryService:
             status=status,
         )
         self._records.append(record)
-        if len(self._records) > MAX_HISTORY:
-            self._records = self._records[-MAX_HISTORY:]
+        if len(self._records) > MAX_ACTIVITY_HISTORY:
+            self._records = self._records[-MAX_ACTIVITY_HISTORY:]
         self._save()
 
     @property

@@ -3,7 +3,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from src.config.settings import Settings
-from src.utils.constants import VERSION
+from src.utils.constants import SOFTWARE_NAME, SPLASH_DURATION_MS, VERSION
 from src.utils.crash_handler import (
     check_previous_crash,
     clear_crash_log,
@@ -44,7 +44,7 @@ def main():
             pass
 
     app = QApplication(sys.argv)
-    app.setApplicationName("FileSling")
+    app.setApplicationName(SOFTWARE_NAME)
     app.setApplicationVersion(_get_version())
 
     # ---- STYLESHEET ----
@@ -57,8 +57,8 @@ def main():
 
         report = get_previous_crash_report()
         msg = QMessageBox()
-        msg.setWindowTitle("FileSling — Previous Crash Detected")
-        msg.setText("FileSling crashed during the last session.")
+        msg.setWindowTitle(f"{SOFTWARE_NAME} — Previous Crash Detected")
+        msg.setText(f"{SOFTWARE_NAME} crashed during the last session.")
         msg.setInformativeText("Would you like to view the crash report?")
         view_btn = msg.addButton("View Report", QMessageBox.ButtonRole.AcceptRole)
         msg.addButton("Dismiss", QMessageBox.ButtonRole.RejectRole)
@@ -73,7 +73,7 @@ def main():
 
     # ---- SPLASH ----
     logo_path = get_path("assets/icons/filesling_logo.png")
-    splash = SplashScreen(str(logo_path), duration=2500)
+    splash = SplashScreen(str(logo_path), duration=SPLASH_DURATION_MS)
     splash.show()
 
     # ---- ICON (rounded) ----

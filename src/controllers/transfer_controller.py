@@ -18,12 +18,9 @@ from src.config.settings import Settings
 from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
 from src.services.rsync_service import RsyncConfig
-from src.utils.constants import SOFTWARE_NAME
+from src.utils.constants import MAX_UPLOAD_RETRIES, SOFTWARE_NAME, TRANSFER_QUEUE_FILE
 from src.utils.logging_signal import logger
 from src.workers.transfer_worker import TransferWorker
-
-QUEUE_JSON = "transfer_queue.json"
-MAX_AUTO_RETRIES = 3
 
 
 @dataclass
@@ -128,7 +125,7 @@ class ManualTransferController(QObject):
 
     def _queue_file_path(self) -> Path:
         """Path used to persist pending upload queue state."""
-        return Path.home() / f".{SOFTWARE_NAME}" / QUEUE_JSON
+        return Path.home() / f".{SOFTWARE_NAME}" / TRANSFER_QUEUE_FILE
 
     def _persist_queue(self) -> None:
         """Persist active and pending transfers for crash recovery."""
@@ -421,7 +418,7 @@ class ManualTransferController(QObject):
 
     def _should_retry(self, transfer: QueuedTransfer) -> bool:
         """Return whether a failed transfer should be retried automatically."""
-        return transfer.attempts < MAX_AUTO_RETRIES
+        return transfer.attempts < MAX_UPLOAD_RETRIES
 
     def _schedule_retry(self, transfer: QueuedTransfer, error_msg: str) -> None:
         """Mark the current transfer for retry after worker cleanup."""
@@ -430,7 +427,7 @@ class ManualTransferController(QObject):
         self._persist_queue()
         logger.warn(
             "Transfer: Retrying "
-            f"{transfer.display_name} ({transfer.attempts}/{MAX_AUTO_RETRIES})"
+            f"{transfer.display_name} ({transfer.attempts}/{MAX_UPLOAD_RETRIES})"
         )
         first_line = error_msg.split("\n")[0]
         if first_line:

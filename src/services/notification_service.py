@@ -11,6 +11,7 @@ from __future__ import annotations
 import subprocess
 from typing import Optional
 
+from src.utils.constants import SOFTWARE_NAME, TIMEOUT_NOTIFICATION
 from src.utils.logging_signal import logger
 
 
@@ -42,7 +43,7 @@ def notify(
         subprocess.run(
             ["osascript", "-e", script],
             capture_output=True,
-            timeout=5,
+            timeout=TIMEOUT_NOTIFICATION,
         )
     except subprocess.TimeoutExpired:
         logger.warn("Notification: osascript timed out")
@@ -55,7 +56,7 @@ def notify_transfer_complete(
 ) -> None:
     """Send notification for a completed transfer."""
     notify(
-        title="FileSling",
+        title=SOFTWARE_NAME,
         message=f"{filename} {action} successfully",
         sound=sound,
     )
@@ -67,7 +68,7 @@ def notify_transfer_failed(filename: str, error: str = "") -> None:
     if error:
         message += f": {error[:60]}"
     notify(
-        title="FileSling",
+        title=SOFTWARE_NAME,
         message=message,
     )
 
@@ -77,7 +78,7 @@ def notify_batch_complete(
 ) -> None:
     """Send notification for a batch of completed transfers."""
     notify(
-        title="FileSling",
+        title=SOFTWARE_NAME,
         message=f"{count} files {action} successfully",
         sound=sound,
     )

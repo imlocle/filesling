@@ -13,9 +13,9 @@ from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type
 
-from src.utils.constants import GITHUB_REPO_URL, SOFTWARE_NAME, VERSION
+from src.utils.constants import CRASH_LOG_FILE, GITHUB_REPO_URL, SOFTWARE_NAME, VERSION
 
-CRASH_LOG_PATH = Path.home() / f".{SOFTWARE_NAME}" / "crash.log"
+CRASH_LOG_PATH = Path.home() / f".{SOFTWARE_NAME}" / CRASH_LOG_FILE
 
 
 def write_crash_log(
@@ -28,7 +28,7 @@ def write_crash_log(
     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
 
     report = (
-        f"FileSling Crash Report\n"
+        f"{SOFTWARE_NAME} Crash Report\n"
         f"{'=' * 50}\n"
         f"Version: {VERSION}\n"
         f"Time: {timestamp}\n"
@@ -75,7 +75,9 @@ def show_crash_dialog(report: str) -> None:
         layout.setContentsMargins(20, 20, 20, 20)
 
         # Header
-        header = QLabel("FileSling encountered an unexpected error and needs to close.")
+        header = QLabel(
+            f"{SOFTWARE_NAME} encountered an unexpected error and needs to close."
+        )
         header.setStyleSheet("font-size: 14px; font-weight: 600;")
         header.setWordWrap(True)
         layout.addWidget(header)
