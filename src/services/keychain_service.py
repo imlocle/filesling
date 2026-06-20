@@ -42,8 +42,9 @@ def store_password(account: str, password: str) -> bool:
             timeout=5,
         )
 
-        # Add new entry
-        result = subprocess.run(
+        # Add new entry — use stdin for the password to avoid it appearing
+        # in `ps` output (security concern with -w flag on command line)
+        proc = subprocess.Popen(
             [
                 "security",
                 "add-generic-password",
@@ -52,18 +53,19 @@ def store_password(account: str, password: str) -> bool:
                 "-a",
                 account,
                 "-w",
-                password,
                 "-U",  # Update if exists
             ],
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=5,
         )
-        if result.returncode == 0:
+        _, stderr = proc.communicate(input=password, timeout=5)
+        if proc.returncode == 0:
             logger.info(f"Keychain: Stored credentials for {account}")
             return True
         else:
-            logger.warn(f"Keychain: Failed to store: {result.stderr.strip()}")
+            logger.warn(f"Keychain: Failed to store: {stderr.strip()}")
             return False
     except Exception as e:
         logger.warn(f"Keychain: Store failed: {e}")

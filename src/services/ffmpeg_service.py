@@ -111,18 +111,24 @@ def convert_video(
     remote_path: str,
     preset: str = "fast",
     crf: int = 18,
+    video_codec: str = "libx264",
+    audio_args: str = "-c:a aac -b:a 128k",
+    container: str = "mp4",
     progress_cb: Optional[Callable[[int], None]] = None,
 ) -> str:
     """
-    Convert a video file to H.264 on the remote server.
+    Convert a video file on the remote server.
 
     Runs ffmpeg remotely, monitors progress, and returns the output path.
 
     Args:
         ssh_client: Paramiko SSHClient with active connection
         remote_path: Full path to the video on the remote server
-        preset: ffmpeg preset (ultrafast, fast, medium, slow)
-        crf: Quality (18=high, 22=good, 28=low). Lower = bigger file.
+        preset: ffmpeg preset (ultrafast, fast, medium, slow, veryslow)
+        crf: Quality (0-51). Lower = better quality, bigger file.
+        video_codec: ffmpeg video codec (libx264, libx265, libvpx-vp9)
+        audio_args: ffmpeg audio arguments (e.g. "-c:a aac -b:a 128k")
+        container: output container format (mp4, mkv, webm)
         progress_cb: Callback receiving percentage (0-100)
 
     Returns:
@@ -133,9 +139,9 @@ def convert_video(
     """
     import os
 
-    # Build output path (same dir, _converted suffix before extension)
-    base, ext = os.path.splitext(remote_path)
-    output_path = f"{base}_h264.mp4"
+    # Build output path
+    base, _ext = os.path.splitext(remote_path)
+    output_path = f"{base}_converted.{container}"
 
     # Get duration for progress calculation
     duration = get_video_duration(ssh_client, remote_path)
@@ -143,16 +149,22 @@ def convert_video(
     # Build ffmpeg command
     # -y: overwrite output
     # -progress pipe:1: output progress to stdout
+    movflags = "-movflags +faststart " if container == "mp4" else ""
     cmd = (
         f"ffmpeg -y -i {shlex.quote(remote_path)} "
-        f"-c:v libx264 -preset {preset} -crf {crf} "
-        f"-c:a aac -b:a 128k "
-        f"-movflags +faststart "
+        f"-c:v {video_codec} -preset {preset} -crf {crf} "
+        f"{audio_args} "
+        f"{movflags}"
         f"-progress pipe:1 "
         f"{shlex.quote(output_path)} 2>/dev/null"
     )
 
-    logger.info(f"ffmpeg: Converting {os.path.basename(remote_path)}...")
+    codec_name = {
+        "libx264": "H.264",
+        "libx265": "H.265",
+        "libvpx-vp9": "VP9",
+    }.get(video_codec, video_codec)
+    logger.info(f"ffmpeg: Converting {os.path.basename(remote_path)} → {codec_name}...")
     logger.info(f"ffmpeg: Preset={preset}, CRF={crf}")
 
     try:
@@ -165,6 +177,9 @@ def convert_video(
 
         # Read progress output
         buffer = ""
+        import time
+
+        last_progress_time = time.time()
         while True:
             if session.exit_status_ready():
                 # Read remaining output
@@ -182,16 +197,24 @@ def convert_video(
                     if matches:
                         last = matches[-1]
                         current_secs = (
-                            int(last[0]) * 3600
-                            + int(last[1]) * 60
-                            + float(last[2])
+                            int(last[0]) * 3600 + int(last[1]) * 60 + float(last[2])
                         )
                         pct = min(int(current_secs * 100 / duration), 99)
                         progress_cb(pct)
+                elif progress_cb and duration <= 0:
+                    # Duration unknown — pulse progress to show activity
+                    now = time.time()
+                    if now - last_progress_time > 2.0:
+                        last_progress_time = now
+                        # Emit a small increment so the UI shows movement
+                        progress_cb(-1)  # -1 = indeterminate pulse
 
                 # Keep buffer manageable
                 if len(buffer) > 8192:
                     buffer = buffer[-4096:]
+            else:
+                # No data available yet — sleep briefly to avoid busy-wait
+                time.sleep(0.1)
 
         exit_code = session.recv_exit_status()
         session.close()
@@ -202,9 +225,7 @@ def convert_video(
         if progress_cb:
             progress_cb(100)
 
-        logger.success(
-            f"ffmpeg: Conversion complete → {os.path.basename(output_path)}"
-        )
+        logger.success(f"ffmpeg: Conversion complete → {os.path.basename(output_path)}")
         return output_path
 
     except RuntimeError:
@@ -219,8 +240,8 @@ def replace_original(
     """
     Replace the original file with the converted one.
 
-    Deletes the original and renames the converted file to the original name
-    (but with .mp4 extension).
+    Deletes the original and renames the converted file. The final name
+    uses the original base name with the converted file's extension.
     """
     import os
 
@@ -229,9 +250,10 @@ def replace_original(
         if not transport:
             raise RuntimeError("No SSH connection")
 
-        # Determine final name (original name but .mp4 extension)
+        # Determine final name — keep original base name, use converted extension
         base = os.path.splitext(original_path)[0]
-        final_path = f"{base}.mp4"
+        converted_ext = os.path.splitext(converted_path)[1]
+        final_path = f"{base}{converted_ext}"
 
         # If original and final are different files, remove original first
         if original_path != final_path:

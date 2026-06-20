@@ -13,12 +13,18 @@ from src.services.keychain_service import (
 
 
 class TestStorePassword:
+    @patch("src.services.keychain_service.subprocess.Popen")
     @patch("src.services.keychain_service.subprocess.run")
-    def test_store_success(self, mock_run):
+    def test_store_success(self, mock_run, mock_popen):
         mock_run.return_value = MagicMock(returncode=0)
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = ("", "")
+        mock_proc.returncode = 0
+        mock_popen.return_value = mock_proc
         result = store_password("user@host", "secret123")
         assert result is True
-        assert mock_run.call_count == 2  # delete + add
+        assert mock_run.call_count == 1  # delete
+        assert mock_popen.call_count == 1  # add (via Popen)
 
     @patch("src.services.keychain_service.subprocess.run")
     def test_store_failure(self, mock_run):

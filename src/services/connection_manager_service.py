@@ -26,7 +26,13 @@ class ConnectionManagerService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.ssh_client: Optional[SSHClient] = None
-        self.sftp_client: Optional[SFTPClient] = None
+        self.sftp_client: Optional[SFTPClient] = None  # Main: explorer UI ops
+        self.sftp_metadata: Optional[SFTPClient] = (
+            None  # Dedicated: detail panel, NFO reads
+        )
+        self.sftp_background: Optional[SFTPClient] = (
+            None  # Dedicated: dir listing, disk usage
+        )
 
     def connect(self) -> bool:
         """
@@ -105,14 +111,19 @@ class ConnectionManagerService:
 
                 self.ssh_client.connect(**connect_kwargs)
 
-                # Open SFTP session
+                # Open SFTP sessions (3 independent channels for concurrency)
                 try:
                     self.sftp_client = self.ssh_client.open_sftp()
+                    self.sftp_metadata = self.ssh_client.open_sftp()
+                    self.sftp_background = self.ssh_client.open_sftp()
                 except Exception as e:
                     # Close SSH if SFTP fails
                     if self.ssh_client:
                         self.ssh_client.close()
                         self.ssh_client = None
+                    self.sftp_client = None
+                    self.sftp_metadata = None
+                    self.sftp_background = None
                     raise SFTPConnectionError(
                         "Failed to open SFTP session", details=str(e)
                     )
@@ -129,6 +140,8 @@ class ConnectionManagerService:
                 # Don't retry authentication errors
                 self.ssh_client = None
                 self.sftp_client = None
+                self.sftp_metadata = None
+                self.sftp_background = None
                 raise AuthenticationError(
                     "SSH authentication failed",
                     details=f"User: {self.settings.username}, Key: {self.settings.ssh_key_path}",
@@ -142,6 +155,8 @@ class ConnectionManagerService:
                 )
                 self.ssh_client = None
                 self.sftp_client = None
+                self.sftp_metadata = None
+                self.sftp_background = None
 
                 if retries < max_retries:
                     sleep(3)
@@ -155,6 +170,8 @@ class ConnectionManagerService:
                 )
                 self.ssh_client = None
                 self.sftp_client = None
+                self.sftp_metadata = None
+                self.sftp_background = None
 
                 if retries < max_retries:
                     sleep(3)
@@ -165,6 +182,8 @@ class ConnectionManagerService:
                 logger.error(f"Connection: Failed: Retry {retries}/{max_retries}: {e}")
                 self.ssh_client = None
                 self.sftp_client = None
+                self.sftp_metadata = None
+                self.sftp_background = None
 
                 if retries < max_retries:
                     sleep(3)
@@ -267,13 +286,15 @@ class ConnectionManagerService:
 
     def disconnect(self) -> None:
         """Close SSH + SFTP connections gracefully."""
-        try:
-            if self.sftp_client:
-                self.sftp_client.close()
-        except Exception as e:
-            logger.warn(f"Connection: Error closing SFTP: {e}")
-        finally:
-            self.sftp_client = None
+        for sftp in (self.sftp_client, self.sftp_metadata, self.sftp_background):
+            try:
+                if sftp:
+                    sftp.close()
+            except Exception:
+                pass
+        self.sftp_client = None
+        self.sftp_metadata = None
+        self.sftp_background = None
 
         try:
             if self.ssh_client:
