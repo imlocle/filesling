@@ -40,7 +40,7 @@ class TransferWorker(QObject):
         total_bytes: int = 0,
         compress_folders: bool = False,
         rsync_config: Optional[RsyncConfig] = None,
-        parent: QObject | None = None,
+        parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self.sftp = sftp
@@ -106,7 +106,7 @@ class TransferWorker(QObject):
         """
         # Skip verification for ADB — adb push validates internally
         # and stat() may return 0 before filesystem syncs
-        from src.services.adb_client import ADBClient
+        from src.clients.adb_client import ADBClient
 
         if isinstance(self.sftp, ADBClient):
             return True
@@ -215,9 +215,16 @@ class TransferWorker(QObject):
                 "Upload verification failed", file_path=local_path, details=str(e)
             )
         except IOError as e:
-            if "Socket is closed" in str(e) or "not open" in str(e).lower():
+            error_str = str(e).lower()
+            if "socket is closed" in error_str or "not open" in error_str:
                 raise ConnectionLostError(
                     "Connection lost during upload", details=str(e)
+                )
+            if "no space" in error_str or "disk full" in error_str:
+                raise FileUploadError(
+                    "No space left on remote device",
+                    file_path=local_path,
+                    details="The remote filesystem is full. Free up space and try again.",
                 )
             raise FileUploadError(
                 "Failed to upload file", file_path=local_path, details=str(e)

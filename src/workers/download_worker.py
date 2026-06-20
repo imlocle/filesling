@@ -7,7 +7,7 @@ Mirrors TransferWorker but in reverse (sftp.get / adb pull).
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import QObject, Signal
@@ -31,7 +31,7 @@ class DownloadWorker(QObject):
         remote_paths: List[str],
         local_destination: str,
         total_bytes: int = 0,
-        parent: QObject | None = None,
+        parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self.sftp = sftp
