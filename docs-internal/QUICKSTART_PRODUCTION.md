@@ -1,6 +1,7 @@
 # FileSling — Quick Reference
 
 > Copy-paste commands for common development and release tasks.
+> **Last updated:** June 2026 — Version 3.2.1
 
 ---
 
@@ -11,7 +12,7 @@
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install all dependencies
+# Install all dependencies (production + dev + iOS)
 make dev-install
 
 # Or manually:
@@ -23,21 +24,39 @@ make run
 
 ---
 
+## Code Quality
+
+```bash
+# Format (black + isort)
+make format
+
+# Lint (flake8)
+make lint
+
+# Run tests (437 unit tests with coverage)
+make test
+
+# Run tests without coverage (faster)
+.venv/bin/python -m pytest tests/ --no-cov -q
+```
+
+---
+
 ## Release a New Version
 
 ### When to bump what
 
 | Change type             | Bump  | Example       |
 | ----------------------- | ----- | ------------- |
-| Bug fix                 | PATCH | 1.1.0 → 1.1.1 |
-| New feature             | MINOR | 1.1.0 → 1.2.0 |
-| Breaking / major rework | MAJOR | 1.1.0 → 2.0.0 |
+| Bug fix                 | PATCH | 3.2.1 → 3.2.2 |
+| New feature             | MINOR | 3.2.1 → 3.3.0 |
+| Breaking / major rework | MAJOR | 3.2.1 → 4.0.0 |
 
 ### Release commands
 
 ```bash
 # One command does everything:
-make release V=3.0.0
+make release V=3.3.0
 ```
 
 This bumps version in `pyproject.toml` and `src/utils/constants.py`, commits, pushes to dev, merges to main, tags, and pushes the tag. GitHub Actions builds the `.dmg` automatically.
@@ -95,7 +114,7 @@ git checkout dev
 # Build wheel + source distribution
 python -m build
 
-# Build standalone executable
+# Build standalone .app executable
 ./scripts/build_exe.sh
 ```
 
@@ -121,21 +140,6 @@ git commit -m "update dependencies"
 
 ---
 
-## Code Quality
-
-```bash
-# Format (black + isort)
-make format
-
-# Lint (flake8)
-make lint
-
-# Run tests (132 unit tests)
-make test
-```
-
----
-
 ## Git Branch Strategy
 
 ```
@@ -150,3 +154,45 @@ feat/ ← feature branches (optional, for bigger changes)
 - Merge to `main` only when releasing
 - Tags on `main` trigger CI/CD builds
 - Never commit directly to `main`
+
+---
+
+## Project Layout
+
+```
+src/
+├── clients/        3 files — DeviceClient protocol, ADBClient, IOSClient
+├── config/         1 file  — Settings singleton (Pydantic + JSON)
+├── controllers/    5 files — main_window, connection, download, file_ops, transfer
+├── models/         2 files — errors hierarchy, ServerConfig dataclass
+├── services/       8 files — connection_manager, rsync, ffmpeg, keychain, etc.
+├── utils/          6 files — constants, crash handler, icons, logging, theme, helper
+├── views/          3 windows + 5 dialogs
+├── widgets/        7 reusable UI components
+└── workers/        5 background QThread workers
+
+tests/              Mirrors src/ structure (25 test files, 437 tests)
+├── clients/        3 test files
+├── config/         1 test file
+├── controllers/    4 test files
+├── models/         2 test files
+├── services/       8 test files
+├── utils/          5 test files
+├── views/          1 test file
+├── widgets/        1 test file
+└── workers/        1 test file
+```
+
+---
+
+## Useful Paths
+
+| What                  | Where                                  |
+| --------------------- | -------------------------------------- |
+| App config            | `~/.FileSling/config.json`             |
+| Transfer history      | `~/.FileSling/transfer_history.json`   |
+| Pending uploads queue | `~/.FileSling/transfer_queue.json`     |
+| Error logs            | `~/.FileSling/logs/errors.json`        |
+| Crash log             | `~/.FileSling/crash.log`               |
+| Version constant      | `src/utils/constants.py` → `VERSION`   |
+| Version metadata      | `pyproject.toml` → `[project].version` |

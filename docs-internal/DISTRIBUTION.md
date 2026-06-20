@@ -1,5 +1,7 @@
 # FileSling — Distribution & Release Guide
 
+> **Last updated:** June 2026 — Version 3.2.1
+
 ## Overview
 
 FileSling is distributed via GitHub Releases. When you push a version tag, the CI/CD workflow automatically builds the package and creates a GitHub Release.
@@ -8,7 +10,7 @@ FileSling is distributed via GitHub Releases. When you push a version tag, the C
 
 ### How It Works
 
-1. You bump the version in `pyproject.toml` and `/src/utils/constants.py`
+1. You bump the version in `pyproject.toml` and `src/utils/constants.py`
 2. You merge `dev` → `main`
 3. You push a `v*` tag
 4. GitHub Actions builds the distribution and creates a release
@@ -18,7 +20,7 @@ FileSling is distributed via GitHub Releases. When you push a version tag, the C
 The fastest way to release is the Makefile shortcut:
 
 ```bash
-make release V=3.0.0
+make release V=3.3.0
 ```
 
 This runs all the steps below automatically — bumps version, commits, merges to main, tags, and pushes. GitHub Actions takes over from there.
@@ -59,7 +61,7 @@ git checkout dev
 The `.github/workflows/publish.yml` workflow triggers on `v*` tags and:
 
 1. **build-python** (Ubuntu) — builds `.tar.gz` and `.whl` packages
-2. **build-macos** (macOS runner) — builds `FileSling.app` via PyInstaller, wraps in `FileSling.dmg`
+2. **build-macos** (macOS runner) — builds `FileSling.app` via PyInstaller (includes pymobiledevice3 for iOS support), wraps in `FileSling.dmg`
 3. **release** — creates a GitHub Release with all artifacts attached:
    - `FileSling.dmg` — double-click installer for macOS users
    - `filesling-X.Y.Z-py3-none-any.whl` — pip-installable package
@@ -81,38 +83,31 @@ Use semantic versioning: `MAJOR.MINOR.PATCH`
 
 | Bump  | When                              | Example       |
 | ----- | --------------------------------- | ------------- |
-| PATCH | Bug fixes, small tweaks           | 1.1.0 → 1.1.1 |
-| MINOR | New features (non-breaking)       | 1.1.0 → 1.2.0 |
-| MAJOR | Breaking changes, major redesigns | 1.2.0 → 2.0.0 |
+| PATCH | Bug fixes, small tweaks           | 3.2.0 → 3.2.1 |
+| MINOR | New features (non-breaking)       | 3.2.0 → 3.3.0 |
+| MAJOR | Breaking changes, major redesigns | 3.2.0 → 4.0.0 |
 
 ### Examples
 
 - Fixed a crash when disconnecting → **PATCH**
-- Added Android USB support → **MINOR**
-- Added upload retry, queue persistence, per-server default bookmarks, and UI layout updates → **MINOR**
-- Renamed app from PiSync to FileSling, new config format → **MAJOR**
+- Added iOS device support → **MINOR**
+- Added rsync backend, video convert, detail panel → **MINOR**
+- Renamed app from Shuttle to FileSling, new config format → **MAJOR**
 
-## Suggested 3.0.0 Release Notes
+## Quality Checks (CI)
 
-- Multi-select transfers: Download All, Move All, Delete All from context menu
-- Batch rename with find/replace across multiple files
-- macOS notifications on transfer complete/fail with optional sound
-- Dock badge showing pending transfer count
-- Connection health monitoring with auto-reconnect on drop
-- Latency indicator in status bar (color-coded: green/orange/red)
-- File type icons (colored, visible in both light and dark themes)
-- File info tooltip on hover (full path + size)
-- Drag-and-drop onto folders uploads directly into them
-- Drag remote files to Finder to download
-- Upload resume: skips already-uploaded files on retry
-- Download retry: auto-retries failed downloads up to 3 times
-- Compress folders before upload (optional)
-- SSH key passphrase support
-- Password-based SSH authentication as fallback
-- macOS Keychain integration for secure credential storage
-- Per-server download directory and file extension filters
-- Export/import settings as JSON
-- Fixed crash when closing during initial server selection
+The `.github/workflows/quality.yml` workflow runs on:
+
+- Every push to `dev`
+- Every PR to `main` or `dev`
+
+It checks:
+
+1. **Formatting** — `black --check` and `isort --check-only`
+2. **Lint** — `flake8`
+3. **Tests** — `pytest` (437 tests)
+
+All must pass before merging to main.
 
 ## Building Locally
 
@@ -127,12 +122,21 @@ python -m build
 
 ```bash
 ./scripts/build_exe.sh
-# Output: standalone binary in dist/
+# Output: dist/FileSling.app
 ```
+
+The build script bundles:
+
+- All Python dependencies (paramiko, pydantic, PySide6, pymobiledevice3)
+- Assets (icons, stylesheets)
+- Hidden imports configured for PyInstaller compatibility
 
 ## Installation Methods
 
 ```bash
+# From DMG (recommended for users)
+# Download from GitHub Releases, drag to /Applications
+
 # From wheel file
 pip install filesling-X.Y.Z-py3-none-any.whl
 
@@ -172,9 +176,12 @@ git checkout dev
 ## Pre-Release Checklist
 
 - [ ] All changes committed and pushed to dev
+- [ ] Tests passing (`make test` — 437 tests)
+- [ ] Lint passing (`make lint`)
 - [ ] Version bumped in `pyproject.toml`
 - [ ] Version bumped in `src/utils/constants.py`
-- [ ] App runs locally without errors (`python main.py`)
+- [ ] App runs locally without errors (`make run`)
 - [ ] README updated if there are user-facing changes
+- [ ] CHANGELOG updated with new entries
 - [ ] Merged dev → main
 - [ ] Tag pushed

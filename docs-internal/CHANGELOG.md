@@ -1,11 +1,102 @@
 # FileSling — Changelog
 
+> **Last updated:** June 2026 — Version 3.2.1
+>
 > For planned/future work, see [ROADMAP.md](ROADMAP.md).
 > For known issues, see [BUGS.md](BUGS.md).
 
 ---
 
 ## Unreleased (dev)
+
+### Code Organization Refactor
+
+- [x] Created `src/clients/` package — extracted `DeviceClient`, `ADBClient`, `IOSClient` from models/services
+- [x] Moved `server_selection_dialog.py` to `src/views/dialogs/` (all dialogs now in one place)
+- [x] Removed dead code: `src/widgets/ui_components.py` (was never imported)
+- [x] Services reduced from 11 → 8 (client code extracted to own package)
+
+### Testing Expansion
+
+- [x] Test directory restructured to mirror src/ layout (flat → organized subdirectories)
+- [x] 437 unit tests (up from 149) covering:
+  - All 3 device clients (ADB, iOS, DeviceClient protocol)
+  - All 5 controllers (connection, download, file_operations, transfer, main_window)
+  - All 8 services
+  - All 6 utility modules (constants, crash_handler, helper, icons, theme, logging)
+  - Both models (errors, server_config)
+  - Quick Fix dialog, transfer queue widget, download worker
+
+### Architecture Refactor
+
+- [x] Multi-channel SFTP: 3 dedicated channels (explorer UI, metadata, background workers) — eliminates thread contention and UI lag
+- [x] Async SSH connect via `ConnectionWorker` (eliminates 30s UI freeze)
+- [x] Parallel downloads (up to 3 concurrent, each with own SFTP session)
+- [x] Batched SFTP stat calls (duplicate detection: 2s → 40ms)
+- [x] Size-limited drag-to-Finder (files >10MB skipped, no freeze)
+- [x] Async disk usage worker (tree interactive immediately)
+- [x] `MainWindowController` decomposed: 1550 → 345 lines
+- [x] Extracted: `ConnectionController`, `DownloadController`, `FileOperationsController`
+- [x] Extracted: `FolderPickerDialog`, `BatchRenameDialog`, `VideoConvertManager`, `BookmarksBar`, `InlineRenameEditor`, `SearchWorker`, `DiskUsageWorker`
+- [x] `DeviceClient` protocol + `ServerConfig` dataclass
+- [x] `RemoteFileService` for centralized connection-lost detection
+- [x] Unified type annotations (`Optional[X]` everywhere)
+- [x] Keychain: password passed via stdin pipe (not visible in `ps`)
+- [x] "No space left on device" detection in uploads
+- [x] Connection health check skips ADB/iOS (stateless USB)
+
+### Media Management
+
+- [x] Video conversion: H.264, H.265, VP9 with full settings dialog (codec, preset, CRF, audio, container)
+- [x] Convert settings: tooltips, "Restore Defaults" button, all fields documented
+- [x] Media Info dialog with two tabs: Info (streams) and Tags (editable metadata)
+- [x] Edit Metadata via .nfo sidecar files (instant, Jellyfin-compatible)
+- [x] NFO auto-detect: movie vs episodedetails vs musicvideo based on filled fields
+- [x] NFO People generation: Director/Artist/Performer auto-create `<actor>` entries
+- [x] Quick Fix dialog: container change, timestamp fix, subtitle removal (all no-re-encode)
+- [x] Detail panel: side panel showing metadata + stream info on file select
+- [x] Detail panel hidden by default, toggle with ⌘I, setting to show at startup
+- [x] Activity history shows server display name instead of ID
+- [x] "Show All Tags" expandable section with every ffmpeg tag + examples
+- [x] "+ Add Tag" for custom metadata fields
+- [x] Sort Title tag for Jellyfin sort ordering
+- [x] Hide .nfo files option in Settings
+
+### UI
+
+- [x] Pill-style buttons (grey default, blue hover) matching Aethra website design
+- [x] Pill-shaped search bar, dropdown, bookmarks
+- [x] Toolbar: transparent background, no visible container
+- [x] Standard Edit menu (Undo, Cut, Copy, Paste, Select All) — enables Emojis & Symbols
+- [x] "Toggle Detail Panel" in View menu (⌘I)
+- [x] Back button disabled during directory load (prevents rapid-fire navigation)
+- [x] Exit confirmation with "Quit After Jobs Finish" option during active transfers
+
+### Bug Fixes (Production Audit — 18 bugs)
+
+- [x] BUG-1: SFTP session leak in `_retry_download`
+- [x] BUG-2: Batch delete doesn't record activity history
+- [x] BUG-3: compress_folders silently ignored with rsync
+- [x] BUG-4: cancel_active_transfer deadlock
+- [x] BUG-5: iOS fallback loads entire file into memory
+- [x] BUG-6: SSH connect blocks main thread
+- [x] BUG-7: create_folder path validation broken
+- [x] BUG-8: ADB streaming items jump around
+- [x] BUG-9: Batch rename doesn't record history
+- [x] BUG-10: Settings singleton reset stale refs
+- [x] BUG-11: Search cancellation race
+- [x] BUG-12: measure_latency inaccurate
+- [x] BUG-13: ADB shell injection
+- [x] BUG-14: \_reveal_in_finder instantiates Settings
+- [x] BUG-16: Binary/decimal unit mismatch
+- [x] BUG-17: Breadcrumb HTML-escape
+- [x] BUG-18: ADB/iOS retry counter
+- [x] Detail panel QThread crash: removed background thread, runs synchronously on dedicated channel
+- [x] VideoConvertManager QThread crash: added wait() before deleteLater()
+- [x] DiskUsageWorker overflow: Signal(int) → Signal(object)
+- [x] ffmpeg busy-wait loop: added time.sleep(0.1)
+- [x] QSS parse error (duplicate brace broke all styling)
+- [x] Font family: removed unsupported -apple-system
 
 ### rsync Fast Transfers
 

@@ -1,116 +1,164 @@
 # FileSling — Roadmap
 
-> What's next. For completed work, see [CHANGELOG.md](CHANGELOG.md).
-
-> **Design philosophy:** Manual, power-user tool. You control every transfer.
-> No background syncing. No "magic" that moves files without you asking.
+> **Last updated:** June 2026 — Version 3.2.1
+>
+> Forward-looking only. For completed work, see [CHANGELOG.md](CHANGELOG.md).
+> For known issues, see [BUGS.md](BUGS.md).
 
 ---
 
-## Up Next
+## 🔥 Priority 1: Performance & Stability
 
-### 1. SMB/CIFS — Windows PCs and NAS Devices
+### Batch NFO Caching
 
-- [ ] SMB backend (via `smbprotocol`)
-- [ ] Connect to `\\192.168.1.50\Media` on a Windows PC or NAS (Synology, QNAP)
+- [ ] After directory listing completes, read ALL `.nfo` files in that folder in one pass
+- [ ] Cache in memory (dict of filename → parsed metadata)
+- [ ] Detail panel reads from cache (zero network on file click)
+- [ ] Invalidate cache on directory change or NFO save
+
+### rclone Backend for Bulk Transfers
+
+- [ ] Add rclone as a transfer method (parallel streams, 4x faster than rsync for multi-file)
+- [ ] Auto-detect if rclone is installed on server
+- [ ] Use `--transfers 4` for parallel file copies
+- [ ] Fall back to rsync → SFTP if not available
+
+### Sleep/Wake Resilience
+
+- [ ] Prevent sleep during active transfers (`caffeinate -i` subprocess)
+- [ ] Detect wake and auto-reconnect (health timer already handles this partially)
+- [ ] Auto-restart failed-in-progress transfers after reconnect
+- [ ] Release sleep lock when queue is empty
+
+### Persistent Remote Conversions
+
+- [ ] Launch ffmpeg with `nohup` so conversions survive app exit/crash
+- [ ] Write progress to temp file on server, poll from FileSling
+- [ ] On reconnect, detect running conversions and resume progress display
+- [ ] Clean up temp files after completion
+
+---
+
+## Priority 2: Media Management
+
+### Batch Metadata Editing
+
+- [ ] Select multiple files → Edit Metadata in bulk (like Calibre)
+- [ ] Apply same tags (genre, show, artist) to all selected
+- [ ] Generate sequential episode numbers automatically
+
+### NFO Improvements
+
+- [ ] Rename `.nfo` file when video is renamed (BUG-NEW-6)
+- [ ] Auto-detect NFO type from folder structure (TV show folders → episodedetails)
+- [ ] Import metadata from TMDB/TVDB by filename match
+
+### Video Tools
+
+- [ ] Batch Quick Fix — apply timestamp fix / container change to multiple files
+- [ ] Strip specific audio/subtitle tracks (choose which to keep)
+- [ ] Thumbnail extraction (show video first-frame in detail panel)
+
+---
+
+## Priority 3: New Backends
+
+### NFS Mount Mode (optional, power users)
+
+- [ ] Connect to Pi via NFS for instant directory browsing (no SFTP overhead)
+- [ ] Directory listings are local filesystem operations (sub-millisecond)
+- [ ] Falls back to SFTP for operations NFS can't do (remote commands)
+- [ ] Requires NFS server setup on Pi (provide setup guide)
+
+### SMB/CIFS
+
+- [ ] Windows PCs and NAS devices (Synology, QNAP) via `smbprotocol`
 - [ ] Username/password auth
-- [ ] Auto-discover shares on local network (optional)
-- [ ] Remember mounted shares per server
+- [ ] Auto-discover shares on local network
 
----
+### S3
 
-### 2. S3 — AWS Bucket Transfers
-
-- [ ] S3 backend (via `boto3`)
-- [ ] Auth: reads `~/.aws/credentials` profile, or paste keys into Add Server dialog, stored in Keychain
-- [ ] Browse buckets and "folders" (S3 prefixes) in the same explorer
+- [ ] AWS bucket transfers via `boto3`
+- [ ] Auth from `~/.aws/credentials` or stored in Keychain
 - [ ] Multipart upload/download for large files
-- [ ] Show storage class (Standard, Glacier)
-- [ ] Region selector per bucket
 
----
+### Google Drive
 
-### 3. Google Drive
-
-- [ ] Google Drive backend (via `google-api-python-client`)
-- [ ] OAuth2 auth: opens browser once, token stored in Keychain
+- [ ] OAuth2, resumable transfers
 - [ ] Browse Drive folders in the same explorer
-- [ ] Resumable uploads/downloads
-- [ ] Optional: Shared Drives support
 
----
+### WebDAV
 
-### 4. macOS Native Polish
-
-- [ ] Menu bar icon with drop zone — drag a file to quick-send without opening the window
-- [ ] Finder extension — right-click any file → "Send with FileSling"
-- [ ] Quick Look preview — spacebar on a remote file to preview it
-- [ ] Native share sheet — "Share → FileSling" from other apps
-- [ ] In-app transfer history search (Spotlight-style)
-
----
-
-### 5. Integrity & Control
-
-- [ ] Checksum verification — compare MD5/SHA after transfer (catches silent corruption)
-- [ ] Manual folder compare — diff two folders, you pick what to transfer (anti-sync)
-- [ ] Bandwidth limit — cap transfer speed so uploads don't choke your network
-- [ ] Dry run — preview what a multi-file transfer will do before committing
-
----
-
-### ~~6. Remote Video Convert (ffmpeg)~~ ✅ Done
-
-> See [CHANGELOG.md](CHANGELOG.md). Implemented June 2026.
-
----
-
-### 7. Post-Transfer Hooks
-
-- [ ] Run a script/command after a transfer completes (in Settings per-server)
-  - Example: trigger Plex library rescan after uploading to NAS
-  - Example: `adb install` after pushing an `.apk`
-- [ ] Optional Slack/Discord notification on big transfers
-
----
-
-### 8. MTP — Android Without Developer Mode
-
-- [ ] MTP backend (via `libmtp`) as fallback when ADB unavailable
-- [ ] Use case: a friend's phone where you can't enable Developer Mode
-- [ ] Label as "experimental" (libmtp is flaky on macOS)
-
----
-
-### 9. WebDAV
-
-- [ ] WebDAV backend for Nextcloud, Synology, Box
-- [ ] Username/password or token auth
+- [ ] Nextcloud, Synology, Box
 - [ ] Low priority — only useful if you run those services
 
 ---
 
-## Done (v3.2.0)
+## Priority 4: Code Quality
 
-- ~~rsync fast transfers~~ — delta sync, auto-fallback to SFTP
-- ~~iPhone/iOS support~~ — camera roll via AFC/pymobiledevice3
-- ~~ADB over WiFi~~ — wireless Android transfers
-- ~~Multi-server quick-switch~~ — toolbar dropdown
-- ~~Remote video convert~~ — right-click → Convert to H.264 (ffmpeg on server)
-- ~~24-bug deep audit~~ — all resolved
-- ~~Modern dark theme~~ — iOS-inspired redesign
-- ~~Transfer queue rework~~ — per-file rows, proper ordering, renamed to "Activity"
+### Thread Safety
+
+- [ ] Connection state machine (Disconnected → Connecting → Connected → Reconnecting)
+- [ ] `QThread.isInterruptionRequested()` checks in TransferWorker/DownloadWorker loops
+
+### File Organization
+
+- [ ] Move `_ConvertWorker` to `src/workers/convert_worker.py`
+- [ ] Move `DirectoryLoader` to `src/workers/directory_loader.py`
+- [ ] Move `LoadingSpinner` to `src/widgets/loading_spinner.py`
+- [ ] Move `DragDropTreeWidget` + `SortableTreeWidgetItem` to `src/widgets/tree_widgets.py`
+
+### Code Deduplication
+
+- [ ] SSH exec helper in `RemoteFileService` (22 repetitions of open_session pattern)
+- [ ] Use `is_connection_lost_error()` everywhere (4 duplicated checks)
+- [ ] `TransferQueuePersistenceService` (isolate queue serialization)
+
+### Robustness
+
+- [ ] ffmpeg timeout/cancellation (prevent infinite hang on corrupt files)
+- [ ] `hasattr` guards removed (deterministic widget init order)
+- [ ] `__all__` exports for each module
 
 ---
 
-## Deferred — Automation
+## Priority 5: macOS Native Polish
 
-> Strictly opt-in, off by default, never silent. At the bottom on purpose.
+- [ ] Menu bar icon with drop zone (drag file to quick-send)
+- [ ] Finder extension (right-click → "Send with FileSling")
+- [ ] `UserNotifications` framework (richer notifications, action buttons)
+- [ ] Async drag-to-Finder via `NSFilePromiseProvider` (any file size)
+- [ ] Quick Look preview (spacebar on remote file)
+
+---
+
+## Priority 6: Power Features
+
+### Integrity & Control
+
+- [ ] Checksum verification (MD5/SHA after transfer)
+- [ ] Manual folder compare (diff two folders, pick what to transfer)
+- [ ] Bandwidth limiting (`rsync --bwlimit`, chunked SFTP)
+- [ ] Dry run mode (preview before committing)
+
+### Post-Transfer Hooks
+
+- [ ] Run script after transfer (per-server, e.g., Plex rescan)
+- [ ] Slack/Discord notification on big transfers
+
+### Automation (opt-in, off by default)
 
 - [ ] Watch Folders — auto-upload new files from a local folder
 - [ ] Transfer Rules — pattern-based routing
 - [ ] Device-Aware Actions — run rules when a device connects
-- [ ] AI suggestions — recommend rules based on transfer history (not a chatbot)
+
+### Other
+
+- [ ] Multi-server split view (two servers side by side)
+- [ ] Transfer speed sparkline graph in queue widget
+- [ ] Transfer scheduling ("upload at 2am")
+- [ ] Undo for moves/renames (Cmd+Z with history)
+- [ ] MTP backend (Android without Developer Mode, experimental)
 
 ---
 

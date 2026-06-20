@@ -1,5 +1,7 @@
 # System Diagram
 
+> **Last updated:** June 2026 — Version 3.2.1
+
 ## High-Level Architecture
 
 ```mermaid
@@ -8,68 +10,113 @@ graph TB
         MW[MainWindow]
         FE[FileExplorerWidget]
         TQ[TransferQueueWidget]
-        SD[ServerSelectionDialog]
-        SW[SettingsWindow]
+        DP[DetailPanel]
+        BB[BookmarksBar]
+        VCM[VideoConvertManager]
+        SS[SettingsWindow]
+    end
+
+    subgraph Dialogs["Dialogs"]
+        SSD[ServerSelectionDialog]
+        BRD[BatchRenameDialog]
+        CSD[ConvertSettingsDialog]
+        FPD[FolderPickerDialog]
+        QFD[QuickFixDialog]
     end
 
     subgraph Controllers["Controller Layer"]
         MWC[MainWindowController]
-        MTC[TransferController]
+        CC[ConnectionController]
+        DC[DownloadController]
+        FOC[FileOperationsController]
+        TC[TransferController]
     end
 
     subgraph Workers["Background Threads (src/workers/)"]
+        CW[ConnectionWorker]
         TW[TransferWorker]
         DW[DownloadWorker]
         DL[DirectoryLoader]
         SR[SearchWorker]
+        DU[DiskUsageWorker]
+    end
+
+    subgraph Clients["Device Clients (src/clients/)"]
+        DC_PROTO[DeviceClient Protocol]
+        ADB[ADBClient]
+        IOS[IOSClient]
+        SFTP[Paramiko SFTPClient]
     end
 
     subgraph Services["Service Layer"]
         CM[ConnectionManagerService]
-        ADB[ADBClient]
+        RFS[RemoteFileService]
         FDS[FileDeletionService]
-        THS[TransferHistoryService]
+        AHS[ActivityHistoryService]
         NS[NotificationService]
         KS[KeychainService]
+        RS[RsyncService]
+        FF[FfmpegService]
     end
 
     subgraph External["External Systems"]
         SSH[SSH/SFTP Server]
-        Android[Android Device USB]
+        Android[Android Device USB/WiFi]
+        iPhone[iOS Device USB]
         FS[Local Filesystem]
     end
 
-    subgraph Config["Configuration"]
+    subgraph Config["Configuration & Storage"]
         Settings[Settings Singleton]
         JSON["~/.FileSling/config.json"]
         History["~/.FileSling/transfer_history.json"]
+        Queue["~/.FileSling/transfer_queue.json"]
+        Errors["~/.FileSling/logs/errors.json"]
         Keychain["macOS Keychain"]
     end
 
     MW --> MWC
     MW --> FE
     MW --> TQ
-    MWC --> MTC
-    MWC --> CM
-    MWC --> DW
+    MW --> DP
+    MW --> BB
+    MWC --> CC
+    MWC --> DC
+    MWC --> FOC
+    MWC --> TC
     MWC --> NS
-    MTC --> TW
+    CC --> CW
+    CC --> CM
+    TC --> TW
+    DC --> DW
     FE --> DL
     FE --> SR
+    FE --> DU
+    VCM --> FF
+
+    DC_PROTO <|.. SFTP
+    DC_PROTO <|.. ADB
+    DC_PROTO <|.. IOS
 
     CM --> SSH
     ADB --> Android
+    IOS --> iPhone
     FDS --> FS
-    THS --> History
+    AHS --> History
     KS --> Keychain
+    RS --> SSH
     Settings --> JSON
+    TC --> Queue
 
-    TW --> CM
+    TW --> SFTP
     TW --> ADB
-    DW --> CM
+    TW --> IOS
+    DW --> SFTP
     DW --> ADB
-    DL --> CM
+    DW --> IOS
+    DL --> SFTP
     DL --> ADB
+    DL --> IOS
 ```
 
 ## Upload Flow
@@ -79,9 +126,9 @@ sequenceDiagram
     participant User
     participant Explorer as FileExplorerWidget
     participant MW as MainWindow
-    participant MTC as TransferController
+    participant TC as TransferController
     participant TW as TransferWorker
-    participant Remote as SSH/ADB
+    participant Client as DeviceClient (SFTP/ADB/iOS)
     participant NS as NotificationService
 
     User->>Explorer: Drag files from Finder (onto folder or explorer)
@@ -91,19 +138,26 @@ sequenceDiagram
         MW->>User: Show overwrite/skip/cancel dialog
     end
     MW->>TQ: add_transfer (visual queue)
-    MW->>MTC: queue_transfer(paths, destination)
-    MTC->>MTC: Add to queue, update Dock badge
-    MTC->>MTC: _process_next()
-    MTC->>Remote: Open SFTP session (or use ADB client)
-    MTC->>TW: Start on QThread
+    MW->>TC: queue_transfer(paths, destination)
+    TC->>TC: Persist to transfer_queue.json
+    TC->>TC: _process_next()
+    alt SSH with rsync available
+        TC->>Client: Try rsync (delta transfer)
+        alt rsync fails
+            TC->>Client: Fallback to SFTP
+        end
+    else SFTP / ADB / iOS
+        TC->>Client: Open dedicated session
+    end
+    TC->>TW: Start on QThread
     TW->>TW: Skip already-uploaded files (resume)
     TW->>TW: Compress folder if configured
-    TW->>Remote: sftp.put() / adb push
-    TW-->>MTC: progress signal
-    TW-->>MTC: finished signal
-    MTC->>THS: Record in transfer history
-    MTC->>NS: Send notification + clear Dock badge
-    MTC->>MW: transfer_completed signal
+    TW->>Client: put() / push
+    TW-->>TC: progress signal
+    TW-->>TC: finished signal
+    TC->>AHS: Record in activity history
+    TC->>NS: Send notification + update Dock badge
+    TC->>MW: transfer_completed signal
     MW->>Explorer: refresh()
 ```
 
@@ -113,31 +167,34 @@ sequenceDiagram
 sequenceDiagram
     participant User
     participant Explorer as FileExplorerWidget
-    participant MWC as MainWindowController
+    participant DC as DownloadController
     participant DW as DownloadWorker
-    participant Remote as SSH/ADB
+    participant Client as DeviceClient (SFTP/ADB/iOS)
     participant Local as Local Filesystem
     participant NS as NotificationService
 
     User->>Explorer: Right-click → Download (or Download All)
-    Explorer->>MWC: file_download_requested / files_download_requested signal
-    MWC->>MWC: Check local duplicates (skip in batch mode)
+    Explorer->>DC: file_download_requested signal
+    DC->>DC: Check local duplicates
     alt File exists locally (single)
-        MWC->>User: Overwrite? Yes/No
+        DC->>User: Overwrite? Yes/No
     end
-    MWC->>TQ: add_transfer + set_in_progress
-    MWC->>Remote: Open SFTP session (or use ADB)
-    MWC->>DW: Start on QThread
-    DW->>Remote: sftp.get() / adb pull
+    DC->>TQ: add_transfer + set_in_progress
+    DC->>Client: Open dedicated session
+    DC->>DW: Start on QThread
+    DW->>Client: get() / pull
     DW->>Local: Write to download_directory (per-server or global)
-    DW-->>MWC: progress signal
-    DW-->>MWC: finished signal
+    DW-->>DC: progress signal
+    DW-->>DC: finished signal
     alt Download failed
-        MWC->>MWC: Retry (up to 3 attempts)
+        DC->>DC: Retry (up to 3 attempts)
     end
-    MWC->>THS: Record in transfer history
-    MWC->>TQ: set_completed
-    MWC->>NS: Send macOS notification
+    DC->>AHS: Record in activity history
+    DC->>TQ: set_completed
+    DC->>NS: Send macOS notification
+    opt Reveal in Finder enabled
+        DC->>Local: Open Finder at download path
+    end
 ```
 
 ## Connection Flow
@@ -150,11 +207,15 @@ flowchart TD
     ShowDialog --> LoadServer
 
     LoadServer --> CheckType{Connection type?}
-    CheckType -->|SSH| CheckAuth{Auth method?}
+    CheckType -->|SSH| StartCW[Start ConnectionWorker]
     CheckType -->|ADB| CheckADB{ADB installed?}
+    CheckType -->|iOS| CheckIOS{pymobiledevice3 installed?}
 
+    StartCW --> CheckAuth{Auth method?}
     CheckAuth -->|Key| ConnSSH[SSH Connect with key + optional passphrase]
     CheckAuth -->|Password| ConnSSHPW[SSH Connect with password]
+    CheckAuth -->|Keychain| FetchKC[Fetch from macOS Keychain]
+    FetchKC --> ConnSSHPW
     ConnSSH --> Connected
     ConnSSHPW --> Connected
 
@@ -169,53 +230,109 @@ flowchart TD
     DeviceFound -->|No| ShowError[Show 'No device' error]
     DeviceFound -->|Yes| ConnADB[Create ADBClient + test listdir]
 
+    CheckIOS -->|No| PromptPip[pip install pymobiledevice3]
+    CheckIOS -->|Yes| FindIOS[Detect iOS device]
+    FindIOS --> IOSFound{Device found & trusted?}
+    IOSFound -->|No| TrustPrompt[Guide user to tap Trust]
+    IOSFound -->|Yes| ConnIOS[Create IOSClient]
+
     ConnADB --> Connected[Connected ✓]
+    ConnIOS --> Connected
     Connected --> SetExplorer[Bind client to FileExplorer]
     SetExplorer --> Refresh[Load directory listing]
     Refresh --> HealthTimer[Start 15s health check timer]
     HealthTimer --> CheckAlive{Connection alive?}
-    CheckAlive -->|Yes| UpdateLatency[Update latency in status bar]
+    CheckAlive -->|Yes| UpdateLatency[Update latency indicator]
     CheckAlive -->|No| AutoReconnect[Auto-reconnect]
+    AutoReconnect --> StartCW
 ```
 
 ## Backend Abstraction
 
 ```mermaid
 classDiagram
-    class SFTPClient {
+    class DeviceClient {
+        <<Protocol>>
         +listdir(path) List~str~
-        +listdir_attr(path) List~SFTPAttributes~
-        +stat(path) SFTPAttributes
+        +listdir_attr(path) List~Any~
+        +stat(path) Any
         +put(local, remote, callback)
         +get(remote, local, callback)
         +rename(old, new)
         +mkdir(path)
         +remove(path)
         +rmdir(path)
+        +close()
+    }
+
+    class SFTPClient {
+        Paramiko SSH/SFTP
     }
 
     class ADBClient {
-        +listdir(path) List~str~
-        +listdir_attr(path) List~ADBStat~
-        +listdir_attr_stream(path, batch_size) Generator
-        +stat(path) ADBStat
-        +put(local, remote, callback)
-        +get(remote, local, callback)
+        Android USB/WiFi
+        +listdir_attr_stream(path, batch_size)
         +pull(remote, local, callback)
-        +rename(old, new)
-        +mkdir(path)
-        +remove(path)
-        +rmdir(path)
+    }
+
+    class IOSClient {
+        iPhone/iPad AFC
     }
 
     class FileExplorerWidget {
-        +sftp: SFTPClient | ADBClient
+        +sftp: DeviceClient
         +refresh()
         +navigate(item)
         +set_sftp(client)
     }
 
-    SFTPClient <|.. ADBClient : mimics interface
-    FileExplorerWidget --> SFTPClient : uses
-    FileExplorerWidget --> ADBClient : uses
+    DeviceClient <|.. SFTPClient : implements
+    DeviceClient <|.. ADBClient : implements
+    DeviceClient <|.. IOSClient : implements
+    FileExplorerWidget --> DeviceClient : uses
+```
+
+## Transfer Method Selection
+
+```mermaid
+flowchart LR
+    Start[Upload requested] --> CheckType{Connection type?}
+    CheckType -->|SSH| CheckRsync{rsync available?}
+    CheckType -->|ADB| UseADB[adb push]
+    CheckType -->|iOS| UseIOS[AFC write]
+
+    CheckRsync -->|Yes| TryRsync[rsync --progress]
+    CheckRsync -->|No| UseSFTP[SFTP put]
+
+    TryRsync --> RsyncOK{Success?}
+    RsyncOK -->|Yes| Done[Transfer complete ✓]
+    RsyncOK -->|No| UseSFTP
+
+    UseSFTP --> Done
+    UseADB --> Done
+    UseIOS --> Done
+
+    style TryRsync fill:#90EE90
+    style UseSFTP fill:#87CEEB
+    style UseADB fill:#FFD700
+```
+
+## SFTP Channel Architecture
+
+```mermaid
+graph LR
+    subgraph Transport["SSH Transport (single TCP connection)"]
+        CH1[sftp_client<br/>Main thread: UI ops]
+        CH2[sftp_metadata<br/>Detail panel: NFO, ffprobe]
+        CH3[sftp_background<br/>DirectoryLoader, DiskUsage, Search]
+    end
+
+    subgraph Dynamic["Per-operation sessions"]
+        S1[Upload session 1]
+        S2[Download session 1]
+        S3[Download session 2]
+        S4[Convert SSH connection]
+    end
+
+    Transport --- Dynamic
 ```

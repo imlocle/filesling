@@ -1,130 +1,64 @@
-# Bugs & Roadmap
+# Bugs
 
-> Known issues, improvements, and feature ideas — ordered by impact.
-> For fixed bugs, see [CHANGELOG.md](CHANGELOG.md).
-
----
-
-## ✅ Fixed — Critical
-
-- [x] **BUG-1: SFTP session leak in `_retry_download`** — Fixed: assigns to `self._download_sftp` for cleanup.
-- [x] **BUG-2: `_delete_multiple` doesn't record activity history** — Fixed: records deletions, handles `ConnectionLostError`.
-- [x] **BUG-3: `compress_folders_before_transfer` silently ignored with rsync** — Fixed: logs and emits `method_changed`.
-- [x] **BUG-4: `cancel_active_transfer` can deadlock** — Fixed: `terminate()` fallback after 3s.
-- [x] **BUG-5: `IOSClient.get()` fallback loads entire file into memory** — Fixed: warns for files >500MB.
-- [x] **BUG-6: `ConnectionManagerService.connect()` blocks main thread** — Fixed: non-blocking `QEventLoop` wait.
-
-## ✅ Fixed — Medium
-
-- [x] **BUG-7: `create_folder` path validation broken** — Fixed: uses `sftp is not None` check.
-- [x] **BUG-8: ADB streaming items jump around** — Fixed: disable sorting during load.
-- [x] **BUG-9: Batch rename doesn't record history** — Fixed: records each rename.
-- [x] **BUG-10: Settings singleton reset causes stale refs** — Fixed: `reload_config()` in-place.
-- [x] **BUG-11: Search cancellation race** — Fixed: disconnect signals before refresh.
-- [x] **BUG-12: `measure_latency()` inaccurate** — Fixed: uses `sftp.stat(".")` round-trip.
-- [x] **BUG-13: ADB shell injection** — Fixed: `shlex.quote()` everywhere.
-- [x] **BUG-14: `_reveal_in_finder` instantiates Settings** — Fixed: uses `item.destination`.
-- [x] **BUG-15: Download retry uses explorer session** — Accepted: ADB is stateless.
+> **Last updated:** June 2026 — Version 3.2.1
+>
+> Bug tracking for FileSling. For roadmap, see [ROADMAP.md](ROADMAP.md).
 
 ---
 
-## 🔥 Next Up — Prioritized by Impact
+## Open — Performance (UI Lag)
 
-> Do these in order. Each one delivers noticeable value to either the user or the developer experience.
+- [ ] **LAG-1: Detail panel NFO read blocks main thread on every file click** — `_load_nfo_metadata()` calls `self._sftp.open()` synchronously. If the NFO doesn't exist, Paramiko does a full SFTP round-trip (~40-100ms) before throwing IOError. Every single file click pays this cost. Fix: move NFO read to the same background probe thread.
 
-### Tier 1: User-Facing Speed (do these first)
+- [ ] **LAG-2: Detail panel ffprobe shares SFTP channel with directory loader** — `_ProbeWorker` uses `self._sftp.get_channel().get_transport().open_session()` from a background thread while the main thread or DirectoryLoader may also be using the same SFTP connection. Paramiko SFTP is NOT thread-safe. Fix: probe worker should open its own SSH session.
 
-| #   | Item                                             | Why it matters                                                                                       | Effort | Status               |
-| --- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------ | -------------------- |
-| 1   | **`ConnectionWorker` — fully async SSH connect** | Eliminates the biggest UX freeze (up to 30s on unreachable hosts). BUG-6 fix was a stopgap.          | Medium | ✅ Done              |
-| 2   | **Parallel downloads**                           | 2-3x download throughput for batches. Requires `DownloadController` extraction first (Tier 3 #12).   | Medium | ⏳ Blocked on Tier 3 |
-| 3   | **Batch SFTP stat calls**                        | Duplicate detection uses single `listdir_attr()` + local filter instead of N round-trips. 2s → 40ms. | Small  | ✅ Done              |
-| 4   | **Async drag-to-Finder**                         | Eliminates UI freeze for any file size. Use `NSFilePromiseProvider` via pyobjc.                      | Large  | Pending              |
-| 5   | **`DiskUsageWorker`**                            | Tree becomes interactive immediately instead of waiting 1-3s for `df` to finish.                     | Small  | ✅ Done              |
+- [ ] **LAG-3: `_show_media_info` runs ffprobe synchronously on main thread** — When you open the Media Info dialog, it calls `transport.open_session()` + `session.exec_command(ffprobe)` + reads all output in a while loop — all on the main thread. For a file on a slow connection, this freezes the UI for 1-3 seconds. Fix: run in background thread, show dialog with "Loading..." then populate.
 
-### Tier 2: Remaining Bugs (quick wins)
+- [ ] **LAG-4: `_load_nfo_metadata` in Media Info dialog blocks main thread** — Same pattern: `transport.open_session()` + `exec_command("cat .nfo")` blocks while reading. Fix: already have the SFTP open — use `sftp.open()` (faster) or run async.
 
-| #   | Item                                     | Why it matters                                                                       | Effort | Status  |
-| --- | ---------------------------------------- | ------------------------------------------------------------------------------------ | ------ | ------- |
-| 6   | **BUG-17: Breadcrumb HTML-escape**       | Folders with `<>&` in names break the path bar. One-line `html.escape()` fix.        | Tiny   | ✅ Done |
-| 7   | **BUG-18: ADB/iOS retry counter**        | USB failures trigger irrelevant "switch server?" dialog. Skip increment for non-SSH. | Tiny   | ✅ Done |
-| 8   | **BUG-16: Binary/decimal unit mismatch** | Shows "KB/s" but divides by 1024. Now uses decimal (÷1000) to match labels.          | Tiny   | ✅ Done |
+- [ ] **LAG-5: Quick Fix dialog `recv_exit_status()` blocks main thread** — When ffmpeg remuxes, `session.recv_exit_status()` blocks until the command completes. For a 1GB file, even with `-c copy`, this can take 5-10 seconds on a Pi's slow USB drive. Fix: run in background thread with progress indication.
 
-### Tier 3: Architecture (makes everything after this easier)
+- [ ] **LAG-6: `check_ffmpeg_installed()` blocks main thread** — Called from the right-click context menu handler (before showing Convert Video submenu). Does an SSH round-trip. Fix: cache the result per-server after first check.
 
-| #   | Item                                   | Why it matters                                                                                                                       | Effort |
-| --- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| 9   | **`DeviceClient` protocol**            | Formalizes the SSH/ADB/iOS duck-typing. Enables `isinstance()`, IDE autocomplete, and new backends. Foundation for everything below. | Small  |
-| 10  | **`ServerConfig` dataclass**           | Replaces `dict.get("key", default)` scattered everywhere with typed model. Prevents typo bugs, enables validation.                   | Small  |
-| 11  | **Extract `ConnectionController`**     | ~350 lines out of main controller. Owns connect/disconnect/health/reconnect lifecycle.                                               | Medium |
-| 12  | **Extract `DownloadController`**       | ~200 lines. Mirrors `ManualTransferController` pattern. Enables parallel downloads cleanly.                                          | Medium |
-| 13  | **Extract `FileOperationsController`** | ~300 lines. CRUD ops (delete/rename/move/mkdir) in one place.                                                                        | Medium |
-| 14  | **`RemoteFileService`**                | Centralizes connection-lost detection. Every caller currently does its own `IOError("Socket is closed")` check.                      | Medium |
+- [ ] **LAG-7: FolderPickerDialog `listdir_attr` on expand blocks main thread** — Every time you expand a folder in the Move dialog, it does a synchronous SFTP call. Fix: acceptable for now since it's user-initiated, but could be async.
 
-After items 11-13, `MainWindowController` drops from ~1500 → ~600 lines.
+- [ ] **LAG-8: `_is_remote_directory()` does individual `sftp.stat()` calls** — Called during drag operations and context menu building. Each one is a network round-trip. Fix: use the directory cache (`_dir_cache`).
 
-### Tier 4: Widget Decomposition (FileExplorerWidget is 2500 lines)
+---
 
-| #   | Item                              | Why it matters                                                                                     | Effort |
-| --- | --------------------------------- | -------------------------------------------------------------------------------------------------- | ------ |
-| 15  | **Extract `FolderPickerDialog`**  | Self-contained dialog used by move operations. ~150 lines, no shared state. Easy first extraction. | Small  |
-| 16  | **Extract `BatchRenameDialog`**   | Self-contained dialog. ~100 lines.                                                                 | Small  |
-| 17  | **Extract `VideoConvertManager`** | Conversion queue + progress. ~120 lines, clean boundary.                                           | Small  |
-| 18  | **Extract `SearchWidget`**        | Search bar + SearchWorker + results display. ~200 lines.                                           | Medium |
-| 19  | **Extract `BookmarksBar`**        | Bookmark buttons + toggle logic. ~80 lines.                                                        | Small  |
-| 20  | **Extract `InlineRenameEditor`**  | Rename overlay widget. ~100 lines.                                                                 | Small  |
+## Open — Threading (Crash Risk)
 
-After all extractions, `FileExplorerWidget` becomes ~800 lines focused on tree display + navigation + drag-drop.
+- [ ] **THREAD-1: Four threads share the same SFTP connection without synchronization** — `DirectoryLoader`, `DiskUsageWorker`, `_ProbeWorker`, and the main thread all use the same `self.sftp` / `self._sftp` reference. Paramiko's `SFTPClient` is NOT thread-safe. When two threads issue commands simultaneously, the packet sequences get interleaved → corrupted responses → IOError → crash or garbled data. This is the root cause of intermittent lag and the rainbow cursor.
 
-### Tier 5: Robustness & Code Quality
+- [ ] **THREAD-2: `_stop_all_threads` on `destroyed` signal may be too late** — Qt's `destroyed` signal fires during destruction when child objects are already being torn down. Calling `quit()` + `wait()` at that point can deadlock if the thread is trying to emit a signal back to the destroyed widget.
 
-| #   | Item                                               | Why it matters                                                                                                            | Effort           |
-| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------- | ---- |
-| 21  | **Connection state machine**                       | Prevents race conditions (e.g., reconnect during transfer). States: Disconnected → Connecting → Connected → Reconnecting. | Medium           |
-| 22  | **`QThread.isInterruptionRequested()` in workers** | Cleaner cancellation — workers check a flag between chunks instead of relying on thread termination.                      | Small            |
-| 23  | **Keychain: stdin pipe instead of CLI args**       | Password briefly visible in `ps` output. Use `Popen` stdin instead.                                                       | Small            |
-| 24  | **ffmpeg timeout/cancellation**                    | Infinite hang on corrupt files. Add session timeout or polling for cancel flag.                                           | Medium           |
-| 25  | **"No space left on device" detection**            | Currently shows opaque IOError. Parse the error message for a clear user-facing dialog.                                   | Small            |
-| 26  | **`TransferQueuePersistenceService`**              | Isolates queue serialization. Makes format changes (e.g., SQLite) trivial.                                                | Small            |
-| 27  | **`DiskUsageService`**                             | Normalizes df across SSH/ADB/iOS. Currently inline in the widget.                                                         | Small            |
-| 28  | **Move `SearchWorker` to `workers/`**              | Inline class definition inside a method is hard to test and find.                                                         | Tiny             |
-| 29  | **Unify type annotations**                         | Mix of `Optional[str]` and `str                                                                                           | None`. Pick one. | Tiny |
-| 30  | **Remove `hasattr` guards**                        | Ensure widget init order is deterministic so guards are unnecessary.                                                      | Small            |
-| 31  | **Add `__all__` exports**                          | Clean public API for each module.                                                                                         | Tiny             |
+- [ ] **THREAD-3: DownloadController lambda connections with `QueuedConnection`** — Lambdas with `QueuedConnection` capture the slot reference but Qt can't guarantee the lambda's captured variables are still alive when the queued call executes (e.g., if the slot was cleaned up between emit and delivery).
+
+---
+
+## Open — Logic Bugs
+
+- [ ] **BUG-NEW-2: NFO save doesn't handle ADB/iOS** — `self.sftp.open(nfo_path, "w")` assumes Paramiko SFTP. `ADBClient` and `IOSClient` don't have an `open()` method that accepts mode "w" and returns a file-like object. This will crash on Android/iOS.
+
+- [ ] **BUG-NEW-3: Video convert manager checks `self.sftp.get_channel()` on ADB** — ADB client's `get_channel()` returns `self` (a stub), which then fails on `get_transport()`. The guard catches it but the error message is misleading.
+
+- [ ] **BUG-NEW-4: `_on_item_selected` fires during `refresh()`** — When `tree_widget.clear()` is called during refresh, it triggers `itemSelectionChanged` → `_on_item_selected` → tries to show detail panel for empty selection → potential stale path access.
+
+- [ ] **BUG-NEW-5: `back_btn` not re-enabled if `_load_local()` path is taken** — When `is_remote` is False, `refresh()` calls `_load_local()` synchronously (no spinner, no async callback). The back button stays disabled forever for local browsing.
+
+- [ ] **BUG-NEW-6: Renaming a file doesn't rename its .nfo sidecar** — If `The Challenge.mp4` has `The Challenge.nfo` and you rename the video, the NFO keeps the old name. Jellyfin won't match it. Fix: on rename, also rename `oldname.nfo` → `newname.nfo` if it exists.
+
+---
+
+## ✅ Fixed (Previous Audit)
+
+- [x] BUG-1 through BUG-18, BUG-23, BUG-25, BUG-29 (see git history)
+- [x] BUG-NEW-1: `ui_components.py` dead code — deleted, file removed
 
 ---
 
 ## Accepted / Won't Fix
 
-- **BUG-DA-22: Cancel during retry window** — Extremely rare race; complexity outweighs risk.
-- **BUG-DA-16: Download progress 500ms refresh** — By design for performance.
-- **BUG-DA-24: Drag-to-Finder freezes for large files** — Acceptable for small files. Superseded by Tier 1 item #4 (async drag).
-- **BUG-15: Download retry uses explorer's ADB session** — ADB is stateless subprocess calls.
-
----
-
-## Feature Ideas (after quality work is done)
-
-### High Value
-
-- [ ] Parallel downloads (covered in Tier 1 #2)
-- [ ] Transfer speed sparkline graph in queue widget
-- [ ] Async drag-to-Finder (covered in Tier 1 #4)
-- [ ] Folder sync / mirror mode (rsync `--delete`)
-- [ ] Watch folder auto-upload (`QFileSystemWatcher`)
-- [ ] Multi-server split view
-
-### Medium Value
-
-- [ ] File preview panel (thumbnails, text preview)
-- [ ] Transfer scheduling (timed queue)
-- [ ] Bandwidth limiting (`rsync --bwlimit`, chunked SFTP)
-- [ ] Quick Look integration (spacebar preview)
-- [ ] SSH jump host / ProxyJump support
-
-### Lower Priority
-
-- [ ] Undo for moves/renames (Cmd+Z with history)
-- [ ] Side-by-side diff for overwrite confirmation
-- [ ] `UserNotifications` framework instead of osascript
-- [ ] Touch Bar support
+- **BUG-DA-22:** Cancel during retry window — rare race.
+- **BUG-DA-16:** Download progress 500ms refresh — by design.
+- **BUG-15:** Download retry uses explorer's ADB session — ADB is stateless.
