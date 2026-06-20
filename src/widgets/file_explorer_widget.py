@@ -50,7 +50,6 @@ from PySide6.QtWidgets import (
 from src.config.settings import Settings
 from src.utils.constants import (
     MAX_DRAG_BYTES,
-    SOFTWARE_NAME,
     TIMEOUT_SSH_CONNECT,
 )
 from src.utils.logging_signal import logger

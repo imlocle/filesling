@@ -7,10 +7,8 @@ This dialog has two tabs:
 """
 
 import os
-import shlex
 from typing import Any, Dict, Optional
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,

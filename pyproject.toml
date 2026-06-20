@@ -73,8 +73,11 @@ Repository = "https://github.com/imlocle/filesling.git"
 Documentation = "https://github.com/imlocle/filesling/tree/main/docs"
 "Bug Reports" = "https://github.com/imlocle/filesling/issues"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
 [tool.setuptools]
-packages = ["src"]
 include-package-data = true
 
 [tool.black]

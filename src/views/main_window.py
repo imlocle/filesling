@@ -905,7 +905,7 @@ class MainWindow(QMainWindow):
             msg.setText("Transfers are still in progress.")
             msg.setInformativeText("What would you like to do?")
 
-            quit_now_btn = msg.addButton(
+            quit_now_btn = msg.addButton(  # noqa: F841
                 "Quit Now", QMessageBox.ButtonRole.DestructiveRole
             )
             quit_after_btn = msg.addButton(
