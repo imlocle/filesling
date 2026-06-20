@@ -81,7 +81,7 @@ class TransferItemWidget(QFrame):
     cancel_requested = Signal(int)  # index
 
     def __init__(
-        self, index: int, item: TransferItem, parent: QWidget | None = None
+        self, index: int, item: TransferItem, parent: Optional[QWidget] = None
     ) -> None:
         super().__init__(parent)
         self.index = index
@@ -193,8 +193,11 @@ class TransferItemWidget(QFrame):
 
         elif item.status == TransferStatus.IN_PROGRESS:
             is_download = item.display_name.startswith("⬇")
+            is_convert = item.display_name.startswith("🔄")
             if is_download:
                 self.status_label.setText(STATUS_DOWNLOADING)
+            elif is_convert:
+                self.status_label.setText("🔄 Converting")
             else:
                 self.status_label.setText(STATUS_UPLOADING)
             self.status_label.setObjectName("status_active")
@@ -214,15 +217,29 @@ class TransferItemWidget(QFrame):
             self.cancel_btn.setVisible(True)
 
             # Speed and ETA
-            speed = item.speed_bytes_per_sec
-            eta = item.eta_seconds
-            parts = []
-            if speed > 0:
-                parts.append(f"{_format_speed(speed)}")
-            if eta is not None and eta > 0:
-                parts.append(f"ETA: {_format_time(eta)}")
-            parts.append(f"{item.progress_percent}%")
-            self.detail_label.setText(" · ".join(parts))
+            is_convert = item.display_name.startswith("🔄")
+            if is_convert:
+                # Conversions track percentage directly (total_bytes=100, transferred_bytes=pct)
+                # Speed/ETA calculations are meaningless for remote ffmpeg jobs
+                self.detail_label.setText(f"{item.progress_percent}%")
+            else:
+                speed = item.speed_bytes_per_sec
+                eta = item.eta_seconds
+                parts = []
+                if speed > 0:
+                    parts.append(f"{_format_speed(speed)}")
+                # Only show ETA if we have enough progress to estimate reliably
+                # (avoid "ETA: 5h" when at 1% with near-zero speed)
+                if (
+                    eta is not None
+                    and eta > 0
+                    and eta < 86400  # Cap at 24 hours (anything higher is nonsense)
+                    and item.progress_percent
+                    >= 3  # Need at least 3% for reasonable estimate
+                ):
+                    parts.append(f"ETA: {_format_time(eta)}")
+                parts.append(f"{item.progress_percent}%")
+                self.detail_label.setText(" · ".join(parts))
 
         elif item.status == TransferStatus.COMPLETED:
             self.status_label.setText("✅ Done")
@@ -322,7 +339,7 @@ class TransferQueueWidget(QWidget):
     cancel_active = Signal()  # cancel the in-progress transfer
     indices_changed = Signal()  # emitted when items are removed (clear_completed)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._items: List[TransferItem] = []
         self._item_widgets: List[TransferItemWidget] = []

@@ -379,7 +379,7 @@ class ConnectionFormWidget(QWidget):
             )
 
     def _refresh_adb_devices(self) -> None:
-        from src.services.adb_client import get_connected_devices
+        from src.clients.adb_client import get_connected_devices
 
         self.adb_device_combo.clear()
         saved_device_id = self._config.get("device_id", "")
@@ -423,7 +423,7 @@ class ConnectionFormWidget(QWidget):
 
     def _connect_adb_wifi(self) -> None:
         """Attempt to connect to an Android device over WiFi."""
-        from src.services.adb_client import connect_wifi
+        from src.clients.adb_client import connect_wifi
 
         ip = self.adb_wifi_ip_input.text().strip()
         if not ip:
@@ -453,7 +453,7 @@ class ConnectionFormWidget(QWidget):
             self.status_label.style().polish(self.status_label)
 
     def _refresh_ios_devices(self) -> None:
-        from src.services.ios_client import get_connected_ios_devices
+        from src.clients.ios_client import get_connected_ios_devices
 
         self.ios_device_combo.clear()
         saved_device_id = self._config.get("device_id", "")
@@ -521,7 +521,7 @@ class ConnectionFormWidget(QWidget):
             self.connection_tested.emit(False)
 
     def _test_adb(self) -> None:
-        from src.services.adb_client import ADBClient, get_connected_devices
+        from src.clients.adb_client import ADBClient, get_connected_devices
 
         devices = get_connected_devices()
         if not devices:

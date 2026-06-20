@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import os
-import shlex
 import shutil
 from stat import S_ISDIR
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import (
@@ -35,6 +34,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -64,7 +64,7 @@ class DragDropTreeWidget(QTreeWidget):
     # Emitted when user slow-clicks to rename: (item, column)
     slow_click_rename = Signal(QTreeWidgetItem, int)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._drag_start_pos = None
         self._drag_start_items = []
@@ -151,35 +151,44 @@ class DragDropTreeWidget(QTreeWidget):
         mime_data.setData("application/x-explorer-items", b"")
 
         # For external drag (to Finder): provide file URLs if available
-        # For remote files, download to temp dir first
-        # NOTE (BUG-DA-24): This downloads files synchronously on the main thread,
-        # which freezes the UI for large files. Acceptable for small files (photos).
-        # For large files, users should use right-click → Download instead.
+        # For remote files, download small files to temp dir.
+        # Files over 10MB are skipped (user should use right-click → Download).
         parent_widget = self.parent()
         if parent_widget and hasattr(parent_widget, "is_remote"):
             if parent_widget.is_remote and parent_widget.sftp:
                 import atexit
                 import tempfile
 
-                temp_dir = tempfile.mkdtemp(prefix="filesling_drag_")
-                # Schedule cleanup when the app exits
-                atexit.register(
-                    lambda d=temp_dir: __import__("shutil").rmtree(
-                        d, ignore_errors=True
-                    )
-                )
-                urls = []
+                # Calculate total size to decide if we should download for drag
+                MAX_DRAG_BYTES = 10 * 1024 * 1024  # 10MB per file limit
+                downloadable = []
                 for item_name in item_names:
                     remote_path = os.path.join(parent_widget.current_path, item_name)
-                    local_temp = os.path.join(temp_dir, item_name)
                     try:
-                        parent_widget.sftp.get(remote_path, local_temp)
-                        urls.append(QUrl.fromLocalFile(local_temp))
-                        logger.info(f"Drag: Downloaded {item_name} for Finder")
+                        st = parent_widget.sftp.stat(remote_path)
+                        size = st.st_size if st.st_size else 0
+                        if size <= MAX_DRAG_BYTES:
+                            downloadable.append((item_name, remote_path))
                     except Exception:
-                        pass  # Skip files that fail to download
-                if urls:
-                    mime_data.setUrls(urls)
+                        pass  # Can't stat — skip
+
+                if downloadable:
+                    temp_dir = tempfile.mkdtemp(prefix="filesling_drag_")
+                    atexit.register(
+                        lambda d=temp_dir: __import__("shutil").rmtree(
+                            d, ignore_errors=True
+                        )
+                    )
+                    urls = []
+                    for item_name, remote_path in downloadable:
+                        local_temp = os.path.join(temp_dir, item_name)
+                        try:
+                            parent_widget.sftp.get(remote_path, local_temp)
+                            urls.append(QUrl.fromLocalFile(local_temp))
+                        except Exception:
+                            pass  # Skip files that fail to download
+                    if urls:
+                        mime_data.setUrls(urls)
             elif not parent_widget.is_remote:
                 # Local files — provide URLs directly
                 urls = []
@@ -222,7 +231,7 @@ class SortableTreeWidgetItem(QTreeWidgetItem):
 class LoadingSpinner(QWidget):
     """A modern spinning arc loading indicator, centered over the parent widget."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -299,7 +308,7 @@ class DirectoryLoader(QObject):
         is_remote: bool,
         sftp: Optional[SFTPClient],
         settings: Settings,
-        parent: QObject | None = None,
+        parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self.path = path
@@ -330,6 +339,10 @@ class DirectoryLoader(QObject):
                                     attr.filename.startswith(".")
                                     or attr.filename.startswith("._")
                                     or attr.filename in self.settings.skip_files
+                                    or (
+                                        self.settings.config.hide_nfo_files
+                                        and attr.filename.endswith(".nfo")
+                                    )
                                 ):
                                     continue
                                 is_dir = (
@@ -362,6 +375,10 @@ class DirectoryLoader(QObject):
                             a.filename.startswith(".")
                             or a.filename.startswith("._")
                             or a.filename in self.settings.skip_files
+                            or (
+                                self.settings.config.hide_nfo_files
+                                and a.filename.endswith(".nfo")
+                            )
                         )
                     ]
                     filtered.sort(key=lambda a: a.filename.lower())
@@ -390,6 +407,7 @@ class DirectoryLoader(QObject):
                     e.startswith(".")
                     or e.startswith("._")
                     or e in self.settings.skip_files
+                    or (self.settings.config.hide_nfo_files and e.endswith(".nfo"))
                 )
             ]
             filtered.sort(key=lambda s: s.lower())
@@ -469,7 +487,17 @@ class _ConvertWorker(QObject):
     progress = Signal(int)
 
     def __init__(
-        self, host: str, username: str, key_path: str, port: int, remote_path: str
+        self,
+        host: str,
+        username: str,
+        key_path: str,
+        port: int,
+        remote_path: str,
+        video_codec: str = "libx264",
+        preset: str = "fast",
+        crf: int = 18,
+        audio_args: str = "-c:a aac -b:a 128k",
+        container: str = "mp4",
     ) -> None:
         super().__init__()
         self.host = host
@@ -477,6 +505,11 @@ class _ConvertWorker(QObject):
         self.key_path = key_path
         self.port = port
         self.remote_path = remote_path
+        self.video_codec = video_codec
+        self.preset = preset
+        self.crf = crf
+        self.audio_args = audio_args
+        self.container = container
 
     def run(self) -> None:
         try:
@@ -503,8 +536,11 @@ class _ConvertWorker(QObject):
                 output_path = convert_video(
                     ssh_client=ssh,
                     remote_path=self.remote_path,
-                    preset="fast",
-                    crf=18,
+                    preset=self.preset,
+                    crf=self.crf,
+                    video_codec=self.video_codec,
+                    audio_args=self.audio_args,
+                    container=self.container,
                     progress_cb=progress_cb,
                 )
                 replace_original(ssh, self.remote_path, output_path)
@@ -579,6 +615,7 @@ class FileExplorerWidget(QWidget):
         # Background loading state
         self._loader_thread: Optional[QThread] = None
         self._loader_worker: Optional[DirectoryLoader] = None
+        self._sftp_background: Optional[SFTPClient] = None
 
         # Directory check cache (cleared on refresh) — reduces network calls
         # during drag operations
@@ -588,6 +625,8 @@ class FileExplorerWidget(QWidget):
         # Layout
         # ------------------------------------------------------------------
         layout: QVBoxLayout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
 
         # ------------------------------------------------------------------
         # Search / Filter bar
@@ -597,7 +636,7 @@ class FileExplorerWidget(QWidget):
         self._search_bar = QLineEdit()
         self._search_bar.setPlaceholderText("🔍 Filter...")
         self._search_bar.setClearButtonEnabled(True)
-        self._search_bar.setMaximumHeight(28)
+        self._search_bar.setMaximumHeight(30)
         self._search_bar.returnPressed.connect(self._execute_search)
         self._search_bar.textChanged.connect(self._on_search_cleared)
         self._is_searching = False
@@ -608,19 +647,24 @@ class FileExplorerWidget(QWidget):
         # ------------------------------------------------------------------
         # Navigation / Bookmarks bar
         # ------------------------------------------------------------------
-        self._bookmarks_container = QWidget()
-        self._bookmarks_layout = QHBoxLayout(self._bookmarks_container)
-        self._bookmarks_layout.setContentsMargins(0, 4, 0, 4)
-        self._bookmarks_layout.setSpacing(4)
+        from src.widgets.bookmarks_bar import BookmarksBar
+
+        nav_container = QWidget()
+        nav_layout = QHBoxLayout(nav_container)
+        nav_layout.setContentsMargins(0, 2, 0, 6)
+        nav_layout.setSpacing(4)
 
         self.back_btn: QPushButton = QPushButton("←")
         self.back_btn.setObjectName("icon_btn")
         self.back_btn.setToolTip("Go back")
         self.back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self._bookmarks_layout.addWidget(self.back_btn)
-        self._bookmarks_layout.addStretch()
-        layout.addWidget(self._bookmarks_container)
+        self._bookmarks_bar = BookmarksBar(self.settings)
+        self._bookmarks_bar.bookmark_clicked.connect(self._navigate_to_bookmark)
+
+        nav_layout.addWidget(self.back_btn)
+        nav_layout.addWidget(self._bookmarks_bar, stretch=1)
+        layout.addWidget(nav_container)
         self._refresh_bookmarks()
 
         # ------------------------------------------------------------------
@@ -634,7 +678,29 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.setRootIsDecorated(False)  # No expand arrows
         self.tree_widget.setSortingEnabled(True)
         self.tree_widget.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-        layout.addWidget(self.tree_widget)
+
+        # Wrap tree + detail panel in a horizontal splitter
+        from PySide6.QtWidgets import QSplitter
+
+        from src.widgets.detail_panel import DetailPanel
+
+        self._detail_panel = DetailPanel(self.settings)
+        self._detail_visible = self.settings.config.__dict__.get(
+            "show_detail_panel", False
+        )
+
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self.tree_widget)
+        self._splitter.addWidget(self._detail_panel)
+        self._splitter.setStretchFactor(0, 4)  # tree gets most space
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([600, 220])
+        self._splitter.setHandleWidth(1)
+
+        # Hidden by default — toggle with ⌘I
+        self._detail_panel.setVisible(self._detail_visible)
+
+        layout.addWidget(self._splitter, stretch=1)  # stretch=1 fills available space
 
         self.breadcrumb_label: QLabel = QLabel()
         self.breadcrumb_label.setObjectName("secondary_label")
@@ -684,7 +750,20 @@ class FileExplorerWidget(QWidget):
         self.setAcceptDrops(True)
         self.tree_widget.setAcceptDrops(True)
 
+        # Ensure background threads are stopped on shutdown
+        self.destroyed.connect(self._stop_all_threads)
+
         self.refresh()
+
+    def _stop_all_threads(self) -> None:
+        """Stop any running background threads (called on widget destruction)."""
+        if self._loader_thread and self._loader_thread.isRunning():
+            self._loader_thread.quit()
+            self._loader_thread.wait(1000)
+        if hasattr(self, "_disk_thread") and self._disk_thread:
+            if self._disk_thread.isRunning():
+                self._disk_thread.quit()
+                self._disk_thread.wait(1000)
 
     def _update_breadcrumb(self) -> None:
         """Update bottom breadcrumb with clickable path segments."""
@@ -778,14 +857,26 @@ class FileExplorerWidget(QWidget):
         menu.addSeparator()
         delete_action = menu.addAction("🗑️ Delete")
 
-        # Video conversion option (SSH only, video files only)
+        # Video options (SSH only, video files only)
         convert_action = None
+        convert_h265_action = None
+        convert_settings_action = None
+        media_info_action = None
+        edit_metadata_action = None
+        quick_fix_action = None
         if self.is_remote and self.sftp:
             from src.services.ffmpeg_service import is_video_file
 
             if is_video_file(entry):
                 menu.addSeparator()
-                convert_action = menu.addAction("Convert to H.264")
+                media_info_action = menu.addAction("ℹ️ Media Info")
+                edit_metadata_action = menu.addAction("✏️ Edit Metadata")
+                convert_menu = menu.addMenu("🎬 Convert Video")
+                convert_action = convert_menu.addAction("H.264 (MP4)")
+                convert_h265_action = convert_menu.addAction("H.265 / HEVC (MP4)")
+                convert_menu.addSeparator()
+                convert_settings_action = convert_menu.addAction("⚙ Settings...")
+                quick_fix_action = menu.addAction("🔧 Quick Fix...")
 
         action = menu.exec(self.tree_widget.mapToGlobal(position))
 
@@ -804,7 +895,17 @@ class FileExplorerWidget(QWidget):
         elif default_bookmark_action and action == default_bookmark_action:
             self._toggle_default_bookmark(full_path)
         elif convert_action and action == convert_action:
-            self._handle_convert_video(full_path)
+            self._handle_convert_video(full_path, codec="h264")
+        elif convert_h265_action and action == convert_h265_action:
+            self._handle_convert_video(full_path, codec="h265")
+        elif convert_settings_action and action == convert_settings_action:
+            self._show_convert_settings()
+        elif media_info_action and action == media_info_action:
+            self._show_media_info(full_path)
+        elif edit_metadata_action and action == edit_metadata_action:
+            self._show_media_info(full_path, open_tab="tags")
+        elif quick_fix_action and action == quick_fix_action:
+            self._quick_fix_video(full_path)
 
     def _show_multi_select_context_menu(
         self, position: QPoint, selected_items: List[QTreeWidgetItem]
@@ -853,51 +954,15 @@ class FileExplorerWidget(QWidget):
     # ------------------------------------------------------------------
     def _toggle_bookmark(self, path: str) -> None:
         """Add or remove a bookmark."""
-        bookmarks = self.settings.get_bookmarks()
-        if path in bookmarks:
-            bookmarks.remove(path)
-            if path == self.settings.get_default_bookmark():
-                self.settings.set_default_bookmark("")
-        else:
-            bookmarks.append(path)
-        self.settings.set_bookmarks(bookmarks)
-        self._refresh_bookmarks()
+        self._bookmarks_bar.toggle_bookmark(path)
 
     def _toggle_default_bookmark(self, path: str) -> None:
         """Set or clear the default bookmark for this server."""
-        if path == self.settings.get_default_bookmark():
-            self.settings.set_default_bookmark("")
-        else:
-            bookmarks = self.settings.get_bookmarks()
-            if path not in bookmarks:
-                bookmarks.append(path)
-                self.settings.set_bookmarks(bookmarks)
-            self.settings.set_default_bookmark(path)
-        self._refresh_bookmarks()
+        self._bookmarks_bar.toggle_default(path)
 
     def _refresh_bookmarks(self) -> None:
         """Rebuild the bookmarks bar from settings."""
-        # Clear existing bookmark buttons (keep back button + stretch)
-        while self._bookmarks_layout.count() > 2:
-            item = self._bookmarks_layout.takeAt(1)
-            if item.widget():  # type: ignore
-                item.widget().deleteLater()  # type: ignore
-
-        bookmarks = self.settings.get_bookmarks()
-        if not bookmarks:
-            return
-
-        for path in bookmarks:
-            name = os.path.basename(path.rstrip("/")) or path
-            is_default = path == self.settings.get_default_bookmark()
-            label = f"● {name}" if is_default else name
-            btn = QPushButton(label)
-            btn.setObjectName("bookmark_btn")
-            if is_default:
-                btn.setStyleSheet("QPushButton#bookmark_btn { color: #0a84ff; }")
-            btn.setMaximumHeight(24)
-            btn.clicked.connect(lambda checked, p=path: self._navigate_to_bookmark(p))
-            self._bookmarks_layout.insertWidget(self._bookmarks_layout.count() - 1, btn)
+        self._bookmarks_bar.refresh()
 
     def _navigate_to_bookmark(self, path: str) -> None:
         """Navigate to a bookmarked folder."""
@@ -917,683 +982,785 @@ class FileExplorerWidget(QWidget):
             new_folder_path = os.path.join(self.current_path, folder_name)
             self.folder_create_requested.emit(new_folder_path)
 
-    def _expand_tree_to_path(
-        self,
-        tree: QTreeWidget,
-        root_item: QTreeWidgetItem,
-        target_path: str,
-        load_fn: Callable,
-    ) -> None:
-        """
-        Expand the folder picker tree down to target_path and select it.
-
-        Walks the path segments from root to target, expanding and loading
-        each level so the user sees the tree pre-navigated to the current folder.
-        """
-        from PySide6.QtWidgets import QTreeWidgetItem
-
-        if not target_path or not target_path.startswith(self.root_path):
-            return
-
-        # Get the relative path segments from root to target
-        rel = os.path.relpath(target_path, self.root_path)
-        if rel == ".":
-            tree.setCurrentItem(root_item)
-            return
-
-        # Use "/" (POSIX separator) for splitting — remote paths are always POSIX
-        segments = rel.replace("\\", "/").split("/")
-        current_item = root_item
-
-        for segment in segments:
-            # Expand current item (triggers lazy load via placeholder removal)
-            current_item.setExpanded(True)
-
-            # If children are placeholders, load them manually
-            if current_item.childCount() == 1 and current_item.child(0).text(0) == "":
-                current_item.removeChild(current_item.child(0))
-                folder_path = current_item.data(0, Qt.ItemDataRole.UserRole)
-                load_fn(current_item, folder_path)
-                # Add placeholders for next level
-                for i in range(current_item.childCount()):
-                    child = current_item.child(i)
-                    placeholder = QTreeWidgetItem([""])
-                    child.addChild(placeholder)
-
-            # Find the child matching this segment
-            found = False
-            for i in range(current_item.childCount()):
-                child = current_item.child(i)
-                if child.text(0) == segment:
-                    current_item = child
-                    found = True
-                    break
-
-            if not found:
-                break
-
-        # Select and scroll to the final item
-        tree.setCurrentItem(current_item)
-        tree.scrollToItem(current_item)
-
     def _handle_move_item(self, src_path: str) -> None:
         """Handle moving an item — show a folder picker dialog."""
-        from PySide6.QtWidgets import (
-            QDialog,
-            QDialogButtonBox,
-            QTreeWidget,
-            QTreeWidgetItem,
+        from src.views.dialogs.folder_picker_dialog import show_move_dialog
+
+        result = show_move_dialog(
+            parent=self,
+            src_paths=[src_path],
+            root_path=self.root_path,
+            is_remote=self.is_remote,
+            sftp=self.sftp,
         )
-
-        basename = os.path.basename(src_path)
-
-        # Build folder picker dialog
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Move '{basename}' to...")
-        dialog.setMinimumSize(400, 400)
-        dialog_layout = QVBoxLayout(dialog)
-
-        label = QLabel(f"Select destination folder for '{basename}':")
-        dialog_layout.addWidget(label)
-
-        # Folder tree
-        tree = QTreeWidget()
-        tree.setHeaderHidden(True)
-        tree.setRootIsDecorated(True)
-        dialog_layout.addWidget(tree)
-
-        # Populate tree with remote folders
-        def _load_folder(parent_item: QTreeWidgetItem, path: str) -> None:
-            """Load subfolders into tree item."""
-            try:
-                if self.is_remote and self.sftp:
-                    attrs = self.sftp.listdir_attr(path)
-                    folders = sorted(
-                        [
-                            a.filename
-                            for a in attrs
-                            if not a.filename.startswith(".")
-                            and a.st_mode is not None
-                            and S_ISDIR(a.st_mode)
-                        ],
-                        key=str.lower,
-                    )
-                else:
-                    entries = os.listdir(path)
-                    folders = sorted(
-                        [
-                            e
-                            for e in entries
-                            if not e.startswith(".")
-                            and os.path.isdir(os.path.join(path, e))
-                        ],
-                        key=str.lower,
-                    )
-                for folder in folders:
-                    child = QTreeWidgetItem([folder])
-                    child.setData(
-                        0, Qt.ItemDataRole.UserRole, os.path.join(path, folder)
-                    )
-                    parent_item.addChild(child)
-            except Exception:
-                pass
-
-        def _on_item_expanded(item: QTreeWidgetItem) -> None:
-            """Lazy-load subfolders when expanded."""
-            # Only load if children haven't been loaded yet
-            if item.childCount() == 1 and item.child(0).text(0) == "":
-                item.removeChild(item.child(0))
-                folder_path = item.data(0, Qt.ItemDataRole.UserRole)
-                _load_folder(item, folder_path)
-                # Add placeholder children for lazy loading
-                for i in range(item.childCount()):
-                    child = item.child(i)
-                    placeholder = QTreeWidgetItem([""])
-                    child.addChild(placeholder)
-
-        tree.itemExpanded.connect(_on_item_expanded)
-
-        # Add root
-        root_item = QTreeWidgetItem([os.path.basename(self.root_path) or "/"])
-        root_item.setData(0, Qt.ItemDataRole.UserRole, self.root_path)
-        tree.addTopLevelItem(root_item)
-        _load_folder(root_item, self.root_path)
-
-        # Add placeholders for lazy loading
-        for i in range(root_item.childCount()):
-            child = root_item.child(i)
-            placeholder = QTreeWidgetItem([""])
-            child.addChild(placeholder)
-
-        root_item.setExpanded(True)
-
-        # Auto-expand to the current directory of the file being moved
-        current_dir = os.path.dirname(src_path)
-        self._expand_tree_to_path(tree, root_item, current_dir, _load_folder)
-
-        # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(buttons)
-
-        # Show dialog
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        # Get selected folder
-        selected = tree.currentItem()
-        if not selected:
-            return
-
-        dest_dir = selected.data(0, Qt.ItemDataRole.UserRole)
-        if not dest_dir:
-            return
-
-        dest_path = os.path.join(dest_dir, basename)
-        self.item_move_requested.emit(src_path, dest_path)
+        if result:
+            src, dest = result[0]
+            self.item_move_requested.emit(src, dest)
 
     def _handle_move_items(self, src_paths: List[str]) -> None:
         """Handle moving multiple items — show a folder picker dialog."""
-        from PySide6.QtWidgets import (
-            QDialog,
-            QDialogButtonBox,
-            QTreeWidget,
-            QTreeWidgetItem,
+        from src.views.dialogs.folder_picker_dialog import show_move_dialog
+
+        result = show_move_dialog(
+            parent=self,
+            src_paths=src_paths,
+            root_path=self.root_path,
+            is_remote=self.is_remote,
+            sftp=self.sftp,
         )
-
-        count = len(src_paths)
-        names = [os.path.basename(p) for p in src_paths]
-        display = ", ".join(names[:3])
-        if count > 3:
-            display += f" (+{count - 3} more)"
-
-        # Build folder picker dialog
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Move {count} items to...")
-        dialog.setMinimumSize(400, 400)
-        dialog_layout = QVBoxLayout(dialog)
-
-        label = QLabel(f"Select destination folder for {count} items:\n{display}")
-        dialog_layout.addWidget(label)
-
-        # Folder tree
-        tree = QTreeWidget()
-        tree.setHeaderHidden(True)
-        tree.setRootIsDecorated(True)
-        dialog_layout.addWidget(tree)
-
-        # Populate tree with remote folders
-        def _load_folder(parent_item: QTreeWidgetItem, path: str) -> None:
-            """Load subfolders into tree item."""
-            try:
-                if self.is_remote and self.sftp:
-                    attrs = self.sftp.listdir_attr(path)
-                    folders = sorted(
-                        [
-                            a.filename
-                            for a in attrs
-                            if not a.filename.startswith(".")
-                            and a.st_mode is not None
-                            and S_ISDIR(a.st_mode)
-                        ],
-                        key=str.lower,
-                    )
-                else:
-                    entries = os.listdir(path)
-                    folders = sorted(
-                        [
-                            e
-                            for e in entries
-                            if not e.startswith(".")
-                            and os.path.isdir(os.path.join(path, e))
-                        ],
-                        key=str.lower,
-                    )
-                for folder in folders:
-                    child = QTreeWidgetItem([folder])
-                    child.setData(
-                        0, Qt.ItemDataRole.UserRole, os.path.join(path, folder)
-                    )
-                    parent_item.addChild(child)
-            except Exception:
-                pass
-
-        def _on_item_expanded(item: QTreeWidgetItem) -> None:
-            """Lazy-load subfolders when expanded."""
-            if item.childCount() == 1 and item.child(0).text(0) == "":
-                item.removeChild(item.child(0))
-                folder_path = item.data(0, Qt.ItemDataRole.UserRole)
-                _load_folder(item, folder_path)
-                for i in range(item.childCount()):
-                    child = item.child(i)
-                    placeholder = QTreeWidgetItem([""])
-                    child.addChild(placeholder)
-
-        tree.itemExpanded.connect(_on_item_expanded)
-
-        # Add root
-        root_item = QTreeWidgetItem([os.path.basename(self.root_path) or "/"])
-        root_item.setData(0, Qt.ItemDataRole.UserRole, self.root_path)
-        tree.addTopLevelItem(root_item)
-        _load_folder(root_item, self.root_path)
-
-        # Add placeholders for lazy loading
-        for i in range(root_item.childCount()):
-            child = root_item.child(i)
-            placeholder = QTreeWidgetItem([""])
-            child.addChild(placeholder)
-
-        root_item.setExpanded(True)
-
-        # Auto-expand to the current directory of the items being moved
-        current_dir = os.path.dirname(src_paths[0])
-        self._expand_tree_to_path(tree, root_item, current_dir, _load_folder)
-
-        # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(buttons)
-
-        # Show dialog
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        # Get selected folder
-        selected = tree.currentItem()
-        if not selected:
-            return
-
-        dest_dir = selected.data(0, Qt.ItemDataRole.UserRole)
-        if not dest_dir:
-            return
-
-        # Filter out self-moves (moving into itself or same location)
-        moves = []
-        skipped = []
-        for src_path in src_paths:
-            basename = os.path.basename(src_path)
-            dest_path = os.path.join(dest_dir, basename)
-            if dest_path.startswith(src_path + "/") or src_path == dest_dir:
-                skipped.append(basename)
-            else:
-                moves.append((src_path, dest_path))
-
-        if skipped:
-            from PySide6.QtWidgets import QMessageBox
-
-            skipped_display = ", ".join(skipped[:5])
-            if len(skipped) > 5:
-                skipped_display += f" (+{len(skipped) - 5} more)"
-            QMessageBox.warning(
-                self,
-                "Move Skipped",
-                f"Cannot move items into themselves:\n{skipped_display}",
-                QMessageBox.StandardButton.Ok,
-            )
-
-        if moves:
-            self.items_move_requested.emit(moves)
+        if result:
+            self.items_move_requested.emit(result)
 
     def _handle_batch_rename(self, paths: List[str]) -> None:
         """Handle batch rename — show find/replace dialog."""
-        from PySide6.QtWidgets import (
-            QDialog,
-            QDialogButtonBox,
-            QGridLayout,
-            QLineEdit,
-            QListWidget,
+        from src.views.dialogs.batch_rename_dialog import execute_batch_rename
+
+        renamed = execute_batch_rename(
+            parent=self,
+            paths=paths,
+            is_remote=self.is_remote,
+            sftp=self.sftp,
+            settings=self.settings,
         )
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Batch Rename ({len(paths)} items)")
-        dialog.setMinimumSize(450, 350)
-        dialog_layout = QVBoxLayout(dialog)
-
-        # Find & Replace inputs
-        grid = QGridLayout()
-        grid.addWidget(QLabel("Find:"), 0, 0)
-        find_input = QLineEdit()
-        find_input.setPlaceholderText("Text to find in filenames")
-        grid.addWidget(find_input, 0, 1)
-
-        grid.addWidget(QLabel("Replace:"), 1, 0)
-        replace_input = QLineEdit()
-        replace_input.setPlaceholderText("Replacement text (leave empty to remove)")
-        grid.addWidget(replace_input, 1, 1)
-        dialog_layout.addLayout(grid)
-
-        # Preview list
-        dialog_layout.addWidget(QLabel("Preview:"))
-        preview_list = QListWidget()
-        preview_list.setMinimumHeight(150)
-        dialog_layout.addWidget(preview_list)
-
-        # Populate initial preview
-        basenames = [os.path.basename(p) for p in paths]
-        for name in basenames:
-            preview_list.addItem(f"{name} → {name}")
-
-        # Update preview on input change
-        def update_preview() -> None:
-            find_text = find_input.text()
-            preview_list.clear()
-            for name in basenames:
-                if find_text:
-                    new_name = name.replace(find_text, replace_input.text())
-                else:
-                    new_name = name
-                if new_name != name:
-                    preview_list.addItem(f"{name} → {new_name}")
-                else:
-                    preview_list.addItem(f"{name} (unchanged)")
-
-        find_input.textChanged.connect(update_preview)
-        replace_input.textChanged.connect(update_preview)
-
-        # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(buttons)
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        find_text = find_input.text()
-        if not find_text:
-            return
-
-        replace_text = replace_input.text()
-
-        # Perform renames — check for collisions first
-        renamed = 0
-        collisions = []
-        rename_records = []  # Track (old_path, new_path) for history
-        for path in paths:
-            old_name = os.path.basename(path)
-            new_name = old_name.replace(find_text, replace_text)
-            if new_name == old_name:
-                continue
-
-            new_path = os.path.join(os.path.dirname(path), new_name)
-
-            # Check if destination already exists
-            exists = False
-            try:
-                if self.is_remote and self.sftp:
-                    self.sftp.stat(new_path)
-                    exists = True
-                elif not self.is_remote:
-                    exists = os.path.exists(new_path)
-            except (IOError, OSError):
-                pass  # Doesn't exist — safe to rename
-
-            if exists:
-                # Try with suffix _2, _3, etc.
-                base, ext = os.path.splitext(new_name)
-                suffix_num = 2
-                while exists:
-                    candidate = f"{base}_{suffix_num}{ext}"
-                    candidate_path = os.path.join(os.path.dirname(path), candidate)
-                    exists = False
-                    try:
-                        if self.is_remote and self.sftp:
-                            self.sftp.stat(candidate_path)
-                            exists = True
-                        elif not self.is_remote:
-                            exists = os.path.exists(candidate_path)
-                    except (IOError, OSError):
-                        pass
-                    if exists:
-                        suffix_num += 1
-                    else:
-                        new_path = candidate_path
-                        collisions.append(f"{new_name} → {candidate}")
-                        break
-
-            try:
-                if self.is_remote and self.sftp:
-                    self.sftp.rename(path, new_path)
-                elif not self.is_remote:
-                    os.rename(path, new_path)
-                renamed += 1
-                rename_records.append((path, new_path))
-            except Exception as e:
-                logger.error(f"Rename failed: {old_name}: {e}")
-
-        if renamed == 0 and self.sftp is None and self.is_remote:
-            from PySide6.QtWidgets import QMessageBox
-
-            QMessageBox.warning(
-                self,
-                "Rename Failed",
-                "Connection lost — no files were renamed.",
-                QMessageBox.StandardButton.Ok,
-            )
-            return
-
-        if collisions:
-            logger.warn(f"Batch rename: {len(collisions)} name collisions resolved")
-
         if renamed > 0:
-            logger.success(f"Batch rename: {renamed} files renamed")
-
-            # Record renames in activity history
-            from src.services.activity_history_service import ActivityHistoryService
-
-            history = ActivityHistoryService()
-            for old_path, new_path in rename_records:
-                history.add(
-                    filename=os.path.basename(old_path),
-                    action="rename",
-                    source=old_path,
-                    destination=new_path,
-                    server_name=self.settings.config.current_server_id,
-                )
-
             self.refresh()
 
-    def _handle_convert_video(self, remote_path: str) -> None:
-        """Handle video conversion request — queue it for sequential processing."""
-        import os
+    def _handle_convert_video(self, remote_path: str, codec: str = "h264") -> None:
+        """Handle video conversion request — delegate to VideoConvertManager."""
+        if not hasattr(self, "_convert_manager"):
+            from src.widgets.video_convert_manager import VideoConvertManager
+
+            self._convert_manager = VideoConvertManager(self, self.settings)
+
+        self._convert_manager.request_conversion(remote_path, self.sftp, codec=codec)
+
+    def _show_convert_settings(self) -> None:
+        """Show the video conversion settings dialog."""
+        from src.views.dialogs.convert_settings_dialog import ConvertSettingsDialog
+
+        dialog = ConvertSettingsDialog(self)
+        dialog.exec()
+
+    def _show_media_info(self, remote_path: str, open_tab: str = "info") -> None:
+        """Show video metadata via ffprobe and allow editing tags."""
+        import shlex
+
+        from PySide6.QtWidgets import (
+            QDialog,
+            QGridLayout,
+            QLabel,
+            QLineEdit,
+            QPlainTextEdit,
+            QPushButton,
+            QTabWidget,
+            QVBoxLayout,
+            QWidget,
+        )
+
+        if not self.sftp:
+            return
+
+        try:
+            channel = self.sftp.get_channel()
+            if not channel:
+                return
+            transport = channel.get_transport()
+            if not transport:
+                return
+
+            # Run ffprobe to get full metadata
+            cmd = (
+                f"ffprobe -v quiet -print_format json -show_format -show_streams "
+                f"{shlex.quote(remote_path)}"
+            )
+            session = transport.open_session()
+            session.exec_command(cmd)
+
+            output = b""
+            while True:
+                chunk = session.recv(4096)
+                if not chunk:
+                    break
+                output += chunk
+            session.close()
+
+            raw_json = output.decode("utf-8", errors="ignore").strip()
+            if not raw_json:
+                logger.warn("Media Info: ffprobe returned no output")
+                return
+
+            import json
+
+            data = json.loads(raw_json)
+            fmt = data.get("format", {})
+            tags = fmt.get("tags", {})
+            filename = os.path.basename(remote_path)
+
+            # --- Build dialog ---
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Media Info — {filename}")
+            dialog.setMinimumSize(550, 500)
+
+            dlg_layout = QVBoxLayout(dialog)
+
+            tabs = QTabWidget()
+            dlg_layout.addWidget(tabs)
+
+            # === Tab 1: Info ===
+            info_widget = QWidget()
+            info_layout = QVBoxLayout(info_widget)
+            info_text = QPlainTextEdit()
+            info_text.setReadOnly(True)
+            info_text.setStyleSheet("font-family: monospace; font-size: 12px;")
+
+            lines = []
+            lines.append(f"File: {filename}")
+            lines.append(f"Format: {fmt.get('format_long_name', 'Unknown')}")
+
+            duration_secs = float(fmt.get("duration", 0))
+            if duration_secs > 0:
+                hours = int(duration_secs // 3600)
+                mins = int((duration_secs % 3600) // 60)
+                secs = int(duration_secs % 60)
+                lines.append(f"Duration: {hours:02d}:{mins:02d}:{secs:02d}")
+
+            size_bytes = int(fmt.get("size", 0))
+            if size_bytes > 0:
+                size_mb = size_bytes / (1024 * 1024)
+                lines.append(f"Size: {size_mb:.1f} MB")
+
+            bitrate = int(fmt.get("bit_rate", 0))
+            if bitrate > 0:
+                lines.append(f"Overall Bitrate: {bitrate // 1000} kbps")
+
+            lines.append("")
+
+            streams = data.get("streams", [])
+            for i, stream in enumerate(streams):
+                codec_type = stream.get("codec_type", "unknown")
+                codec_name = stream.get("codec_name", "unknown")
+                codec_long = stream.get("codec_long_name", "")
+
+                if codec_type == "video":
+                    width = stream.get("width", "?")
+                    height = stream.get("height", "?")
+                    fps_str = stream.get("r_frame_rate", "")
+                    fps = ""
+                    if fps_str and "/" in fps_str:
+                        num, den = fps_str.split("/")
+                        try:
+                            fps = f"{int(num) / int(den):.2f} fps"
+                        except (ValueError, ZeroDivisionError):
+                            fps = fps_str
+
+                    pix_fmt = stream.get("pix_fmt", "")
+                    profile = stream.get("profile", "")
+                    vbitrate = int(stream.get("bit_rate", 0))
+
+                    lines.append(f"━━━ Video Stream #{i} ━━━")
+                    lines.append(f"  Codec: {codec_name} ({codec_long})")
+                    if profile:
+                        lines.append(f"  Profile: {profile}")
+                    lines.append(f"  Resolution: {width}×{height}")
+                    if fps:
+                        lines.append(f"  Frame Rate: {fps}")
+                    if pix_fmt:
+                        lines.append(f"  Pixel Format: {pix_fmt}")
+                    if vbitrate > 0:
+                        lines.append(f"  Bitrate: {vbitrate // 1000} kbps")
+
+                elif codec_type == "audio":
+                    sample_rate = stream.get("sample_rate", "?")
+                    channels = stream.get("channels", "?")
+                    abitrate = int(stream.get("bit_rate", 0))
+                    lang = stream.get("tags", {}).get("language", "")
+
+                    lines.append(f"━━━ Audio Stream #{i} ━━━")
+                    lines.append(f"  Codec: {codec_name} ({codec_long})")
+                    lines.append(f"  Sample Rate: {sample_rate} Hz")
+                    lines.append(f"  Channels: {channels}")
+                    if abitrate > 0:
+                        lines.append(f"  Bitrate: {abitrate // 1000} kbps")
+                    if lang:
+                        lines.append(f"  Language: {lang}")
+
+                elif codec_type == "subtitle":
+                    lang = stream.get("tags", {}).get("language", "")
+                    lines.append(f"━━━ Subtitle Stream #{i} ━━━")
+                    lines.append(f"  Codec: {codec_name}")
+                    if lang:
+                        lines.append(f"  Language: {lang}")
+
+                lines.append("")
+
+            info_text.setPlainText("\n".join(lines))
+            info_layout.addWidget(info_text)
+            tabs.addTab(info_widget, "Info")
+
+            # === Tab 2: Tags (editable via NFO sidecar) ===
+            from PySide6.QtWidgets import QScrollArea
+
+            tags_scroll = QScrollArea()
+            tags_scroll.setWidgetResizable(True)
+            tags_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+            tags_widget = QWidget()
+            tags_layout = QVBoxLayout(tags_widget)
+
+            hint = QLabel(
+                "Metadata is saved as an .nfo file next to the video.\n"
+                "Jellyfin reads .nfo files automatically on library scan."
+            )
+            hint.setObjectName("secondary_label")
+            hint.setWordWrap(True)
+            tags_layout.addWidget(hint)
+
+            # --- Read existing NFO if it exists (priority over embedded tags) ---
+            nfo_path = os.path.splitext(remote_path)[0] + ".nfo"
+            nfo_data = {}
+            try:
+                sess = transport.open_session()
+                sess.exec_command(f"cat {shlex.quote(nfo_path)} 2>/dev/null")
+                nfo_content = b""
+                while True:
+                    chunk = sess.recv(4096)
+                    if not chunk:
+                        break
+                    nfo_content += chunk
+                sess.close()
+                if nfo_content.strip():
+                    import xml.etree.ElementTree as ET
+
+                    root = ET.fromstring(nfo_content.decode("utf-8", errors="ignore"))
+                    for elem in root:
+                        if elem.text:
+                            key = elem.tag.lower()
+                            # Accumulate multiple genre tags
+                            if key in nfo_data and key == "genre":
+                                nfo_data[key] += ";" + elem.text.strip()
+                            else:
+                                nfo_data[key] = elem.text.strip()
+            except Exception:
+                pass  # No NFO or can't read — use embedded tags
+
+            # Merge: NFO takes priority, then embedded tags
+            def _get_value(key: str) -> str:
+                # Map our key names to NFO element names
+                nfo_key_map = {
+                    "sort_name": "sorttitle",
+                    "show": "showtitle",
+                    "season_number": "season",
+                    "episode_sort": "episode",
+                    "date": "year",
+                    "album": "set",
+                    "description": "plot",
+                    "publisher": "studio",
+                }
+                nfo_key = nfo_key_map.get(key, key)
+                # Check NFO first
+                val = nfo_data.get(nfo_key, "") or nfo_data.get(key, "")
+                if val:
+                    return val
+                # Fall back to embedded tags
+                return tags.get(key, "") or tags.get(key.upper(), "") or ""
+
+            # Auto-populate title with filename if no title exists anywhere
+            auto_title = _get_value("title")
+            if not auto_title:
+                auto_title = os.path.splitext(filename)[0]
+
+            # Editable tag fields
+            tag_fields = {}
+            grid = QGridLayout()
+            grid.setSpacing(8)
+
+            # Common tags (always visible)
+            common_tags = [
+                ("title", "Title"),
+                ("sort_name", "Sort Title"),
+                ("artist", "Artist"),
+                ("director", "Director"),
+                ("album", "Album / Series"),
+                ("show", "Show Name"),
+                ("season_number", "Season"),
+                ("episode_sort", "Episode #"),
+                ("date", "Date / Year"),
+                ("genre", "Genre"),
+                ("description", "Description"),
+            ]
+
+            # Advanced tags (hidden by default)
+            advanced_tags = [
+                ("track", "Track Number"),
+                ("disc", "Disc Number"),
+                ("composer", "Composer"),
+                ("performer", "Performer"),
+                ("publisher", "Publisher / Studio"),
+                ("copyright", "Copyright"),
+                ("language", "Language"),
+                ("network", "Network"),
+                ("synopsis", "Synopsis"),
+                ("grouping", "Grouping"),
+                ("lyrics", "Lyrics"),
+                ("rating", "Rating"),
+                ("comment", "Comment"),
+                ("sort_artist", "Sort Artist"),
+                ("sort_album", "Sort Album"),
+                ("compilation", "Compilation"),
+                ("encoded_by", "Encoded By"),
+                ("url", "URL"),
+            ]
+
+            # Placeholder examples and tooltips
+            field_hints = {
+                "title": ("e.g., The Challenge", "Display name in Jellyfin."),
+                "sort_name": (
+                    "e.g., 01",
+                    "Controls sort order. Set to '01' to sort first.",
+                ),
+                "artist": ("e.g., Tony Horton", "Creator, performer, or main actor."),
+                "director": ("e.g., Christopher Nolan", "Director of the video."),
+                "album": ("e.g., P90X3", "Collection or series group."),
+                "show": ("e.g., P90X3", "TV show or series name."),
+                "season_number": ("e.g., 1", "Season or disc number."),
+                "episode_sort": ("e.g., 5", "Episode number for ordering."),
+                "date": ("e.g., 2014", "Year or full date (YYYY-MM-DD)."),
+                "genre": ("e.g., Fitness;Workout", "Use semicolons for multiple."),
+                "description": (
+                    "e.g., Full body strength workout",
+                    "Short summary or plot.",
+                ),
+                "track": ("e.g., 3", "Track number within an album/disc."),
+                "disc": ("e.g., 2", "Disc number in a multi-disc set."),
+                "composer": ("e.g., Hans Zimmer", "Music composer."),
+                "performer": ("e.g., Tony Horton", "Main performer or actor."),
+                "publisher": ("e.g., Beachbody", "Publisher, studio, or distributor."),
+                "copyright": ("e.g., © 2014 Beachbody", "Copyright notice."),
+                "language": ("e.g., eng, jpn", "Primary language (ISO 639 code)."),
+                "network": ("e.g., Netflix, HBO", "Network or streaming platform."),
+                "synopsis": ("e.g., A detailed plot summary...", "Full plot synopsis."),
+                "grouping": ("e.g., Phase 1", "Content grouping or phase."),
+                "lyrics": ("e.g., Song lyrics...", "Lyrics or transcript."),
+                "rating": ("e.g., TV-PG, PG-13", "Content rating."),
+                "comment": ("e.g., Ripped from DVD", "Freeform notes."),
+                "sort_artist": ("e.g., Horton, Tony", "Sort order for artist."),
+                "sort_album": ("e.g., P90X3 Season 1", "Sort order for album."),
+                "compilation": ("e.g., 1", "Set to 1 if part of a compilation."),
+                "encoded_by": ("e.g., HandBrake 1.6", "Encoding software."),
+                "url": ("e.g., https://...", "Related URL."),
+            }
+
+            row = 0
+            for key, label in common_tags:
+                value = auto_title if key == "title" else _get_value(key)
+                grid.addWidget(QLabel(label + ":"), row, 0)
+                field = QLineEdit(value)
+                h = field_hints.get(key)
+                if h:
+                    field.setPlaceholderText(h[0])
+                    field.setToolTip(h[1])
+                grid.addWidget(field, row, 1)
+                tag_fields[key] = field
+                row += 1
+
+            tags_layout.addLayout(grid)
+
+            # "Show More" expandable section
+            advanced_container = QWidget()
+            advanced_layout_inner = QVBoxLayout(advanced_container)
+            advanced_layout_inner.setContentsMargins(0, 0, 0, 0)
+            advanced_layout_inner.setSpacing(4)
+            advanced_container.setVisible(False)
+
+            advanced_grid = QGridLayout()
+            advanced_grid.setSpacing(8)
+            adv_row = 0
+
+            for key, label in advanced_tags:
+                value = _get_value(key)
+                advanced_grid.addWidget(QLabel(label + ":"), adv_row, 0)
+                field = QLineEdit(value)
+                h = field_hints.get(key)
+                if h:
+                    field.setPlaceholderText(h[0])
+                    field.setToolTip(h[1])
+                advanced_grid.addWidget(field, adv_row, 1)
+                tag_fields[key] = field
+                adv_row += 1
+
+            advanced_layout_inner.addLayout(advanced_grid)
+            tags_layout.addWidget(advanced_container)
+
+            show_more_btn = QPushButton("▶ Show All Tags")
+            show_more_btn.setObjectName("subtle_btn")
+            show_more_btn.setMaximumWidth(140)
+
+            def _toggle_advanced() -> None:
+                visible = not advanced_container.isVisible()
+                advanced_container.setVisible(visible)
+                show_more_btn.setText("▼ Show Less" if visible else "▶ Show All Tags")
+
+            show_more_btn.clicked.connect(_toggle_advanced)
+            tags_layout.addWidget(show_more_btn)
+
+            # Show any extra tags from NFO that aren't in our standard lists
+            all_known_keys = {k for k, _ in common_tags + advanced_tags}
+            # Also map NFO element names back to our keys
+            reverse_nfo_map = {
+                v: k
+                for k, v in {
+                    "sort_name": "sorttitle",
+                    "show": "showtitle",
+                    "season_number": "season",
+                    "episode_sort": "episode",
+                    "date": "year",
+                    "album": "set",
+                    "description": "plot",
+                    "publisher": "studio",
+                }.items()
+            }
+            all_nfo_known = set(reverse_nfo_map.keys()) | {
+                k for k, _ in common_tags + advanced_tags
+            }
+
+            extra_nfo_tags = {}
+            skip_nfo_keys = {"actor", "thumb", "fanart", "uniqueid", "fileinfo"}
+            for nfo_key, value in nfo_data.items():
+                if nfo_key in skip_nfo_keys:
+                    continue
+                # Check if this maps to a known field
+                mapped_key = reverse_nfo_map.get(nfo_key, nfo_key)
+                if mapped_key not in all_known_keys and nfo_key not in all_nfo_known:
+                    extra_nfo_tags[nfo_key] = value
+
+            if extra_nfo_tags:
+                for key, value in extra_nfo_tags.items():
+                    advanced_grid.addWidget(QLabel(f"{key}:"), adv_row, 0)
+                    field = QLineEdit(value)
+                    field.setPlaceholderText("(custom tag)")
+                    advanced_grid.addWidget(field, adv_row, 1)
+                    tag_fields[key] = field
+                    adv_row += 1
+                # Show advanced section if there are custom tags
+                advanced_container.setVisible(True)
+                show_more_btn.setText("▼ Show Less")
+
+            # Add custom tag button
+            def _add_custom_tag() -> None:
+                from PySide6.QtWidgets import QInputDialog
+
+                tag_name, ok = QInputDialog.getText(
+                    dialog,
+                    "Add Tag",
+                    "Tag name (e.g., 'composer', 'copyright', 'network'):",
+                )
+                if ok and tag_name.strip():
+                    tag_name = tag_name.strip().lower().replace(" ", "_")
+                    if tag_name in tag_fields:
+                        tag_fields[tag_name].setFocus()
+                        return
+                    nonlocal adv_row
+                    advanced_grid.addWidget(QLabel(f"{tag_name}:"), adv_row, 0)
+                    field = QLineEdit("")
+                    field.setPlaceholderText("(empty)")
+                    field.setFocus()
+                    advanced_grid.addWidget(field, adv_row, 1)
+                    tag_fields[tag_name] = field
+                    adv_row += 1
+                    advanced_container.setVisible(True)
+                    show_more_btn.setText("▼ Show Less")
+
+            add_tag_btn = QPushButton("+ Add Tag")
+            add_tag_btn.setToolTip("Add a custom metadata tag.")
+            add_tag_btn.setMaximumWidth(100)
+            add_tag_btn.clicked.connect(_add_custom_tag)
+            tags_layout.addWidget(add_tag_btn)
+
+            tags_layout.addStretch()
+
+            # Save button — writes .nfo file
+            save_btn = QPushButton("💾 Save")
+            save_btn.setToolTip(
+                "Saves metadata as an .nfo file next to the video.\n"
+                "Jellyfin reads this automatically. Instant, doesn't touch the video."
+            )
+
+            def _save_nfo() -> None:
+                # Map our field keys to Jellyfin NFO XML element names
+                key_to_nfo = {
+                    "title": "title",
+                    "sort_name": "sorttitle",
+                    "artist": "artist",
+                    "director": "director",
+                    "album": "set",
+                    "show": "showtitle",
+                    "season_number": "season",
+                    "episode_sort": "episode",
+                    "date": "year",
+                    "genre": "genre",
+                    "description": "plot",
+                    "track": "track",
+                    "disc": "disc",
+                    "composer": "composer",
+                    "performer": "actor",
+                    "publisher": "studio",
+                    "copyright": "copyright",
+                    "language": "language",
+                    "network": "network",
+                    "synopsis": "outline",
+                    "rating": "mpaa",
+                    "comment": "comment",
+                    "sort_artist": "sortartist",
+                    "sort_album": "sortset",
+                    "url": "website",
+                }
+
+                # Auto-detect NFO type from filled fields
+                has_season = bool(
+                    tag_fields.get("season_number", None)
+                    and tag_fields["season_number"].text().strip()
+                )
+                has_episode = bool(
+                    tag_fields.get("episode_sort", None)
+                    and tag_fields["episode_sort"].text().strip()
+                )
+                has_artist = bool(
+                    tag_fields.get("artist", None)
+                    and tag_fields["artist"].text().strip()
+                )
+                has_director = bool(
+                    tag_fields.get("director", None)
+                    and tag_fields["director"].text().strip()
+                )
+
+                if has_season or has_episode:
+                    root_tag = "episodedetails"
+                elif has_artist and not has_director:
+                    root_tag = "musicvideo"
+                else:
+                    root_tag = "movie"
+
+                # Build XML
+                lines = ['<?xml version="1.0" encoding="utf-8"?>', f"<{root_tag}>"]
+                for key, field in tag_fields.items():
+                    value = field.text().strip()
+                    if not value:
+                        continue
+                    nfo_tag = key_to_nfo.get(key, key)
+                    # Genre: split on semicolons into separate elements
+                    if key == "genre":
+                        for g in value.split(";"):
+                            g = g.strip()
+                            if g:
+                                lines.append(f"  <genre>{g}</genre>")
+                    # Skip people fields here — handled below as <actor> entries
+                    elif key in ("artist", "director", "performer", "composer"):
+                        # Still write the dedicated tag (e.g., <director>)
+                        value = (
+                            value.replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                        )
+                        lines.append(f"  <{nfo_tag}>{value}</{nfo_tag}>")
+                    else:
+                        # Escape XML special chars
+                        value = (
+                            value.replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                        )
+                        lines.append(f"  <{nfo_tag}>{value}</{nfo_tag}>")
+
+                # Auto-generate <actor> entries for Jellyfin's People section
+                people_roles = {
+                    "director": "Director",
+                    "artist": "Artist",
+                    "performer": "Actor",
+                    "composer": "Composer",
+                }
+                for key, role in people_roles.items():
+                    field = tag_fields.get(key)
+                    if not field:
+                        continue
+                    value = field.text().strip()
+                    if not value:
+                        continue
+                    # Support multiple names separated by semicolons
+                    for name in value.split(";"):
+                        name = name.strip()
+                        if not name:
+                            continue
+                        safe_name = (
+                            name.replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                        )
+                        lines.append("  <actor>")
+                        lines.append(f"    <name>{safe_name}</name>")
+                        lines.append(f"    <role>{role}</role>")
+                        lines.append("  </actor>")
+
+                lines.append(f"</{root_tag}>")
+                nfo_content = "\n".join(lines) + "\n"
+
+                # Write NFO file directly via SFTP (instant, no shell overhead)
+                try:
+                    with self.sftp.open(nfo_path, "w") as f:
+                        f.write(nfo_content.encode("utf-8"))
+
+                    logger.success(f"NFO saved: {os.path.basename(nfo_path)}")
+                    dialog.accept()
+
+                    # Add the NFO file to the tree directly (no full refresh needed)
+                    nfo_filename = os.path.basename(nfo_path)
+                    if not self.settings.config.hide_nfo_files:
+                        # Check if it's already in the tree
+                        exists = False
+                        for i in range(self.tree_widget.topLevelItemCount()):
+                            if self.tree_widget.topLevelItem(i).text(0) == nfo_filename:
+                                exists = True
+                                break
+                        if not exists:
+                            from src.widgets.file_explorer_widget import (
+                                SortableTreeWidgetItem,
+                                _get_file_icon,
+                            )
+
+                            size_str = f"{len(nfo_content)} B"
+                            item = SortableTreeWidgetItem([nfo_filename, size_str])
+                            item.setIcon(0, _get_file_icon(False, nfo_filename))
+                            item.setData(1, Qt.ItemDataRole.UserRole, len(nfo_content))
+                            self.tree_widget.addTopLevelItem(item)
+                except Exception as e:
+                    logger.error(f"NFO write error: {e}")
+                    from PySide6.QtWidgets import QMessageBox
+
+                    QMessageBox.warning(
+                        dialog,
+                        "Save Failed",
+                        f"Failed to write .nfo file:\n{e}",
+                    )
+
+            save_btn.clicked.connect(_save_nfo)
+            tags_layout.addWidget(save_btn)
+
+            tags_scroll.setWidget(tags_widget)
+            tabs.addTab(tags_scroll, "Tags")
+
+            # Open on requested tab
+            tabs.setCurrentIndex(1 if open_tab == "tags" else 0)
+
+            dialog.exec()
+
+        except Exception as e:
+            logger.error(f"Media Info: Failed to get metadata: {e}")
+
+    def _quick_fix_video(self, remote_path: str) -> None:
+        """Show Quick Fix dialog and apply selected fixes (no re-encoding)."""
+        import shlex
 
         from PySide6.QtWidgets import QMessageBox
 
-        from src.services.adb_client import ADBClient
-        from src.services.ffmpeg_service import check_ffmpeg_installed
-        from src.services.ios_client import IOSClient
+        from src.views.dialogs.quick_fix_dialog import QuickFixDialog
 
-        if isinstance(self.sftp, (ADBClient, IOSClient)):
-            QMessageBox.warning(
-                self,
-                "Not Available",
-                "Video conversion is only available for SSH servers.",
-            )
+        if not self.sftp:
             return
 
-        # Verify we have a working SSH transport
+        filename = os.path.basename(remote_path)
+        ext = os.path.splitext(remote_path)[1]
+
+        dialog = QuickFixDialog(self, filename, ext)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        opts = dialog.options
+
         try:
             channel = self.sftp.get_channel()
             if not channel or not channel.get_transport():
-                raise RuntimeError("No transport")
+                QMessageBox.warning(self, "Error", "No SSH connection available.")
+                return
+            transport = channel.get_transport()
         except Exception:
-            QMessageBox.warning(
-                self,
-                "Connection Error",
-                "Cannot access SSH connection for remote commands.",
-            )
             return
 
-        # Check ffmpeg is installed
-        if not check_ffmpeg_installed(self.sftp):
-            QMessageBox.warning(
-                self,
-                "ffmpeg Not Found",
-                "ffmpeg is not installed on the remote server.\n\n"
-                "Install it with:\n"
-                "  sudo apt install ffmpeg",
+        # Determine output extension
+        base = os.path.splitext(remote_path)[0]
+        out_ext = ".mp4" if opts.to_mp4 else ext
+
+        # Build ffmpeg command
+        tmp_path = f"{base}_fixed{out_ext}"
+        cmd_parts = ["ffmpeg", "-y"]
+
+        if opts.fix_timestamps:
+            cmd_parts.extend(["-fflags", "+genpts"])
+
+        cmd_parts.extend(["-i", shlex.quote(remote_path)])
+        cmd_parts.extend(["-c", "copy"])
+
+        if opts.strip_subtitles:
+            cmd_parts.append("-sn")
+
+        if opts.to_mp4:
+            cmd_parts.extend(["-movflags", "+faststart"])
+
+        cmd_parts.append(shlex.quote(tmp_path))
+        cmd_parts.append("2>/dev/null")
+
+        cmd = " ".join(cmd_parts)
+
+        # Build replace command
+        if out_ext.lower() != ext.lower():
+            final_path = f"{base}{out_ext}"
+            full_cmd = (
+                f"{cmd} && rm -f {shlex.quote(remote_path)} "
+                f"&& mv {shlex.quote(tmp_path)} {shlex.quote(final_path)}"
             )
-            return
+        else:
+            full_cmd = f"{cmd} && mv {shlex.quote(tmp_path)} {shlex.quote(remote_path)}"
 
-        # Confirm
-        filename = os.path.basename(remote_path)
-        reply = QMessageBox.question(
-            self,
-            "Convert Video",
-            f"Convert '{filename}' to H.264?\n\n"
-            "This runs ffmpeg on the server. The original file will be "
-            "replaced when conversion completes.\n\n"
-            "This may take several minutes for large files.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
+        # Execute
+        actions = []
+        if opts.to_mp4:
+            actions.append("container → MP4")
+        if opts.fix_timestamps:
+            actions.append("fix timestamps")
+        if opts.strip_subtitles:
+            actions.append("remove subtitles")
+        logger.info(f"Quick Fix: {filename} ({', '.join(actions)})")
 
-        # Add to conversion queue
-        if not hasattr(self, "_convert_queue"):
-            self._convert_queue: list = []
-            self._convert_running = False
+        try:
+            session = transport.open_session()
+            session.exec_command(full_cmd)
+            exit_code = session.recv_exit_status()
+            session.close()
 
-        # Add to activity panel
-        main_window = self.window()
-        queue_index = -1
-        if hasattr(main_window, "transfer_queue"):
-            queue = main_window.transfer_queue
-            queue_index = queue.add_transfer(
-                f"🔄 {filename}", 0, os.path.dirname(remote_path)
-            )
-
-        self._convert_queue.append((remote_path, queue_index))
-        logger.info(f"ffmpeg: Queued {filename} for conversion")
-
-        # Start processing if not already running
-        if not self._convert_running:
-            self._process_next_conversion()
-
-    def _process_next_conversion(self) -> None:
-        """Process the next video in the conversion queue."""
-        if not hasattr(self, "_convert_queue") or not self._convert_queue:
-            self._convert_running = False
-            return
-
-        self._convert_running = True
-        remote_path, queue_index = self._convert_queue.pop(0)
-
-        # Mark as in-progress in the activity panel
-        main_window = self.window()
-        if hasattr(main_window, "transfer_queue") and queue_index >= 0:
-            main_window.transfer_queue.set_in_progress(queue_index)
-        self._current_convert_index = queue_index
-
-        # Run in background thread
-        from PySide6.QtCore import QThread
-
-        self._convert_thread = QThread(self)
-        self._convert_worker = _ConvertWorker(
-            host=self.settings.host,
-            username=self.settings.username,
-            key_path=self.settings.ssh_key_path,
-            port=self.settings.ssh_port,
-            remote_path=remote_path,
-        )
-        self._convert_worker.moveToThread(self._convert_thread)
-
-        self._convert_thread.started.connect(self._convert_worker.run)
-        self._convert_worker.finished.connect(self._on_convert_finished)
-        self._convert_worker.finished.connect(self._convert_thread.quit)
-        self._convert_worker.error.connect(self._on_convert_error)
-        self._convert_worker.error.connect(self._convert_thread.quit)
-        self._convert_worker.progress.connect(self._on_convert_progress)
-
-        self._convert_thread.start()
-
-    def _on_convert_progress(self, pct: int) -> None:
-        """Update progress for video conversion."""
-        main_window = self.window()
-        if hasattr(main_window, "transfer_queue") and hasattr(
-            self, "_current_convert_index"
-        ):
-            queue = main_window.transfer_queue
-            idx = self._current_convert_index
-            if 0 <= idx < len(queue._items):
-                queue._items[idx].total_bytes = 1000
-                queue._items[idx].transferred_bytes = pct * 10
-                queue.update_progress(idx, pct * 10, 1000)
-
-    def _on_convert_finished(self) -> None:
-        """Handle successful video conversion."""
-        import os
-
-        # Mark queue item as complete
-        main_window = self.window()
-        if hasattr(main_window, "transfer_queue") and hasattr(
-            self, "_current_convert_index"
-        ):
-            main_window.transfer_queue.set_completed(self._current_convert_index)
-
-        # Record in activity history
-        if hasattr(self, "_convert_worker") and self._convert_worker:
-            remote_path = self._convert_worker.remote_path
-            from src.services.activity_history_service import ActivityHistoryService
-
-            history = ActivityHistoryService()
-            history.add(
-                filename=os.path.basename(remote_path),
-                action="convert",
-                source=remote_path,
-                destination=remote_path.replace(
-                    os.path.splitext(remote_path)[1], ".mp4"
-                ),
-                server_name=self.settings.config.current_server_id,
-            )
-
-        self.refresh()
-        if hasattr(self, "_convert_thread") and self._convert_thread:
-            self._convert_thread.deleteLater()
-            self._convert_thread = None
-        if hasattr(self, "_convert_worker") and self._convert_worker:
-            self._convert_worker.deleteLater()
-            self._convert_worker = None
-
-        # Process next in queue
-        self._process_next_conversion()
-
-    def _on_convert_error(self, error_msg: str) -> None:
-        """Handle failed video conversion."""
-        # Mark queue item as failed
-        main_window = self.window()
-        if hasattr(main_window, "transfer_queue") and hasattr(
-            self, "_current_convert_index"
-        ):
-            main_window.transfer_queue.set_failed(
-                self._current_convert_index, error_msg[:80]
-            )
-
-        logger.error(f"ffmpeg: {error_msg}")
-
-        if hasattr(self, "_convert_thread") and self._convert_thread:
-            self._convert_thread.deleteLater()
-            self._convert_thread = None
-        if hasattr(self, "_convert_worker") and self._convert_worker:
-            self._convert_worker.deleteLater()
-            self._convert_worker = None
-
-        # Process next in queue (don't stop the whole queue for one failure)
-        self._process_next_conversion()
+            if exit_code == 0:
+                logger.success(f"Quick Fix complete: {filename}")
+                QMessageBox.information(
+                    self,
+                    "Fix Applied",
+                    f"'{filename}' fixed successfully.\n\n"
+                    f"Applied: {', '.join(actions)}.\n"
+                    "No re-encoding — video quality unchanged.",
+                )
+                self.refresh()
+            else:
+                logger.error(f"Quick Fix failed: exit code {exit_code}")
+                QMessageBox.warning(
+                    self,
+                    "Fix Failed",
+                    f"ffmpeg exited with code {exit_code}.\n"
+                    "The original file was not modified.",
+                )
+        except Exception as e:
+            logger.error(f"Quick Fix error: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to fix video:\n{e}")
 
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation
     # ------------------------------------------------------------------
-    def refresh(self, path: str | None = None) -> None:
+    def refresh(self, path: Optional[str] = None) -> None:
         if path is not None:
             self.current_path = path
 
@@ -1617,18 +1784,27 @@ class FileExplorerWidget(QWidget):
         if not self.sftp:
             return
 
-        # Cancel any existing load — disconnect signals and let it finish silently
+        # Cancel any existing load — wait for it to finish to avoid
+        # overlapping SFTP calls on the same channel (causes freezes)
         if self._loader_thread is not None:
             if self._loader_thread.isRunning():
-                # Disconnect all signals so the old worker doesn't update UI
                 try:
                     self._loader_worker.finished.disconnect()  # type: ignore
                     self._loader_worker.error.disconnect()  # type: ignore
+                    if hasattr(self._loader_worker, "batch_ready"):
+                        self._loader_worker.batch_ready.disconnect()  # type: ignore
                 except (RuntimeError, TypeError):
                     pass
-                # Let the thread finish on its own and clean up
                 self._loader_thread.quit()
-                self._loader_thread.finished.connect(self._loader_thread.deleteLater)
+                # Wait briefly — if SFTP call is in-flight, let it finish
+                self._loader_thread.wait(500)
+                if self._loader_thread.isRunning():
+                    # Still running — detach and let it die on its own
+                    self._loader_thread.finished.connect(
+                        self._loader_thread.deleteLater
+                    )
+                else:
+                    self._loader_thread.deleteLater()
             else:
                 self._loader_thread.deleteLater()
             self._loader_thread = None
@@ -1642,13 +1818,15 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.setSortingEnabled(False)
         self._spinner.resize(self.tree_widget.size())
         self._spinner.start()
+        self.back_btn.setEnabled(False)
 
         # Create worker and thread
         self._loader_thread = QThread(self)  # Parent to prevent GC
         self._loader_worker = DirectoryLoader(
             path=self.current_path,
             is_remote=self.is_remote,
-            sftp=self.sftp,
+            sftp=self._sftp_background
+            or self.sftp,  # Use dedicated channel if available
             settings=self.settings,
         )
         self._loader_worker.moveToThread(self._loader_thread)
@@ -1665,8 +1843,9 @@ class FileExplorerWidget(QWidget):
 
     def _on_batch_ready(self, batch: list) -> None:
         """Handle a batch of items arriving progressively."""
-        # Stop spinner on first batch
+        # Stop spinner on first batch and re-enable navigation
         self._spinner.stop()
+        self.back_btn.setEnabled(True)
 
         for entry, is_dir, size_str, size_bytes in batch:
             icon = _get_file_icon(is_dir, entry)
@@ -1683,6 +1862,7 @@ class FileExplorerWidget(QWidget):
     def _on_load_finished(self, results: list) -> None:
         """Handle background load completion."""
         self._spinner.stop()
+        self.back_btn.setEnabled(True)
 
         # Re-enable sorting now that all items are loaded
         self.tree_widget.setSortingEnabled(True)
@@ -1730,6 +1910,7 @@ class FileExplorerWidget(QWidget):
     def _on_load_error(self, error_msg: str) -> None:
         """Handle background load error."""
         self._spinner.stop()
+        self.back_btn.setEnabled(True)
         self.tree_widget.clear()
 
         error_item = QTreeWidgetItem([f"⚠️ Error loading directory: {error_msg}", ""])
@@ -1750,6 +1931,7 @@ class FileExplorerWidget(QWidget):
                     e.startswith(".")
                     or e.startswith("._")
                     or e in self.settings.skip_files
+                    or (self.settings.config.hide_nfo_files and e.endswith(".nfo"))
                 )
             ]
             filtered_entries.sort(key=lambda s: s.lower())
@@ -1816,27 +1998,89 @@ class FileExplorerWidget(QWidget):
     def go_back(self) -> None:
         if self.current_path == self.root_path:
             return
+        if not self.back_btn.isEnabled():
+            return  # Already loading
         self.current_path = os.path.dirname(self.current_path)
+        self._detail_panel.clear()
         self.refresh()
         self.directory_changed.emit(self.current_path)
 
     def set_sftp(self, sftp: Optional[SFTPClient]) -> None:
         self.sftp = sftp
+        # Detail panel gets the metadata channel if available (from connection manager)
+        # Falls back to the main sftp if not (ADB/iOS connections)
+        self._detail_panel.set_sftp(sftp)
+
+    def set_sftp_background(self, sftp: Optional[SFTPClient]) -> None:
+        """Set dedicated SFTP channel for background operations (dir loading, disk usage)."""
+        self._sftp_background = sftp
 
     def _on_item_selected(self) -> None:
         items = self.tree_widget.selectedItems()
         if not items:
             self.item_selected.emit("")
+            self._detail_panel.clear()
             return
         # For multi-select, emit the first selected item (or could emit all)
-        entry = items[0].text(0)  # Get name from first column
+        item = items[0]
+        entry = item.text(0)  # Get name from first column
         full_path = os.path.join(self.current_path, entry)
         self.item_selected.emit(full_path)
+
+        # Debounce detail panel: wait 300ms before fetching
+        # (avoids wasting network calls when scrolling through files)
+        if self._detail_visible:
+            if not hasattr(self, "_detail_timer"):
+                from PySide6.QtCore import QTimer
+
+                self._detail_timer = QTimer(self)
+                self._detail_timer.setSingleShot(True)
+                self._detail_timer.timeout.connect(self._update_detail_panel)
+
+            self._pending_detail_path = full_path
+            self._pending_detail_size = item.text(1) if item.columnCount() > 1 else ""
+            self._detail_timer.start(300)
+
+    def _update_detail_panel(self) -> None:
+        """Called after 300ms debounce — show detail panel for selected file."""
+        path = getattr(self, "_pending_detail_path", "")
+        size_str = getattr(self, "_pending_detail_size", "")
+        if not path:
+            return
+
+        entry = os.path.basename(path)
+
+        # Skip folders entirely (no network calls)
+        is_dir = False
+        if self.is_remote:
+            # Check from tree item data or cache
+            size_data = None
+            for i in range(self.tree_widget.topLevelItemCount()):
+                it = self.tree_widget.topLevelItem(i)
+                if it and it.text(0) == entry:
+                    size_data = it.data(1, Qt.ItemDataRole.UserRole)
+                    break
+            is_dir = size_data is not None and size_data < 0
+        else:
+            is_dir = os.path.isdir(path)
+
+        if is_dir:
+            # Just show folder name, no network calls
+            self._detail_panel.show_folder(entry)
+        else:
+            self._detail_panel.show_file(path, size_str)
 
     def show_search(self) -> None:
         """Focus the search bar."""
         self._search_bar.setFocus()
         self._search_bar.selectAll()
+
+    def toggle_detail_panel(self) -> None:
+        """Show or hide the detail panel."""
+        self._detail_visible = not self._detail_visible
+        self._detail_panel.setVisible(self._detail_visible)
+        if not self._detail_visible:
+            self._detail_panel.clear()
 
     def hide_search(self) -> None:
         """Clear the search filter."""
@@ -1907,60 +2151,7 @@ class FileExplorerWidget(QWidget):
         self._loader_thread = QThread(self)
         self._search_query = query
 
-        class SearchWorker(QObject):
-            finished = Signal(list)
-            error = Signal(str)
-
-            def __init__(
-                self, sftp: object, base_path: str, query: str, max_depth: int = 3
-            ) -> None:
-                super().__init__()
-                self.sftp = sftp
-                self.base_path = base_path
-                self.query = query
-                self.max_depth = max_depth
-
-            def run(self) -> None:
-                try:
-                    results = []
-                    self._search_dir(self.base_path, results, 0)
-                    self.finished.emit(results)
-                except Exception as e:
-                    self.error.emit(str(e))
-
-            def _search_dir(self, path: str, results: list, depth: int) -> None:
-                if depth > self.max_depth:
-                    return
-                try:
-                    entries = self.sftp.listdir_attr(path)
-                    for attr in entries:
-                        name = attr.filename
-                        if name.startswith(".") or name.startswith("._"):
-                            continue
-                        full_path = f"{path}/{name}"
-                        is_dir = attr.st_mode is not None and S_ISDIR(attr.st_mode)
-
-                        if self.query in name.lower():
-                            rel = os.path.relpath(full_path, self.base_path)
-                            size_str = (
-                                "—" if is_dir else self._fmt_size(attr.st_size or 0)
-                            )
-                            results.append((rel, is_dir, size_str))
-
-                        if is_dir:
-                            self._search_dir(full_path, results, depth + 1)
-                except Exception:
-                    pass
-
-            def _fmt_size(self, size_bytes: int) -> str:
-                if size_bytes < 1024:
-                    return f"{size_bytes} B"
-                elif size_bytes < 1024 * 1024:
-                    return f"{size_bytes / 1024:.1f} KB"
-                elif size_bytes < 1024 * 1024 * 1024:
-                    return f"{size_bytes / (1024 * 1024):.1f} MB"
-                else:
-                    return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+        from src.workers.search_worker import SearchWorker
 
         self._loader_worker = SearchWorker(self.sftp, self.current_path, query)  # type: ignore
         self._loader_worker.moveToThread(self._loader_thread)  # type: ignore
@@ -2038,92 +2229,28 @@ class FileExplorerWidget(QWidget):
             self.tree_widget.addTopLevelItem(item)
 
     def _start_inline_rename(self, item: QTreeWidgetItem, column: int) -> None:
-        """Start inline editing using a QLineEdit overlay."""
-        self._renaming_item = item
-        self._renaming_old_name = item.text(0)
+        """Start inline editing using InlineRenameEditor."""
+        if not hasattr(self, "_rename_editor_widget"):
+            from src.widgets.inline_rename_editor import InlineRenameEditor
+
+            self._rename_editor_widget = InlineRenameEditor(
+                tree_widget=self.tree_widget,
+                settings=self.settings,
+                is_remote=self.is_remote,
+                sftp=self.sftp,
+                get_current_path=lambda: self.current_path,
+            )
+
+        self._rename_editor_widget._is_remote = self.is_remote
+        self._rename_editor_widget._sftp = self.sftp
+        self._rename_editor_widget.start(item, column)
         self._rename_in_progress = True
-
-        # Get the item's visual rect for column 0
-        rect = self.tree_widget.visualItemRect(item)
-        # Adjust for header height
-        header_height = self.tree_widget.header().height()
-
-        # Create a QLineEdit overlay
-        from PySide6.QtWidgets import QLineEdit
-
-        self._rename_editor = QLineEdit(self.tree_widget)
-        self._rename_editor.setText(item.text(0))
-        self._rename_editor.selectAll()
-        self._rename_editor.setGeometry(
-            rect.x() + 24,  # offset for icon
-            rect.y() + header_height,
-            rect.width() - 24,
-            rect.height(),
-        )
-        self._rename_editor.show()
-        self._rename_editor.setFocus()
-
-        # Connect signals
-        self._rename_editor.returnPressed.connect(self._commit_rename)
-        self._rename_editor.editingFinished.connect(self._commit_rename)
 
     def _commit_rename(self) -> None:
         """Commit the inline rename."""
-        if not self._rename_in_progress:
-            return
+        if hasattr(self, "_rename_editor_widget"):
+            self._rename_editor_widget.commit()
         self._rename_in_progress = False
-
-        editor = self._rename_editor
-        item = self._renaming_item
-        old_name = self._renaming_old_name
-
-        new_name = editor.text().strip() if editor else ""
-
-        # Clean up editor
-        if editor:
-            editor.hide()
-            editor.deleteLater()
-            self._rename_editor = None
-        self._renaming_item = None
-
-        # If name didn't change or is empty, do nothing
-        if not new_name or new_name == old_name:
-            return
-
-        # Do the rename
-        old_path = os.path.join(self.current_path, old_name)
-        new_path = os.path.join(self.current_path, new_name)
-
-        try:
-            if self.is_remote:
-                if self.sftp:
-                    self.sftp.rename(old_path, new_path)
-            else:
-                os.rename(old_path, new_path)
-
-            # Update the item text directly
-            self.tree_widget.blockSignals(True)
-            item.setText(0, new_name)  # type: ignore
-            self.tree_widget.blockSignals(False)
-            logger.success(f"Renamed: {old_name} → {new_name}")
-
-            # Record in history
-            from src.services.activity_history_service import ActivityHistoryService
-
-            history = ActivityHistoryService()
-            history.add(
-                filename=old_name,
-                action="rename",
-                source=old_path,
-                destination=new_path,
-                server_name=(
-                    self.settings.config.current_server_id
-                    if hasattr(self.settings, "config")
-                    else ""
-                ),
-            )
-        except Exception as e:
-            logger.error(f"Rename failed: {e}")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -2232,60 +2359,28 @@ class FileExplorerWidget(QWidget):
             return None
 
         # Don't start another disk usage check if one is running
-        if hasattr(self, "_disk_thread") and self._disk_thread and self._disk_thread.isRunning():
+        if (
+            hasattr(self, "_disk_thread")
+            and self._disk_thread
+            and self._disk_thread.isRunning()
+        ):
             return None
 
-        from PySide6.QtCore import QObject, QThread, Signal
-
-        class _DiskUsageWorker(QObject):
-            finished = Signal(int, int)  # used_bytes, total_bytes
-            error = Signal()
-
-            def __init__(self, sftp: object, path: str) -> None:
-                super().__init__()
-                self._sftp = sftp
-                self._path = path
-
-            def run(self) -> None:
-                try:
-                    channel = self._sftp.get_channel()
-                    if not channel:
-                        self.error.emit()
-                        return
-                    transport = channel.get_transport()
-                    if not transport:
-                        self.error.emit()
-                        return
-
-                    session = transport.open_session()
-                    session.exec_command(
-                        f"df -B1 {shlex.quote(self._path)} | tail -1"
-                    )
-                    output = session.recv(1024).decode("utf-8").strip()
-                    session.close()
-
-                    if not output:
-                        self.error.emit()
-                        return
-
-                    parts = output.split()
-                    if len(parts) < 4:
-                        self.error.emit()
-                        return
-
-                    total_bytes = int(parts[1])
-                    used_bytes = int(parts[2])
-                    self.finished.emit(used_bytes, total_bytes)
-                except Exception:
-                    self.error.emit()
+        from src.workers.disk_usage_worker import DiskUsageWorker
 
         self._disk_thread = QThread(self)
-        self._disk_worker = _DiskUsageWorker(self.sftp, self.current_path)
+        self._disk_worker = DiskUsageWorker(
+            self._sftp_background or self.sftp, self.current_path
+        )
         self._disk_worker.moveToThread(self._disk_thread)
 
         self._disk_thread.started.connect(self._disk_worker.run)
-        self._disk_worker.finished.connect(self._on_disk_usage_ready)
-        self._disk_worker.error.connect(self._on_disk_usage_error)
+        self._disk_worker.finished.connect(
+            self._on_disk_usage_ready, Qt.ConnectionType.QueuedConnection
+        )
+        self._disk_worker.error.connect(
+            self._on_disk_usage_error, Qt.ConnectionType.QueuedConnection
+        )
         self._disk_worker.finished.connect(self._disk_thread.quit)
         self._disk_worker.error.connect(self._disk_thread.quit)
         self._disk_thread.finished.connect(self._cleanup_disk_thread)
@@ -2314,9 +2409,7 @@ class FileExplorerWidget(QWidget):
             color = "#0a84ff"  # Blue
 
         app = QApplication.instance()
-        is_light = (
-            app is not None and app.property("filesling_theme") == "light"
-        )
+        is_light = app is not None and app.property("filesling_theme") == "light"
         background = "#e8e8ed" if is_light else "#2b2c30"
         border = "#d2d2d7" if is_light else "#3d3e44"
         self._disk_bar.setStyleSheet(f"""
