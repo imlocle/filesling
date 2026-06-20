@@ -10,7 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 from src.controllers.download_controller import (
     DownloadController,

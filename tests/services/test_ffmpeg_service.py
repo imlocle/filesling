@@ -4,7 +4,7 @@ Unit tests for ffmpeg_service.
 Tests video detection, duration parsing, ffmpeg checks, and transport resolution.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

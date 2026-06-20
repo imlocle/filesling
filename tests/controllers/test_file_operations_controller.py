@@ -7,15 +7,12 @@ Tests delete, move, and create_folder logic with mocked views and SFTP.
 from __future__ import annotations
 
 import os
-import shutil
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from src.controllers.file_operations_controller import FileOperationsController
-from src.models.errors import ConnectionLostError, FileDeletionError
-
-from PySide6.QtWidgets import QMessageBox
 
 
 # ---------------------------------------------------------------------------

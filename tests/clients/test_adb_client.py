@@ -4,7 +4,6 @@ Unit tests for ADBClient.
 Mocks subprocess calls to test the client logic without needing a real device.
 """
 
-import os
 import stat
 import subprocess
 from unittest.mock import MagicMock, patch

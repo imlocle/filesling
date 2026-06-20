@@ -6,8 +6,6 @@ Verifies that the protocol is properly defined and can be used for type checking
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from src.clients.device_client import DeviceClient
 
 

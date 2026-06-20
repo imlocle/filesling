@@ -7,10 +7,7 @@ Tests crash log writing, detection, and cleanup without showing dialogs.
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from src.utils.crash_handler import (
-    CRASH_LOG_PATH,
     check_previous_crash,
     clear_crash_log,
     get_previous_crash_report,

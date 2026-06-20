@@ -26,13 +26,15 @@ class TestStorePassword:
         assert mock_run.call_count == 1  # delete
         assert mock_popen.call_count == 1  # add (via Popen)
 
+    @patch("src.services.keychain_service.subprocess.Popen")
     @patch("src.services.keychain_service.subprocess.run")
-    def test_store_failure(self, mock_run):
-        # First call (delete) succeeds, second (add) fails
-        mock_run.side_effect = [
-            MagicMock(returncode=0),
-            MagicMock(returncode=1, stderr="error"),
-        ]
+    def test_store_failure(self, mock_run, mock_popen):
+        # Delete succeeds, but add (via Popen) fails
+        mock_run.return_value = MagicMock(returncode=0)
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = ("", "keychain error")
+        mock_proc.returncode = 1
+        mock_popen.return_value = mock_proc
         result = store_password("user@host", "secret123")
         assert result is False
 

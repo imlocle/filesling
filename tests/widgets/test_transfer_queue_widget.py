@@ -5,7 +5,6 @@ Tests the TransferItem model and queue logic.
 """
 
 import time
-from unittest.mock import patch
 
 import pytest
 from PySide6.QtWidgets import QApplication

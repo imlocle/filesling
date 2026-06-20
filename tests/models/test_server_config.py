@@ -6,8 +6,6 @@ Tests construction, from_dict/to_dict serialization, properties, and edge cases.
 
 from src.models.server_config import ServerConfig
 from src.utils.constants import (
-    CONN_TYPE_ADB,
-    CONN_TYPE_IOS,
     CONN_TYPE_SSH,
     DEFAULT_ADB_BASE_DIR,
     DEFAULT_REMOTE_BASE_DIR,

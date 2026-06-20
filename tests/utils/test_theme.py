@@ -4,8 +4,6 @@ Unit tests for utils/theme.py.
 Tests theme resolution and stylesheet application.
 """
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 from PySide6.QtWidgets import QApplication
 

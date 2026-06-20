@@ -296,6 +296,3 @@ class TestInitialPath:
         mock_settings.get_default_bookmark.return_value = None
         result = controller._get_initial_path("/mnt/external")
         assert result == "/mnt/external"
-
-
-from PySide6.QtWidgets import QMessageBox

@@ -4,8 +4,7 @@ Unit tests for DownloadWorker.
 Tests download logic with mocked SFTP connections.
 """
 
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtWidgets import QApplication
