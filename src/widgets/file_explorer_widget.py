@@ -926,6 +926,19 @@ class FileExplorerWidget(QWidget):
         download_action = menu.addAction(f"⬇️ Download All ({count} items)")
         move_action = menu.addAction(f"↔️ Move All ({count} items)")
         rename_action = menu.addAction(f"✏️ Batch Rename ({count} items)")
+
+        # Batch metadata option (only for video files on SSH connections)
+        batch_metadata_action = None
+        if self.is_remote and self.sftp:
+            from src.services.ffmpeg_service import is_video_file
+
+            video_paths = [p for p in paths if is_video_file(os.path.basename(p))]
+            if video_paths:
+                menu.addSeparator()
+                batch_metadata_action = menu.addAction(
+                    f"✏️ Edit Metadata ({len(video_paths)} videos)"
+                )
+
         menu.addSeparator()
         delete_action = menu.addAction(f"🗑️ Delete All ({count} items)")
 
@@ -939,6 +952,8 @@ class FileExplorerWidget(QWidget):
             self._handle_batch_rename(paths)
         elif action == delete_action:
             self.files_delete_requested.emit(paths)
+        elif batch_metadata_action and action == batch_metadata_action:
+            self._handle_batch_metadata(video_paths)
 
     def prompt_rename(self, old_path: str) -> Optional[str]:
         basename = os.path.basename(old_path)
@@ -1026,6 +1041,18 @@ class FileExplorerWidget(QWidget):
             settings=self.settings,
         )
         if renamed > 0:
+            self.refresh()
+
+    def _handle_batch_metadata(self, video_paths: List[str]) -> None:
+        """Handle batch metadata edit — show dialog and write NFOs."""
+        from src.views.dialogs.batch_metadata_dialog import BatchMetadataDialog
+
+        dialog = BatchMetadataDialog(
+            parent=self,
+            remote_paths=video_paths,
+            sftp=self.sftp,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
 
     def _handle_convert_video(self, remote_path: str, codec: str = "h264") -> None:
