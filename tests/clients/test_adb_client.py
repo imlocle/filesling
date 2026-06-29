@@ -19,7 +19,6 @@ from src.clients.adb_client import (
     get_connected_devices,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -28,7 +27,9 @@ from src.clients.adb_client import (
 @pytest.fixture
 def mock_adb_path():
     """Mock get_adb_path so ADBClient can be instantiated."""
-    with patch("src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"):
+    with patch(
+        "src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"
+    ):
         yield
 
 
@@ -69,7 +70,9 @@ class TestADBClientInit:
 class TestADBClientRun:
     def test_run_success(self, client):
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="output\n", stderr="")
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="output\n", stderr=""
+            )
             result = client._run(["devices"])
             assert result == "output\n"
             mock_run.assert_called_once_with(
@@ -81,7 +84,9 @@ class TestADBClientRun:
 
     def test_run_error(self, client):
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="device offline")
+            mock_run.return_value = MagicMock(
+                returncode=1, stdout="", stderr="device offline"
+            )
             with pytest.raises(IOError, match="adb error: device offline"):
                 client._run(["shell", "ls"])
 
@@ -198,9 +203,7 @@ class TestADBClientFileOps:
 
     def test_rmdir_directory(self, client):
         with patch.object(client, "stat") as mock_stat:
-            mock_stat.return_value = ADBStat(
-                st_mode=stat.S_IFDIR | 0o755, st_size=0
-            )
+            mock_stat.return_value = ADBStat(st_mode=stat.S_IFDIR | 0o755, st_size=0)
             with patch.object(client, "_shell") as mock_shell:
                 client.rmdir("/sdcard/old_folder")
                 cmd = mock_shell.call_args[0][0]
@@ -209,9 +212,7 @@ class TestADBClientFileOps:
     def test_rmdir_file_fallback(self, client):
         """rmdir on a file should use rm -f (not rm -rf)."""
         with patch.object(client, "stat") as mock_stat:
-            mock_stat.return_value = ADBStat(
-                st_mode=stat.S_IFREG | 0o644, st_size=100
-            )
+            mock_stat.return_value = ADBStat(st_mode=stat.S_IFREG | 0o644, st_size=100)
             with patch.object(client, "_shell") as mock_shell:
                 client.rmdir("/sdcard/not_a_dir.txt")
                 cmd = mock_shell.call_args[0][0]
@@ -260,9 +261,7 @@ class TestADBClientTransfers:
         local_dest = str(tmp_path / "downloaded.mp4")
 
         with patch.object(client, "stat") as mock_stat:
-            mock_stat.return_value = ADBStat(
-                st_mode=stat.S_IFREG | 0o644, st_size=2048
-            )
+            mock_stat.return_value = ADBStat(st_mode=stat.S_IFREG | 0o644, st_size=2048)
             with patch.object(client, "_run") as mock_run:
                 callback = MagicMock()
                 client.get("/sdcard/video.mp4", local_dest, callback=callback)
@@ -348,12 +347,11 @@ class TestModuleFunctions:
 
     def test_get_connected_devices(self):
         adb_output = (
-            "List of devices attached\n"
-            "ABC123\tdevice\n"
-            "DEF456\tdevice\n"
-            "\n"
+            "List of devices attached\n" "ABC123\tdevice\n" "DEF456\tdevice\n" "\n"
         )
-        with patch("src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"):
+        with patch(
+            "src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"
+        ):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     returncode=0, stdout=adb_output, stderr=""
@@ -365,7 +363,9 @@ class TestModuleFunctions:
 
     def test_get_connected_devices_empty(self):
         adb_output = "List of devices attached\n\n"
-        with patch("src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"):
+        with patch(
+            "src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"
+        ):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     returncode=0, stdout=adb_output, stderr=""
@@ -374,7 +374,9 @@ class TestModuleFunctions:
                 assert devices == []
 
     def test_connect_wifi_success(self):
-        with patch("src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"):
+        with patch(
+            "src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"
+        ):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     returncode=0, stdout="connected to 192.168.1.50:5555", stderr=""
@@ -383,7 +385,9 @@ class TestModuleFunctions:
                 assert result is True
 
     def test_connect_wifi_failure(self):
-        with patch("src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"):
+        with patch(
+            "src.clients.adb_client.get_adb_path", return_value="/usr/local/bin/adb"
+        ):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     returncode=0, stdout="failed to connect", stderr=""

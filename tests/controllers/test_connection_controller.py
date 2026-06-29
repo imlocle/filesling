@@ -13,7 +13,6 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from src.controllers.connection_controller import ConnectionController
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -102,7 +101,9 @@ class TestHealthCheck:
         controller.check_health()
         assert controller.last_latency == 32.5
 
-    def test_health_check_skips_when_not_connected(self, controller, mock_connection_manager):
+    def test_health_check_skips_when_not_connected(
+        self, controller, mock_connection_manager
+    ):
         """Health check should skip if not connected."""
         mock_connection_manager.is_connected.return_value = False
         controller.check_health()
@@ -173,29 +174,39 @@ class TestConnectionStatus:
         """_set_status should update the label text and objectName."""
         controller._set_status("● Connecting...", "connection_warning")
         mock_view.connection_status_label.setText.assert_called_with("● Connecting...")
-        mock_view.connection_status_label.setObjectName.assert_called_with("connection_warning")
+        mock_view.connection_status_label.setObjectName.assert_called_with(
+            "connection_warning"
+        )
 
     def test_latency_color_green(self, controller, mock_view):
         """Latency under 100ms should show green."""
         controller._update_status_with_latency(45.0)
         mock_view.connection_status_label.setText.assert_called_with("45ms")
-        mock_view.connection_status_label.setObjectName.assert_called_with("connection_connected")
+        mock_view.connection_status_label.setObjectName.assert_called_with(
+            "connection_connected"
+        )
 
     def test_latency_color_yellow(self, controller, mock_view):
         """Latency 100-300ms should show warning color."""
         controller._update_status_with_latency(180.0)
         mock_view.connection_status_label.setText.assert_called_with("180ms")
-        mock_view.connection_status_label.setObjectName.assert_called_with("connection_warning")
+        mock_view.connection_status_label.setObjectName.assert_called_with(
+            "connection_warning"
+        )
 
     def test_latency_color_red(self, controller, mock_view):
         """Latency over 300ms should show slow/red color."""
         controller._update_status_with_latency(450.0)
         mock_view.connection_status_label.setText.assert_called_with("450ms")
-        mock_view.connection_status_label.setObjectName.assert_called_with("connection_slow")
+        mock_view.connection_status_label.setObjectName.assert_called_with(
+            "connection_slow"
+        )
 
     def test_connect_btn_green_when_connected(self, controller, mock_view):
         """Power button should turn green when status is connected."""
-        mock_view.connection_status_label.objectName.return_value = "connection_connected"
+        mock_view.connection_status_label.objectName.return_value = (
+            "connection_connected"
+        )
         controller._update_connect_btn()
         mock_view.connect_btn.setStyleSheet.assert_called()
         call_arg = mock_view.connect_btn.setStyleSheet.call_args[0][0]
@@ -208,7 +219,9 @@ class TestConnectionStatus:
 
 
 class TestSSHCallbacks:
-    def test_on_ssh_connected_sets_sftp(self, controller, mock_view, mock_connection_manager):
+    def test_on_ssh_connected_sets_sftp(
+        self, controller, mock_view, mock_connection_manager
+    ):
         """Successful SSH connection should set SFTP on the explorer."""
         controller._on_ssh_connected()
 

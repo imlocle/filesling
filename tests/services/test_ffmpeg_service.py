@@ -17,7 +17,6 @@ from src.services.ffmpeg_service import (
     replace_original,
 )
 
-
 # ---------------------------------------------------------------------------
 # is_video_file
 # ---------------------------------------------------------------------------
@@ -132,7 +131,9 @@ class TestCheckFfmpegInstalled:
         transport.open_session.return_value = session
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         assert check_ffmpeg_installed(client) is True
         session.close.assert_called_once()
@@ -145,7 +146,9 @@ class TestCheckFfmpegInstalled:
         transport.open_session.return_value = session
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         assert check_ffmpeg_installed(client) is False
 
@@ -172,7 +175,9 @@ class TestGetVideoDuration:
         transport.open_session.return_value = session
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         result = get_video_duration(client, "/remote/video.mp4")
         assert result == 3723.45
@@ -185,7 +190,9 @@ class TestGetVideoDuration:
         transport.open_session.return_value = session
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         assert get_video_duration(client, "/remote/video.mp4") == 0.0
 
@@ -196,7 +203,9 @@ class TestGetVideoDuration:
         transport.open_session.return_value = session
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         assert get_video_duration(client, "/remote/video.mp4") == 0.0
 
@@ -226,7 +235,9 @@ class TestReplaceOriginal:
         transport.open_session.side_effect = [session1, session2]
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         replace_original(client, "/remote/movie.mkv", "/remote/movie_converted.mp4")
 
@@ -252,7 +263,9 @@ class TestReplaceOriginal:
         transport.open_session.return_value = session1
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         replace_original(client, "/remote/movie.mp4", "/remote/movie_converted.mp4")
 
@@ -270,7 +283,9 @@ class TestReplaceOriginal:
         transport.open_session.side_effect = [session1, session2]
 
         client = MagicMock()
-        client.get_channel.return_value = MagicMock(get_transport=MagicMock(return_value=transport))
+        client.get_channel.return_value = MagicMock(
+            get_transport=MagicMock(return_value=transport)
+        )
 
         with pytest.raises(RuntimeError, match="Failed to rename"):
             replace_original(client, "/remote/movie.mkv", "/remote/movie_converted.mp4")

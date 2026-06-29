@@ -8,8 +8,8 @@ import pytest
 
 from src.config.settings import Settings, SettingsConfig
 from src.models.errors import (
-    IPAddressValidationError,
     InvalidConfigurationError,
+    IPAddressValidationError,
     PathValidationError,
 )
 

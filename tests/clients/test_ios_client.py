@@ -13,7 +13,6 @@ import pytest
 
 from src.clients.ios_client import IOSClient, IOSStat, get_connected_ios_devices
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

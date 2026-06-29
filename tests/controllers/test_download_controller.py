@@ -18,7 +18,6 @@ from src.controllers.download_controller import (
 )
 from src.utils.constants import MAX_PARALLEL_DOWNLOADS as MAX_PARALLEL
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -81,7 +80,9 @@ def mock_transfer_controller():
 
 
 @pytest.fixture
-def controller(mock_view, mock_settings, mock_connection_manager, mock_transfer_controller):
+def controller(
+    mock_view, mock_settings, mock_connection_manager, mock_transfer_controller
+):
     """Create a DownloadController with mocked dependencies."""
     return DownloadController(
         view=mock_view,
@@ -123,9 +124,7 @@ class TestDownloadSlotManagement:
 
     def test_process_pending_starts_next(self, controller):
         """When a slot frees up, pending downloads should start."""
-        controller._pending.append(
-            (["/remote/queued.mp4"], "/local", 1024, 1)
-        )
+        controller._pending.append((["/remote/queued.mp4"], "/local", 1024, 1))
 
         with patch.object(controller, "_start_download") as mock_start:
             controller._process_pending()

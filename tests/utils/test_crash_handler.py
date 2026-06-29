@@ -52,7 +52,9 @@ class TestWriteCrashLog:
 
     def test_handles_write_failure(self, tmp_path):
         """Should not raise even if writing to disk fails."""
-        with patch("src.utils.crash_handler.CRASH_LOG_PATH", Path("/nonexistent/dir/crash.log")):
+        with patch(
+            "src.utils.crash_handler.CRASH_LOG_PATH", Path("/nonexistent/dir/crash.log")
+        ):
             try:
                 raise RuntimeError("fail")
             except RuntimeError:

@@ -108,9 +108,7 @@ class TestRsyncTransfer:
         assert "user@192.168.1.100:'/mnt/external/uploads/'" in cmd
 
     def test_build_command_adds_trailing_slash(self):
-        config = RsyncConfig(
-            host="host", username="u", ssh_key_path="/key"
-        )
+        config = RsyncConfig(host="host", username="u", ssh_key_path="/key")
         transfer = RsyncTransfer(
             config=config,
             local_paths=["/file.txt"],
@@ -121,9 +119,7 @@ class TestRsyncTransfer:
         assert dest.endswith("/dest/'")
 
     def test_build_command_preserves_existing_slash(self):
-        config = RsyncConfig(
-            host="host", username="u", ssh_key_path="/key"
-        )
+        config = RsyncConfig(host="host", username="u", ssh_key_path="/key")
         transfer = RsyncTransfer(
             config=config,
             local_paths=["/file.txt"],
@@ -152,9 +148,7 @@ class TestRsyncTransfer:
         mock_proc.poll.return_value = 0
         mock_popen.return_value = mock_proc
 
-        config = RsyncConfig(
-            host="host", username="u", ssh_key_path="/key"
-        )
+        config = RsyncConfig(host="host", username="u", ssh_key_path="/key")
         transfer = RsyncTransfer(
             config=config,
             local_paths=["/file.txt"],
@@ -178,9 +172,7 @@ class TestRsyncTransfer:
         mock_proc.poll.return_value = 1
         mock_popen.return_value = mock_proc
 
-        config = RsyncConfig(
-            host="host", username="u", ssh_key_path="/key"
-        )
+        config = RsyncConfig(host="host", username="u", ssh_key_path="/key")
         transfer = RsyncTransfer(
             config=config,
             local_paths=["/file.txt"],
@@ -193,9 +185,7 @@ class TestRsyncTransfer:
             transfer.run()
 
     def test_cancel(self):
-        config = RsyncConfig(
-            host="host", username="u", ssh_key_path="/key"
-        )
+        config = RsyncConfig(host="host", username="u", ssh_key_path="/key")
         transfer = RsyncTransfer(
             config=config,
             local_paths=["/file.txt"],
@@ -251,9 +241,7 @@ class TestBuildRsyncConfigInController:
         mock_settings.config.use_rsync = True
         controller.settings = mock_settings
 
-        result = controller._build_rsync_config(
-            "ssh", {"password": "secret"}
-        )
+        result = controller._build_rsync_config("ssh", {"password": "secret"})
         assert result is None
 
     def test_returns_none_when_setting_off(self):

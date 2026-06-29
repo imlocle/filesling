@@ -14,9 +14,11 @@ class TestDeviceClientProtocol:
 
     def test_protocol_is_runtime_checkable(self):
         """DeviceClient should be decorated with @runtime_checkable."""
-        assert hasattr(DeviceClient, "__protocol_attrs__") or hasattr(
-            DeviceClient, "__abstractmethods__"
-        ) or issubclass(type(DeviceClient), type)
+        assert (
+            hasattr(DeviceClient, "__protocol_attrs__")
+            or hasattr(DeviceClient, "__abstractmethods__")
+            or issubclass(type(DeviceClient), type)
+        )
 
     def test_mock_satisfies_protocol(self):
         """A mock with the right methods should satisfy the protocol."""

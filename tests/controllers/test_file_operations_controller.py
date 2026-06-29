@@ -14,7 +14,6 @@ from PySide6.QtWidgets import QMessageBox
 
 from src.controllers.file_operations_controller import FileOperationsController
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -125,7 +124,9 @@ class TestDeleteItem:
         assert not test_file.exists()
         mock_history.add.assert_called_once()
 
-    def test_delete_local_directory(self, controller, mock_view, mock_history, tmp_path):
+    def test_delete_local_directory(
+        self, controller, mock_view, mock_history, tmp_path
+    ):
         """Deleting a local directory should use shutil.rmtree."""
         mock_view.remote_explorer.sftp = None  # Local mode
 
