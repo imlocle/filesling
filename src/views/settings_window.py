@@ -9,7 +9,6 @@ from typing import Optional
 
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
@@ -18,6 +17,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -41,6 +41,7 @@ from src.utils.constants import (
 )
 from src.utils.logging_signal import logger
 from src.widgets.connection_form_widget import ConnectionFormWidget
+from src.widgets.toggle_switch import ToggleSwitch
 
 
 class SettingsWindow(QDialog):
@@ -54,7 +55,7 @@ class SettingsWindow(QDialog):
     ) -> None:
         super().__init__()
         self.setWindowTitle(f"{SOFTWARE_NAME} - Settings")
-        self.setMinimumSize(550, 650)
+        self.setMinimumSize(550, 600)
 
         self.settings = settings
         self.server_mode = server_mode
@@ -87,6 +88,10 @@ class SettingsWindow(QDialog):
     # Connection Tab
     # ------------------------------------------------------------------
     def _setup_connection_tab(self) -> None:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -144,7 +149,8 @@ class SettingsWindow(QDialog):
             layout.addWidget(self.server_filter_input)
 
         layout.addStretch()
-        self.tab_widget.addTab(tab, "Connection")
+        scroll.setWidget(tab)
+        self.tab_widget.addTab(scroll, "Connection")
 
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------
@@ -159,11 +165,15 @@ class SettingsWindow(QDialog):
         # Transfer behavior
         layout.addWidget(QLabel("Transfer Behavior"))
 
-        self.delete_after_transfer_checkbox = QCheckBox("Move to trash after transfer")
+        self.delete_after_transfer_checkbox = ToggleSwitch()
         self.delete_after_transfer_checkbox.setChecked(
             self.settings.delete_after_transfer
         )
-        layout.addWidget(self.delete_after_transfer_checkbox)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Move to trash after transfer"))
+        row.addStretch()
+        row.addWidget(self.delete_after_transfer_checkbox)
+        layout.addLayout(row)
 
         info = QLabel(
             "When enabled, local files are moved to the Trash after a successful upload."
@@ -186,39 +196,73 @@ class SettingsWindow(QDialog):
         download_row.addWidget(browse_btn)
         layout.addLayout(download_row)
 
-        self.reveal_in_finder_checkbox = QCheckBox("Open in Finder after download")
+        self.reveal_in_finder_checkbox = ToggleSwitch()
         self.reveal_in_finder_checkbox.setChecked(
             self.settings.config.reveal_in_finder_after_download
         )
-        layout.addWidget(self.reveal_in_finder_checkbox)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Open in Finder after download"))
+        row.addStretch()
+        row.addWidget(self.reveal_in_finder_checkbox)
+        layout.addLayout(row)
 
-        self.notify_checkbox = QCheckBox("Notify when transfers complete")
+        self.notify_checkbox = ToggleSwitch()
         self.notify_checkbox.setChecked(
             self.settings.config.notify_on_transfer_complete
         )
-        layout.addWidget(self.notify_checkbox)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Notify when transfers complete"))
+        row.addStretch()
+        row.addWidget(self.notify_checkbox)
+        layout.addLayout(row)
 
-        self.notify_sound_checkbox = QCheckBox("Play sound on completion")
+        self.notify_sound_checkbox = ToggleSwitch()
         self.notify_sound_checkbox.setChecked(self.settings.config.notify_sound)
-        layout.addWidget(self.notify_sound_checkbox)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Play sound on completion"))
+        row.addStretch()
+        row.addWidget(self.notify_sound_checkbox)
+        layout.addLayout(row)
+
+        self.prevent_sleep_checkbox = ToggleSwitch()
+        self.prevent_sleep_checkbox.setChecked(
+            self.settings.config.prevent_sleep_during_transfer
+        )
+        self.prevent_sleep_checkbox.setToolTip(
+            "When enabled, your Mac won't go to sleep while uploads,\n"
+            "downloads, or conversions are active."
+        )
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Prevent sleep during transfers"))
+        row.addStretch()
+        row.addWidget(self.prevent_sleep_checkbox)
+        layout.addLayout(row)
 
         # Hide NFO files
-        self.hide_nfo_checkbox = QCheckBox("Hide .nfo metadata files in explorer")
+        self.hide_nfo_checkbox = ToggleSwitch()
         self.hide_nfo_checkbox.setChecked(self.settings.config.hide_nfo_files)
         self.hide_nfo_checkbox.setToolTip(
             "When enabled, .nfo sidecar files are hidden in the file browser.\n"
             "They still exist on the server and Jellyfin still reads them."
         )
-        layout.addWidget(self.hide_nfo_checkbox)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Hide .nfo metadata files in explorer"))
+        row.addStretch()
+        row.addWidget(self.hide_nfo_checkbox)
+        layout.addLayout(row)
 
         # Detail panel
-        self.detail_panel_checkbox = QCheckBox("Show detail panel on startup")
+        self.detail_panel_checkbox = ToggleSwitch()
         self.detail_panel_checkbox.setChecked(self.settings.config.show_detail_panel)
         self.detail_panel_checkbox.setToolTip(
             "Show the file info panel on the right side of the explorer.\n"
             "You can always toggle it with ⌘I."
         )
-        layout.addWidget(self.detail_panel_checkbox)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Show detail panel on startup"))
+        row.addStretch()
+        row.addWidget(self.detail_panel_checkbox)
+        layout.addLayout(row)
 
         # Skip patterns
         layout.addWidget(QLabel("Skip Patterns"))
@@ -254,9 +298,10 @@ class SettingsWindow(QDialog):
         current_theme = self.settings.config.theme_mode
         index = self.theme_combo.findData(current_theme)
         self.theme_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         layout.addWidget(self.theme_combo)
 
-        info = QLabel("Theme changes apply after saving settings.")
+        info = QLabel("Theme applies immediately.")
         info.setObjectName("secondary_label")
         layout.addWidget(info)
 
@@ -280,6 +325,17 @@ class SettingsWindow(QDialog):
 
         layout.addStretch()
         self.tab_widget.addTab(tab, "Appearance")
+
+    def _on_theme_changed(self, index: int) -> None:
+        """Apply theme immediately when user changes the dropdown."""
+        from PySide6.QtWidgets import QApplication
+
+        from src.utils.theme import apply_theme
+
+        theme_mode = self.theme_combo.currentData()
+        app = QApplication.instance()
+        if app:
+            apply_theme(app, theme_mode)
 
     def _browse_download_dir(self) -> None:
         """Open folder picker for download directory."""
@@ -367,6 +423,11 @@ class SettingsWindow(QDialog):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setSpacing(8)
         footer_layout.setContentsMargins(16, 8, 16, 12)
+
+        test_btn = QPushButton("Test Connection")
+        test_btn.clicked.connect(self._test_connection)
+        footer_layout.addWidget(test_btn)
+
         footer_layout.addStretch()
 
         cancel_btn = QPushButton("Cancel")
@@ -379,6 +440,11 @@ class SettingsWindow(QDialog):
         footer_layout.addWidget(cancel_btn)
         footer_layout.addWidget(save_btn)
         layout.addWidget(footer)
+
+    def _test_connection(self) -> None:
+        """Delegate test connection to the connection form widget."""
+        if hasattr(self, "connection_form"):
+            self.connection_form.test_connection()
 
     # ------------------------------------------------------------------
     # Save
@@ -471,6 +537,7 @@ class SettingsWindow(QDialog):
                 "notify_sound": self.notify_sound_checkbox.isChecked(),
                 "hide_nfo_files": self.hide_nfo_checkbox.isChecked(),
                 "show_detail_panel": self.detail_panel_checkbox.isChecked(),
+                "prevent_sleep_during_transfer": self.prevent_sleep_checkbox.isChecked(),
                 "skip_exit_confirm": self.settings.config.skip_exit_confirm,
                 "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [

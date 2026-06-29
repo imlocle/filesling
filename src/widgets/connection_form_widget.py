@@ -257,12 +257,7 @@ class ConnectionFormWidget(QWidget):
         self.ssh_group.setVisible(current_type == CONN_TYPE_SSH)
         self.ios_group.setVisible(current_type == CONN_TYPE_IOS)
 
-        # Test connection
-        test_btn = QPushButton("Test Connection")
-        test_btn.setObjectName("primary_btn")
-        test_btn.clicked.connect(self.test_connection)
-        layout.addWidget(test_btn)
-
+        # Status label (test result shown here, button moved to footer)
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("font-size: 11px; padding: 2px;")
         layout.addWidget(self.status_label)
