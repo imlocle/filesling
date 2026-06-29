@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 from src.config.settings import Settings
 from src.controllers.transfer_controller import ManualTransferController
 from src.services.connection_manager_service import ConnectionManagerService
+from src.services.sleep_inhibitor_service import SleepInhibitorService
 from src.utils.theme import apply_theme
 from src.views.settings_window import SettingsWindow
 from src.widgets.transfer_queue_widget import TransferStatus
@@ -68,6 +69,9 @@ class MainWindowController:
         )
 
         self._queue_signals_connected = False
+
+        # Sleep inhibitor — prevents macOS idle sleep during active work
+        self._sleep_inhibitor = SleepInhibitorService()
 
         # Connect controller signals to UI updates
         self._connect_controller_signals()
@@ -148,6 +152,7 @@ class MainWindowController:
 
         # Update dock badge
         self._update_dock_badge()
+        self._update_sleep_inhibitor()
 
     def _on_manual_transfer_completed(self, path: str) -> None:
         """Handle manual transfer completed — mark item as done."""
@@ -169,6 +174,7 @@ class MainWindowController:
 
         # Update dock badge
         self._update_dock_badge()
+        self._update_sleep_inhibitor()
 
         # Send macOS notification
         if self.settings.config.notify_on_transfer_complete:
@@ -199,6 +205,7 @@ class MainWindowController:
 
         # Update dock badge
         self._update_dock_badge()
+        self._update_sleep_inhibitor()
 
         # Send macOS notification
         if self.settings.config.notify_on_transfer_complete:
@@ -252,6 +259,18 @@ class MainWindowController:
         pending = self.manual_transfer.queue_size()
         active = 1 if self.manual_transfer.is_busy() else 0
         set_dock_badge(pending + active)
+
+    def _update_sleep_inhibitor(self) -> None:
+        """Acquire or release sleep inhibition based on active work."""
+        if not self.settings.config.prevent_sleep_during_transfer:
+            self._sleep_inhibitor.release()
+            return
+
+        has_active_work = self.manual_transfer.is_busy() or self.download_ctrl.is_active
+        if has_active_work:
+            self._sleep_inhibitor.acquire()
+        else:
+            self._sleep_inhibitor.release()
 
     # --------------------------------------------------------------
     #  CONNECTION (delegated to ConnectionController)
@@ -342,4 +361,5 @@ class MainWindowController:
     # --------------------------------------------------------------
     def shutdown(self) -> None:
         """Clean shutdown of connections."""
+        self._sleep_inhibitor.release()
         self.connection_ctrl.shutdown()

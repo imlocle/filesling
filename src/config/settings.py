@@ -52,6 +52,7 @@ class SettingsConfig(BaseModel):
     use_rsync: bool = True
     hide_nfo_files: bool = False
     show_detail_panel: bool = False
+    prevent_sleep_during_transfer: bool = True
     skip_patterns: set[str] = Field(
         default_factory=lambda: {".DS_Store", "Thumbs.db", ".Trashes", "._*"}
     )
@@ -383,6 +384,7 @@ class Settings:
             "use_rsync": self.config.use_rsync,
             "hide_nfo_files": self.config.hide_nfo_files,
             "show_detail_panel": self.config.show_detail_panel,
+            "prevent_sleep_during_transfer": self.config.prevent_sleep_during_transfer,
             "skip_patterns": list(self.config.skip_patterns),
             "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,
