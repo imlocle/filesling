@@ -1,19 +1,24 @@
+import os
 import sys
 
-from PySide6.QtWidgets import QApplication
+# Suppress Qt accessibility table warnings on macOS (harmless noise)
+# Must be set before any Qt imports.
+os.environ.setdefault("QT_LOGGING_RULES", "qt.accessibility.table=false")
 
-from src.config.settings import Settings
-from src.utils.constants import SOFTWARE_NAME, SPLASH_DURATION_MS, VERSION
-from src.utils.crash_handler import (
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from src.config.settings import Settings  # noqa: E402
+from src.utils.constants import SOFTWARE_NAME, SPLASH_DURATION_MS, VERSION  # noqa: E402
+from src.utils.crash_handler import (  # noqa: E402
     check_previous_crash,
     clear_crash_log,
     get_previous_crash_report,
     install_crash_handler,
 )
-from src.utils.helper import get_path, rounded_icon
-from src.utils.theme import apply_theme
-from src.views.main_window import MainWindow
-from src.views.splash_screen import SplashScreen
+from src.utils.helper import get_path, rounded_icon  # noqa: E402
+from src.utils.theme import apply_theme  # noqa: E402
+from src.views.main_window import MainWindow  # noqa: E402
+from src.views.splash_screen import SplashScreen  # noqa: E402
 
 
 def _get_version() -> str:

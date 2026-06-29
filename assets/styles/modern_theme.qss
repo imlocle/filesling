@@ -4,7 +4,7 @@
 QWidget {
     background-color: #1c1c1e;
     color: #f5f5f7;
-    font-family: "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
 }
 
@@ -174,23 +174,23 @@ QLabel#connection_disconnected { color: #ff453a; font-weight: 600; }
 QLabel#connection_warning { color: #ff9f0a; font-weight: 600; }
 QLabel#connection_slow { color: #ff6961; font-weight: 600; }
 
-/* === CHECKBOXES === */
+/* === TOGGLE SWITCHES (macOS-style) === */
 QCheckBox {
     spacing: 8px;
     color: #f5f5f7;
 }
 
 QCheckBox::indicator {
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    border: 1.5px solid #636366;
-    background-color: #2c2c2e;
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    border: 1.5px solid #48484a;
+    background-color: #39393d;
 }
 
 QCheckBox::indicator:checked {
-    background-color: #0077ff;
-    border-color: #0077ff;
+    background-color: #30d158;
+    border-color: #30d158;
 }
 
 /* === PROGRESS BARS === */
@@ -366,7 +366,7 @@ QPushButton#bookmark_btn:hover {
 QToolTip {
     background-color: #3a3a3c;
     color: #f5f5f7;
-    border: none;
+    border: 1px solid #48484a;
     padding: 6px 10px;
     border-radius: 8px;
     font-size: 12px;
