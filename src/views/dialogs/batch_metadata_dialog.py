@@ -36,7 +36,6 @@ from src.utils.constants import (
 )
 from src.utils.logging_signal import logger
 
-
 # Fields shown in the batch editor (only shared/bulk-applicable fields)
 BATCH_FIELDS = [
     ("artist", "Artist"),
@@ -200,7 +199,9 @@ class BatchMetadataDialog(QDialog):
         row = 0
         for key, label_text in BATCH_FIELDS:
             label = QLabel(f"{label_text}:")
-            label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            label.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
             grid.addWidget(label, row, 0)
 
             field = QLineEdit()
@@ -213,7 +214,9 @@ class BatchMetadataDialog(QDialog):
             row += 1
 
         # Auto-increment checkbox for episode and sort title
-        self._auto_increment = QCheckBox("Auto-increment Episode # and Sort Title for each file")
+        self._auto_increment = QCheckBox(
+            "Auto-increment Episode # and Sort Title for each file"
+        )
         self._auto_increment.setChecked(True)
         self._auto_increment.setToolTip(
             "If checked, each file gets an incrementing number.\n"
@@ -334,7 +337,9 @@ class BatchMetadataDialog(QDialog):
                     f.write(nfo_content.encode("utf-8"))
                 success_count += 1
             except Exception as e:
-                logger.error(f"Batch NFO write failed for {os.path.basename(nfo_path)}: {e}")
+                logger.error(
+                    f"Batch NFO write failed for {os.path.basename(nfo_path)}: {e}"
+                )
                 error_count += 1
 
         # Report results
