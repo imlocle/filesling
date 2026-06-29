@@ -199,10 +199,13 @@ class TransferItemWidget(QFrame):
         elif item.status == TransferStatus.IN_PROGRESS:
             is_download = item.display_name.startswith("⬇")
             is_convert = item.display_name.startswith("🔄")
+            is_quick_fix = item.display_name.startswith("🔧")
             if is_download:
                 self.status_label.setText(STATUS_DOWNLOADING)
             elif is_convert:
                 self.status_label.setText(STATUS_CONVERTING)
+            elif is_quick_fix:
+                self.status_label.setText("🔧 Fixing")
             else:
                 self.status_label.setText(STATUS_UPLOADING)
             self.status_label.setObjectName("status_active")
@@ -223,10 +226,14 @@ class TransferItemWidget(QFrame):
 
             # Speed and ETA
             is_convert = item.display_name.startswith("🔄")
+            is_quick_fix = item.display_name.startswith("🔧")
             if is_convert:
                 # Conversions track percentage directly (total_bytes=100, transferred_bytes=pct)
                 # Speed/ETA calculations are meaningless for remote ffmpeg jobs
                 self.detail_label.setText(f"{item.progress_percent}%")
+            elif is_quick_fix:
+                # Quick Fix has no progress data — just show "Processing..."
+                self.detail_label.setText("Processing...")
             else:
                 speed = item.speed_bytes_per_sec
                 eta = item.eta_seconds

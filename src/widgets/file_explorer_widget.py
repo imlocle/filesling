@@ -674,6 +674,7 @@ class FileExplorerWidget(QWidget):
         # Tree widget with columns
         # ------------------------------------------------------------------
         self.tree_widget: DragDropTreeWidget = DragDropTreeWidget()
+        self.tree_widget.setAccessibleName("File Explorer")
         self.tree_widget.setHeaderLabels(["Name", "Size"])
         self.tree_widget.setColumnWidth(0, 300)  # Name column width
         self.tree_widget.setColumnWidth(1, 100)  # Size column width
@@ -1172,13 +1173,67 @@ class FileExplorerWidget(QWidget):
         except Exception as e:
             logger.error(f"Media Info: Failed to get metadata: {e}")
 
-    def _quick_fix_video(self, remote_path: str) -> None:
-        """Show Quick Fix dialog and apply selected fixes (no re-encoding)."""
+    def _probe_subtitle_tracks(self, remote_path: str) -> list:
+        """Probe subtitle streams from a remote video file via ffprobe."""
+        import json
         import shlex
 
+        from src.views.dialogs.quick_fix_dialog import SubtitleTrack
+
+        try:
+            channel = self.sftp.get_channel()
+            if not channel or not channel.get_transport():
+                return []
+            transport = channel.get_transport()
+
+            cmd = (
+                f"ffprobe -v quiet -print_format json -show_streams "
+                f"-select_streams s {shlex.quote(remote_path)}"
+            )
+            session = transport.open_session()
+            session.exec_command(cmd)
+
+            output = b""
+            while True:
+                chunk = session.recv(4096)
+                if not chunk:
+                    break
+                output += chunk
+            session.close()
+
+            if not output.strip():
+                return []
+
+            data = json.loads(output.decode("utf-8", errors="replace"))
+            streams = data.get("streams", [])
+
+            tracks = []
+            for i, stream in enumerate(streams):
+                lang = stream.get("tags", {}).get("language", "und")
+                codec = stream.get("codec_name", "unknown")
+                title = stream.get("tags", {}).get("title", "")
+                tracks.append(
+                    SubtitleTrack(
+                        index=i,
+                        language=lang,
+                        codec=codec,
+                        title=title,
+                    )
+                )
+            return tracks
+        except Exception:
+            return []
+
+    def _quick_fix_video(self, remote_path: str) -> None:
+        """Show Quick Fix dialog and apply selected fixes on a background thread."""
+        import shlex
+
+        from PySide6.QtCore import QObject, QThread, Signal
         from PySide6.QtWidgets import QMessageBox
 
-        from src.views.dialogs.quick_fix_dialog import QuickFixDialog
+        from src.views.dialogs.quick_fix_dialog import (
+            QuickFixDialog,
+        )
 
         if not self.sftp:
             return
@@ -1186,7 +1241,10 @@ class FileExplorerWidget(QWidget):
         filename = os.path.basename(remote_path)
         ext = os.path.splitext(remote_path)[1]
 
-        dialog = QuickFixDialog(self, filename, ext)
+        # Probe subtitle tracks from the file
+        subtitle_tracks = self._probe_subtitle_tracks(remote_path)
+
+        dialog = QuickFixDialog(self, filename, ext, subtitle_tracks=subtitle_tracks)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -1213,10 +1271,17 @@ class FileExplorerWidget(QWidget):
             cmd_parts.extend(["-fflags", "+genpts"])
 
         cmd_parts.extend(["-i", shlex.quote(remote_path)])
-        cmd_parts.extend(["-c", "copy"])
 
-        if opts.strip_subtitles:
-            cmd_parts.append("-sn")
+        # Stream mapping for selective subtitle removal
+        if opts.keep_subtitle_indices is not None:
+            cmd_parts.extend(["-map", "0:v", "-map", "0:a"])
+            for sub_idx in opts.keep_subtitle_indices:
+                cmd_parts.extend(["-map", f"0:s:{sub_idx}"])
+            cmd_parts.extend(["-c", "copy"])
+        elif opts.strip_subtitles:
+            cmd_parts.extend(["-c", "copy", "-sn"])
+        else:
+            cmd_parts.extend(["-c", "copy"])
 
         if opts.to_mp4:
             cmd_parts.extend(["-movflags", "+faststart"])
@@ -1236,43 +1301,109 @@ class FileExplorerWidget(QWidget):
         else:
             full_cmd = f"{cmd} && mv {shlex.quote(tmp_path)} {shlex.quote(remote_path)}"
 
-        # Execute
+        # Build action description
         actions = []
         if opts.to_mp4:
             actions.append("container → MP4")
         if opts.fix_timestamps:
             actions.append("fix timestamps")
-        if opts.strip_subtitles:
-            actions.append("remove subtitles")
-        logger.info(f"Quick Fix: {filename} ({', '.join(actions)})")
+        if opts.keep_subtitle_indices is not None:
+            kept = len(opts.keep_subtitle_indices)
+            total = len(subtitle_tracks)
+            actions.append(f"keep {kept}/{total} subs")
+        elif opts.strip_subtitles:
+            actions.append("remove subs")
+        actions_str = ", ".join(actions)
 
-        try:
-            session = transport.open_session()
-            session.exec_command(full_cmd)
-            exit_code = session.recv_exit_status()
-            session.close()
+        # Add to activity queue
+        main_window = self.window()
+        queue_index = -1
+        if hasattr(main_window, "transfer_queue"):
+            queue_index = main_window.transfer_queue.add_transfer(
+                f"🔧 {filename}", 0, os.path.dirname(remote_path)
+            )
+            main_window.transfer_queue.set_in_progress(queue_index)
 
-            if exit_code == 0:
+        logger.info(f"Quick Fix: {filename} ({actions_str})")
+
+        # Run on background thread to avoid blocking UI
+        class _QuickFixWorker(QObject):
+            done = Signal()  # Emitted when work is complete
+
+            def __init__(self, transport_ref, command):
+                super().__init__()
+                self._transport = transport_ref
+                self._command = command
+                self.exit_code = -1
+                self.error_msg = ""
+
+            def run(self):
+                try:
+                    session = self._transport.open_session()
+                    session.exec_command(self._command)
+                    self.exit_code = session.recv_exit_status()
+                    session.close()
+                except Exception as e:
+                    self.error_msg = str(e)
+                self.done.emit()
+
+        thread = QThread()
+        worker = _QuickFixWorker(transport, full_cmd)
+        worker.moveToThread(thread)
+
+        # Store references to prevent garbage collection
+        if not hasattr(self, "_quick_fix_threads"):
+            self._quick_fix_threads = []
+        self._quick_fix_threads.append((thread, worker))
+
+        def on_thread_finished():
+            """Runs on main thread after thread stops. Safe to touch UI."""
+            if worker.error_msg:
+                logger.error(f"Quick Fix error: {worker.error_msg}")
+                if hasattr(main_window, "transfer_queue") and queue_index >= 0:
+                    main_window.transfer_queue.set_failed(
+                        queue_index, worker.error_msg[:80]
+                    )
+            elif worker.exit_code == 0:
                 logger.success(f"Quick Fix complete: {filename}")
-                QMessageBox.information(
-                    self,
-                    "Fix Applied",
-                    f"'{filename}' fixed successfully.\n\n"
-                    f"Applied: {', '.join(actions)}.\n"
-                    "No re-encoding — video quality unchanged.",
+                if hasattr(main_window, "transfer_queue") and queue_index >= 0:
+                    main_window.transfer_queue.set_completed(queue_index)
+                from src.services.activity_history_service import (
+                    ActivityHistoryService,
+                )
+
+                history = ActivityHistoryService()
+                history.add(
+                    filename=filename,
+                    action="convert",
+                    source=remote_path,
+                    destination=remote_path,
+                    server_name=self.settings.config.current_server_id,
                 )
                 self.refresh()
             else:
-                logger.error(f"Quick Fix failed: exit code {exit_code}")
-                QMessageBox.warning(
-                    self,
-                    "Fix Failed",
-                    f"ffmpeg exited with code {exit_code}.\n"
-                    "The original file was not modified.",
-                )
-        except Exception as e:
-            logger.error(f"Quick Fix error: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to fix video:\n{e}")
+                logger.error(f"Quick Fix failed: exit code {worker.exit_code}")
+                if hasattr(main_window, "transfer_queue") and queue_index >= 0:
+                    main_window.transfer_queue.set_failed(
+                        queue_index,
+                        f"ffmpeg exit code {worker.exit_code}",
+                    )
+            # Clean up references
+            if hasattr(self, "_quick_fix_threads"):
+                try:
+                    self._quick_fix_threads.remove((thread, worker))
+                except ValueError:
+                    pass
+            worker.deleteLater()
+            thread.deleteLater()
+
+        # Signal flow: thread.started → worker.run → worker.done → thread.quit
+        # Then: thread.finished → on_thread_finished (main thread, safe for UI)
+        thread.started.connect(worker.run)
+        worker.done.connect(thread.quit)
+        thread.finished.connect(on_thread_finished)
+
+        thread.start()
 
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation
