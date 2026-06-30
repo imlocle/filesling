@@ -532,8 +532,9 @@ class TransferQueueWidget(QWidget):
             self.cancel_transfer.emit(pending_position)
 
     def _reorder_widgets(self) -> None:
-        """Reorder widgets: active on top → queued → completed/failed at bottom."""
-        # Define sort priority: in_progress=0, pending=1, completed=2, failed=2
+        """Reorder widgets: active on top → queued → done (latest first)."""
+        # Sort priority: in_progress=0, pending=1, completed/failed=2
+        # Within completed/failed: most recent (highest end_time) first
         priority = {
             TransferStatus.IN_PROGRESS: 0,
             TransferStatus.PENDING: 1,
@@ -541,11 +542,14 @@ class TransferQueueWidget(QWidget):
             TransferStatus.FAILED: 2,
         }
 
-        # Build sorted order of widget indices
-        sorted_indices = sorted(
-            range(len(self._items)),
-            key=lambda i: priority.get(self._items[i].status, 3),
-        )
+        def sort_key(i: int) -> tuple:
+            item = self._items[i]
+            p = priority.get(item.status, 3)
+            # For done items, negate end_time so highest (most recent) sorts first
+            secondary = -item.end_time if p == 2 else 0
+            return (p, secondary)
+
+        sorted_indices = sorted(range(len(self._items)), key=sort_key)
 
         # Remove all widgets from layout (except the trailing stretch)
         for widget in self._item_widgets:
