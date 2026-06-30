@@ -1,5 +1,13 @@
 """
 Settings window with tabbed interface.
+
+Tabs:
+- Connection: server config (SSH/ADB/iOS fields), scrollable for small monitors
+- Files: transfer behavior, downloads, notifications, sleep prevention
+- Appearance: theme selector (live preview), export/import
+
+Uses macOS-style ToggleSwitch widgets for all boolean settings.
+Test Connection button in the footer alongside Cancel/Save.
 """
 
 import os

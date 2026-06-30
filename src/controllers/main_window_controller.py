@@ -23,11 +23,12 @@ class MainWindowController:
     Controller for MainWindow.
 
     Handles:
-    - Connection management
+    - Connection management (delegated to ConnectionController)
     - Manual transfers (via ManualTransferController)
-    - UI coordination
-    - Settings management
-    - File operations (delete, rename, move, create folder)
+    - Downloads (via DownloadController)
+    - File operations (via FileOperationsController)
+    - UI coordination (dock badge, queue widget, settings)
+    - Sleep inhibition during active work (caffeinate)
     """
 
     def __init__(

@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** June 2026 — Version 3.4.0
 
 ## Overview
 
@@ -35,7 +35,8 @@ src/
 │   ├── keychain_service.py            macOS Keychain credential storage
 │   ├── notification_service.py        macOS notifications + Dock badge
 │   ├── remote_file_service.py         Centralized connection-lost detection
-│   └── rsync_service.py              rsync fast-path transfers over SSH
+│   ├── rsync_service.py              rsync fast-path transfers over SSH
+│   └── sleep_inhibitor_service.py     Prevents macOS sleep during transfers
 ├── utils/
 │   ├── constants.py                   App-wide constants and defaults
 │   ├── crash_handler.py               Global exception handler + crash log
@@ -45,10 +46,11 @@ src/
 │   └── theme.py                       Theme management
 ├── views/
 │   ├── dialogs/
+│   │   ├── batch_metadata_dialog.py   Batch NFO editing for multiple files
 │   │   ├── batch_rename_dialog.py     Multi-file find/replace rename
 │   │   ├── convert_settings_dialog.py Video conversion settings (codec, CRF, etc.)
 │   │   ├── folder_picker_dialog.py    Remote folder browser for Move To
-│   │   ├── quick_fix_dialog.py        Container change, timestamp fix, subtitle removal
+│   │   ├── quick_fix_dialog.py        Container change, timestamps, subtitle selection
 │   │   └── server_selection_dialog.py Server picker on launch / server switch
 │   ├── main_window.py                 Main app window (toolbar, explorer, queue)
 │   ├── settings_window.py             Settings editor (connection, files, appearance)
@@ -59,6 +61,7 @@ src/
 │   ├── detail_panel.py                Side panel with metadata + stream info
 │   ├── file_explorer_widget.py        Remote file browser (tree, drag-drop, search)
 │   ├── inline_rename_editor.py        In-place file rename editor
+│   ├── toggle_switch.py               macOS-style animated toggle switch widget
 │   ├── transfer_queue_widget.py       Visual transfer queue panel
 │   └── video_convert_manager.py       Remote ffmpeg conversion manager
 └── workers/
@@ -107,12 +110,13 @@ The app supports three connection types behind the same explorer UI via the `Dev
 Finder drop → FileExplorerWidget.dropEvent()
   → Always targets current_path (no sub-folder highlighting for external drops)
   → MainWindow._handle_remote_drop()
-    → Checks for duplicates (sftp.stat per file)
+    → Checks for duplicates (sftp.listdir_attr, batch)
     → If duplicates found: shows dialog (overwrite / skip / cancel)
     → Calculates size, adds to TransferQueueWidget
     → TransferController.queue_transfer()
       → Queues transfer
       → Persists active/pending queue to ~/.FileSling/transfer_queue.json
+      → Acquires sleep inhibition (caffeinate -i)
       → Processes sequentially:
         → SSH key auth? Try rsync first (delta, compression, resume)
           → If rsync fails → fallback to SFTP silently
@@ -125,6 +129,7 @@ Finder drop → FileExplorerWidget.dropEvent()
         → On success: deletes local file (if configured), sends notification
         → Updates Dock badge
         → Moves to next queued item
+      → Releases sleep inhibition when all jobs complete
 ```
 
 ### Directory Browsing
@@ -133,11 +138,11 @@ Finder drop → FileExplorerWidget.dropEvent()
 Navigate/Refresh → FileExplorerWidget.refresh()
   → Shows loading spinner
   → DirectoryLoader runs on QThread
-    → SFTP: sftp.listdir() + sftp.stat()
-    → ADB: adb shell ls -la
+    → SFTP: sftp.listdir_attr() (single call, batch sizes)
+    → ADB: adb shell ls -la (streaming)
     → iOS: AFC listdir
-  → Results displayed in tree widget with colored file type icons
-  → Tooltips show full path and size
+  → Results displayed progressively (batch_ready signal)
+  → Tree sorted after all batches arrive
   → Disk usage bar updated for current path filesystem
 ```
 
@@ -166,9 +171,31 @@ Right-click video → "Convert to H.264/H.265/VP9"
     → Checks if ffmpeg installed on server
     → Opens ConvertSettingsDialog (codec, preset, CRF, audio, container)
     → Launches ffmpeg via dedicated SSH connection (won't block explorer)
-    → Progress shown in activity panel
+    → Progress shown in activity panel (percentage only)
     → Replaces original file when done
     → Logged in activity history (action: "convert")
+```
+
+### Quick Fix (no re-encoding)
+
+```
+Right-click video → "🔧 Quick Fix..."
+  → Probes subtitle tracks via ffprobe (background)
+  → QuickFixDialog: container change, fix timestamps, subtitle selection
+  → Runs on background thread (non-blocking UI)
+  → Shows "🔧 Fixing" in activity panel
+  → ffmpeg -c copy (instant, no quality loss)
+  → Logged in activity history on completion
+```
+
+### Batch Metadata Editing
+
+```
+Multi-select videos → right-click → "✏️ Edit Metadata (N videos)"
+  → BatchMetadataDialog: shared fields (Artist, Series, Season, Episode #, etc.)
+  → Episode # and Sort Title auto-increment per file
+  → Reads existing NFOs and merges (per-file titles preserved)
+  → Writes .nfo sidecar files for all selected files
 ```
 
 ## SFTP Channel Architecture
@@ -185,6 +212,7 @@ ConnectionManagerService opens 3 channels at connect time:
 ├─────────────────────────────────────────────────────────────┤
 │  Per-transfer sessions (opened/closed per upload/download)  │
 │  Per-conversion SSH connection (dedicated, independent)     │
+│  Per-Quick-Fix SSH session (background thread)              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -203,7 +231,20 @@ This eliminates thread contention — Paramiko SFTP is NOT thread-safe, so each 
 | DownloadWorker   | Background file download (per-download)       | own session        |
 | SearchWorker     | Background recursive search                   | sftp_background    |
 | \_ConvertWorker  | Remote ffmpeg execution                       | own SSH connection |
+| \_QuickFixWorker | Quick Fix ffmpeg execution                    | own SSH session    |
 | HealthTimer      | Connection keepalive + latency (15s interval) | sftp_client        |
+
+### Threading Pattern: Quick Fix
+
+Quick Fix uses the safe `worker.done → thread.quit → thread.finished` pattern:
+
+1. `thread.started` → `worker.run()` (runs on worker thread)
+2. Worker stores result in instance attributes, emits `done` signal
+3. `worker.done` → `thread.quit` (Qt queues this properly)
+4. `thread.finished` → `on_thread_finished()` (guaranteed main thread — safe for UI)
+5. Cleanup: `worker.deleteLater()`, `thread.deleteLater()`
+
+This avoids cross-thread violations (no `self.thread().quit()` from within the worker, no UI calls from worker thread).
 
 ## Configuration
 
@@ -222,14 +263,14 @@ This eliminates thread contention — Paramiko SFTP is NOT thread-safe, so each 
 - Server quick-switch dropdown in the toolbar (with "Manage Servers…" at bottom)
 - Power button turns green when connected (no separate status bar)
 - Explorer remains the primary workspace
-- Activity panel shows uploads, downloads, and conversions
-- Queue ordering: active on top → queued → completed at bottom
+- Activity panel shows uploads, downloads, conversions, and quick fixes
+- Queue ordering: active on top → queued → done (latest first)
 - Clickable breadcrumb path bar for quick navigation to parent folders
 - Transfer method dot indicator (green=rsync, blue=SFTP, orange=ADB)
 - Detail panel (toggle with ⌘I) showing metadata and stream info
 - Bookmarks bar for quick folder access
 - Diagnostics logs available from `View → Diagnostics Log...`
-- Transfer history available from `View → Transfer History...`
+- Transfer history available from `View → Activity History...`
 - Latency indicator shown inline in toolbar (color-coded)
 - macOS menu bar with File, Edit, View, Help menus
 - Window size and position remembered between sessions
@@ -237,14 +278,26 @@ This eliminates thread contention — Paramiko SFTP is NOT thread-safe, so each 
 - macOS notifications on transfer complete/fail
 - Dock badge shows pending transfer count
 - Exit confirmation with "Quit After Jobs Finish" during active transfers
+- Sleep inhibition during active transfers (configurable, uses `caffeinate`)
+
+## Settings UI
+
+- Tabbed interface: Connection, Files, Appearance
+- Connection tab scrollable for smaller monitors
+- macOS-style toggle switches (`ToggleSwitch` widget) for all boolean settings
+- Theme dropdown applies immediately (live preview)
+- "Test Connection" button in footer alongside Cancel/Save
+- Per-server settings: download directory, extension filter
 
 ## Theming
 
 - Three modes: Follow System, Light, Dark (configurable in Settings → Appearance)
+- Theme changes apply immediately without saving
 - Stylesheets: `assets/styles/modern_theme.qss` (dark), `assets/styles/macos_light.qss` (light)
 - `src/utils/theme.py` resolves system preference and applies the correct stylesheet
-- UI elements use object names for theme-aware colors
-- File icons use custom-drawn colored pixmaps (`src/utils/icons.py`) visible in both light and dark modes
+- macOS-style toggle switches with animated knob (green on, grey off)
+- Pill-shaped buttons, inputs, dropdowns, bookmarks
+- File icons use custom-drawn colored pixmaps (`src/utils/icons.py`)
 - Folder icons use native macOS `QStyle.standardIcon`
 
 ## Error Handling
@@ -262,6 +315,7 @@ This eliminates thread contention — Paramiko SFTP is NOT thread-safe, so each 
 - Interrupted queued uploads are restored on next launch and restarted
 - Connection drops trigger auto-reconnect (15s health check interval)
 - Connection failures show server selection dialog
+- Qt accessibility warnings suppressed on macOS Tahoe (`QT_LOGGING_RULES`)
 
 ## Dependencies
 

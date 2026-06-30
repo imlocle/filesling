@@ -1,6 +1,6 @@
 # Bugs
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** June 2026 — Version 3.4.0
 >
 > Bug tracking for FileSling. For roadmap, see [ROADMAP.md](ROADMAP.md).
 
@@ -16,7 +16,7 @@
 
 - [ ] **LAG-4: `_load_nfo_metadata` in Media Info dialog blocks main thread** — Same pattern: `transport.open_session()` + `exec_command("cat .nfo")` blocks while reading. Fix: already have the SFTP open — use `sftp.open()` (faster) or run async.
 
-- [ ] **LAG-5: Quick Fix dialog `recv_exit_status()` blocks main thread** — When ffmpeg remuxes, `session.recv_exit_status()` blocks until the command completes. For a 1GB file, even with `-c copy`, this can take 5-10 seconds on a Pi's slow USB drive. Fix: run in background thread with progress indication.
+- [x] ~~**LAG-5: Quick Fix dialog `recv_exit_status()` blocks main thread**~~ ✅ Fixed in 3.4.0 — Quick Fix now runs on a background thread with activity panel integration.
 
 - [ ] **LAG-6: `check_ffmpeg_installed()` blocks main thread** — Called from the right-click context menu handler (before showing Convert Video submenu). Does an SSH round-trip. Fix: cache the result per-server after first check.
 

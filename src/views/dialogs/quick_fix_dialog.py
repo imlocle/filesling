@@ -2,8 +2,16 @@
 Quick Fix dialog — repackage a video file without re-encoding.
 
 Combines multiple fix operations (container change, timestamp repair,
-subtitle removal) into a single dialog so users can apply them all at once.
-All operations are instant — no video re-encoding is performed.
+selective subtitle removal) into a single dialog so users can apply
+them all at once. All operations are instant — no video re-encoding.
+
+Features:
+- Change container to MP4 (disabled if already MP4)
+- Fix timestamps (regenerate PTS for correct seeking)
+- Remove/keep specific subtitle tracks (collapsible picker)
+- English subtitles pre-checked by default
+
+Runs on a background thread via _QuickFixWorker in file_explorer_widget.py.
 """
 
 from __future__ import annotations

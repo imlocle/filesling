@@ -1,9 +1,82 @@
 # FileSling — Changelog
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** June 2026 — Version 3.4.0
 >
 > For planned/future work, see [ROADMAP.md](ROADMAP.md).
 > For known issues, see [BUGS.md](BUGS.md).
+
+---
+
+## 3.4.0 (June 2026)
+
+### Quick Fix — Background Execution + Subtitle Picker
+
+- [x] Quick Fix now runs on a background thread (no more UI freeze)
+- [x] Shows "🔧 Fixing" status in the activity panel with progress
+- [x] Logged to activity history on completion
+- [x] Subtitle track picker: probes streams via ffprobe, shows collapsible track list
+- [x] English tracks pre-checked, user selects which to keep
+- [x] Selective subtitle removal: keeps chosen tracks, strips the rest (`-map 0:s:N`)
+- [x] Fixed cross-thread violations: uses `worker.done → thread.quit → thread.finished` pattern
+
+### Batch Metadata Editor
+
+- [x] Multi-select videos → right-click → "✏️ Edit Metadata (N videos)"
+- [x] Shared fields: Artist, Director, Album/Series, Show Name, Season, Episode #, Sort Title, Date, Genre, Description
+- [x] Episode # and Sort Title auto-increment per file (toggle checkbox)
+- [x] Merges with existing NFOs — per-file titles preserved
+- [x] Auto-populates title from filename (strips SxxExx pattern) if not set
+- [x] Reports success/failure count on completion
+
+### Sleep Inhibitor
+
+- [x] Prevents macOS idle sleep during active uploads/downloads (`caffeinate -i`)
+- [x] Acquires on transfer start, releases when all jobs complete
+- [x] Setting: "Prevent sleep during transfers" (default: on, toggle in Settings → Files)
+- [x] Released on app shutdown; auto-cleans on crash (child process)
+
+### Settings UI Redesign
+
+- [x] macOS-style toggle switches (`ToggleSwitch` widget) replace all checkboxes
+- [x] Animated pill + sliding white knob (150ms ease-in-out)
+- [x] Label on left, toggle aligned right (matches macOS System Settings)
+- [x] Theme dropdown applies immediately (live preview, no save required)
+- [x] Connection tab wrapped in scroll area (no overlap on smaller monitors)
+- [x] "Test Connection" button moved to footer (left of Cancel/Save, same size)
+- [x] Minimum window size adjusted to 550×600
+
+### Activity Panel Improvements
+
+- [x] Quick Fix shows "🔧 Fixing" + "Processing..." (not "Uploading")
+- [x] Conversions show "🔄 Converting" + percentage only (no bogus speed/ETA)
+- [x] Done items ordered: most recently finished on top
+- [x] Queue order: active → queued → done (latest first)
+
+### Conversion Queue Bug Fix
+
+- [x] VideoConvertManager now syncs queue index on `clear_completed` (stale index bug)
+- [x] Activity no longer stuck as "Uploading" after conversion completes
+
+### macOS Tahoe Compatibility
+
+- [x] Removed "SF Pro Text" font family (dropped in Tahoe), fallback to Helvetica Neue
+- [x] Suppressed `qt.accessibility.table` warnings via `QT_LOGGING_RULES`
+- [x] Added tooltip border for rounded corner rendering attempt
+
+### Code Organization
+
+- [x] Created `src/clients/` package — extracted DeviceClient, ADBClient, IOSClient
+- [x] Moved `server_selection_dialog.py` to `src/views/dialogs/`
+- [x] Removed dead code: `src/widgets/ui_components.py`
+- [x] New files: `sleep_inhibitor_service.py`, `toggle_switch.py`, `batch_metadata_dialog.py`
+- [x] Cleared stale `__pycache__` directories
+
+### Testing
+
+- [x] 448 unit tests (up from 149), organized by module
+- [x] Test directory mirrors `src/` structure: clients/, controllers/, models/, services/, utils/, views/, widgets/, workers/
+- [x] CI: `QT_QPA_PLATFORM=offscreen` for headless Qt test execution
+- [x] Fixed `test_keychain_service` to mock `subprocess.Popen` (code refactored to use stdin)
 
 ---
 

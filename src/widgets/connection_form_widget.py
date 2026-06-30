@@ -2,6 +2,8 @@
 Connection form widget — reusable SSH/ADB connection configuration form.
 
 Used by both the "Add Server" dialog and the main Settings window.
+Test Connection button has been moved to the SettingsWindow footer;
+the status label (result) remains in this widget.
 """
 
 import os

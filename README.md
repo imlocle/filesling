@@ -17,14 +17,17 @@ Built with Python, PySide6, and Paramiko.
 - **Transfer queue** — Queued uploads/downloads with speed, ETA, auto-retry, and resume
 - **rsync fast path** — Delta transfers for SSH servers (only sends changed bytes)
 - **Remote video convert** — Right-click → Convert to H.264/H.265/VP9 (runs ffmpeg on server)
-- **Media metadata** — Edit .nfo sidecar files, view stream info, Quick Fix dialog
+- **Quick Fix** — Fix timestamps, change container, selectively remove subtitle tracks (no re-encoding)
+- **Media metadata** — Edit .nfo sidecar files, batch edit across multiple files, view stream info
+- **Batch metadata** — Multi-select → apply shared fields (Artist, Series, Season, Episode #) to all
 - **Multi-server** — Quick-switch dropdown, per-server bookmarks and settings
 - **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
+- **Sleep prevention** — Mac stays awake during active transfers (configurable)
 - **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain
 - **Notifications** — macOS alerts on transfer complete/fail, Dock badge for pending count
 - **Batch operations** — Multi-select download, move, delete, and batch rename
 - **Detail panel** — Side panel showing metadata + stream info on file select (⌘I)
-- **Themes** — Modern iOS-inspired dark mode, light mode, or follow system
+- **Themes** — Modern dark mode with macOS-style toggle switches, light mode, or follow system
 - **Keyboard shortcuts** — ⌘+R, ⌘+N, ⌘+F, ⌘+I, ⌘+Delete, etc.
 
 ## Quick Start

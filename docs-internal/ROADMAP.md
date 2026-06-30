@@ -1,6 +1,6 @@
 # FileSling — Roadmap
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** June 2026 — Version 3.4.0
 >
 > Forward-looking only. For completed work, see [CHANGELOG.md](CHANGELOG.md).
 > For known issues, see [BUGS.md](BUGS.md).
@@ -25,10 +25,10 @@
 
 ### Sleep/Wake Resilience
 
-- [ ] Prevent sleep during active transfers (`caffeinate -i` subprocess)
+- [x] ~~Prevent sleep during active transfers (`caffeinate -i` subprocess)~~ ✅ Done in 3.4.0
 - [ ] Detect wake and auto-reconnect (health timer already handles this partially)
 - [ ] Auto-restart failed-in-progress transfers after reconnect
-- [ ] Release sleep lock when queue is empty
+- [x] ~~Release sleep lock when queue is empty~~ ✅ Done in 3.4.0
 
 ### Persistent Remote Conversions
 
@@ -41,12 +41,6 @@
 
 ## Priority 2: Media Management
 
-### Batch Metadata Editing
-
-- [ ] Select multiple files → Edit Metadata in bulk (like Calibre)
-- [ ] Apply same tags (genre, show, artist) to all selected
-- [ ] Generate sequential episode numbers automatically
-
 ### NFO Improvements
 
 - [ ] Rename `.nfo` file when video is renamed (BUG-NEW-6)
@@ -56,8 +50,8 @@
 ### Video Tools
 
 - [ ] Batch Quick Fix — apply timestamp fix / container change to multiple files
-- [ ] Strip specific audio/subtitle tracks (choose which to keep)
 - [ ] Thumbnail extraction (show video first-frame in detail panel)
+- [ ] Strip specific audio tracks (choose which to keep, similar to subtitle picker)
 
 ---
 
