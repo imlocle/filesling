@@ -1,6 +1,6 @@
 # Dependency Management Guide
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** July 2026 — Version 3.5.1
 
 ## Overview
 

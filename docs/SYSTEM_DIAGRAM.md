@@ -1,6 +1,6 @@
 # System Diagram
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** July 2026 — Version 3.5.1
 
 ## High-Level Architecture
 
@@ -19,8 +19,10 @@ graph TB
     subgraph Dialogs["Dialogs"]
         SSD[ServerSelectionDialog]
         BRD[BatchRenameDialog]
+        BMD[BatchMetadataDialog]
         CSD[ConvertSettingsDialog]
         FPD[FolderPickerDialog]
+        MID[MediaInfoDialog]
         QFD[QuickFixDialog]
     end
 
@@ -57,6 +59,7 @@ graph TB
         KS[KeychainService]
         RS[RsyncService]
         FF[FfmpegService]
+        SI[SleepInhibitorService]
     end
 
     subgraph External["External Systems"]

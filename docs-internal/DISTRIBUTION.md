@@ -1,6 +1,6 @@
 # FileSling — Distribution & Release Guide
 
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** July 2026 — Version 3.5.1
 
 ## Overview
 
@@ -105,7 +105,7 @@ It checks:
 
 1. **Formatting** — `black --check` and `isort --check-only`
 2. **Lint** — `flake8`
-3. **Tests** — `pytest` (437 tests)
+3. **Tests** — `pytest` (448 tests)
 
 All must pass before merging to main.
 
@@ -176,7 +176,7 @@ git checkout dev
 ## Pre-Release Checklist
 
 - [ ] All changes committed and pushed to dev
-- [ ] Tests passing (`make test` — 437 tests)
+- [ ] Tests passing (`make test` — 448 tests)
 - [ ] Lint passing (`make lint`)
 - [ ] Version bumped in `pyproject.toml`
 - [ ] Version bumped in `src/utils/constants.py`

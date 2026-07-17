@@ -1,7 +1,7 @@
 # Production Standards
 
-> **Last updated:** June 2026
-> **Version:** 3.2.1
+> **Last updated:** July 2026
+> **Version:** 3.5.1
 
 ---
 
@@ -14,7 +14,7 @@
 | Dependency Management       | ✅ Complete  | pip-tools with locked versions               |
 | CI/CD Automation            | ✅ Complete  | Lint + test on push, build + release on tag  |
 | Documentation               | ✅ Good      | Architecture, diagrams, roadmap, guides      |
-| Testing & QA                | ✅ Complete  | 437 unit tests, mirrors src/ structure       |
+| Testing & QA                | ✅ Complete  | 448 unit tests, mirrors src/ structure       |
 | Code Quality Tools          | ✅ Enforced  | black, isort, flake8 via `make format/lint`  |
 | Release Management          | ✅ Automated | `make release V=X.Y.Z`                       |
 
@@ -29,7 +29,7 @@ Presentation Layer (Views, Widgets)
     ↓
 Controller Layer (5 controllers)
     ↓
-Service Layer (8 services)
+Service Layer (9 services)
     ↓
 Client Layer (DeviceClient protocol + 3 implementations)
     ↓
@@ -80,7 +80,7 @@ Infrastructure (Paramiko SFTP, ADB subprocess, pymobiledevice3 AFC)
 
 ### Testing
 
-- **437 unit tests** across 25 test files
+- **448 unit tests** across 26 test files
 - Test directory mirrors src/ structure:
   - `tests/clients/` — ADB, iOS, DeviceClient protocol (3 files)
   - `tests/config/` — Settings (1 file)

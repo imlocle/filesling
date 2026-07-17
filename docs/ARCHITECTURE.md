@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last updated:** June 2026 — Version 3.4.0
+> **Last updated:** July 2026 — Version 3.5.1
 
 ## Overview
 
@@ -50,6 +50,7 @@ src/
 │   │   ├── batch_rename_dialog.py     Multi-file find/replace rename
 │   │   ├── convert_settings_dialog.py Video conversion settings (codec, CRF, etc.)
 │   │   ├── folder_picker_dialog.py    Remote folder browser for Move To
+│   │   ├── media_info_dialog.py       Stream info viewer + tag editor
 │   │   ├── quick_fix_dialog.py        Container change, timestamps, subtitle selection
 │   │   └── server_selection_dialog.py Server picker on launch / server switch
 │   ├── main_window.py                 Main app window (toolbar, explorer, queue)

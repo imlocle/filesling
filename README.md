@@ -25,6 +25,7 @@ Built with Python, PySide6, and Paramiko.
 - **Sleep prevention** — Mac stays awake during active transfers (configurable)
 - **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain
 - **Notifications** — macOS alerts on transfer complete/fail, Dock badge for pending count
+- **Media info** — View detailed stream info and edit tags in a dedicated dialog
 - **Batch operations** — Multi-select download, move, delete, and batch rename
 - **Detail panel** — Side panel showing metadata + stream info on file select (⌘I)
 - **Themes** — Modern dark mode with macOS-style toggle switches, light mode, or follow system
@@ -132,12 +133,33 @@ make format
 # Lint (flake8)
 make lint
 
-# Run tests (437 unit tests)
+# Run tests (448 unit tests)
 make test
 
 # Build distribution (wheel + sdist)
 make build
 ```
+
+### Commit Messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/) format:
+
+```
+<type>: <short description>
+```
+
+| Type       | When to use                                             |
+| ---------- | ------------------------------------------------------- |
+| `feat`     | New feature or page                                     |
+| `fix`      | Bug fix                                                 |
+| `docs`     | Documentation only                                      |
+| `style`    | Formatting, whitespace, no code logic change            |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `perf`     | Performance improvement                                 |
+| `chore`    | Build config, dependencies, tooling                     |
+| `content`  | Copy or content updates in `src/data/`                  |
+
+Keep messages lowercase, imperative, and under 72 characters.
 
 ## Project Structure
 
@@ -147,10 +169,10 @@ src/
 ├── config/         Settings singleton (Pydantic model)
 ├── controllers/    UI event routing (5 controllers)
 ├── models/         ServerConfig dataclass, error hierarchy
-├── services/       Business logic (8 services)
+├── services/       Business logic (9 services)
 ├── utils/          Constants, crash handler, icons, theme
-├── views/          Windows and dialogs (3 windows + 5 dialogs)
-├── widgets/        Reusable UI components (7 widgets)
+├── views/          Windows and dialogs (3 windows + 7 dialogs)
+├── widgets/        Reusable UI components (8 widgets)
 └── workers/        Background QThread workers (5 workers)
 ```
 
@@ -170,6 +192,16 @@ This single command:
 5. Switches back to `dev`
 
 GitHub Actions then builds `FileSling.dmg` and creates the release automatically.
+
+## Icon Generation
+
+To regenerate app icons from the source logo (after updating `assets/icons/filesling_logo.png`):
+
+```bash
+.venv/bin/python scripts/generate_icons.py
+```
+
+This produces all required sizes (16×16 through 1024×1024) plus the macOS `.icns` bundle in `assets/icons/generated/`.
 
 ## Docs
 

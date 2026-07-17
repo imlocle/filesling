@@ -1,7 +1,7 @@
 # FileSling — Quick Reference
 
 > Copy-paste commands for common development and release tasks.
-> **Last updated:** June 2026 — Version 3.2.1
+> **Last updated:** July 2026 — Version 3.5.1
 
 ---
 
@@ -33,7 +33,7 @@ make format
 # Lint (flake8)
 make lint
 
-# Run tests (437 unit tests with coverage)
+# Run tests (448 unit tests with coverage)
 make test
 
 # Run tests without coverage (faster)
@@ -165,13 +165,13 @@ src/
 ├── config/         1 file  — Settings singleton (Pydantic + JSON)
 ├── controllers/    5 files — main_window, connection, download, file_ops, transfer
 ├── models/         2 files — errors hierarchy, ServerConfig dataclass
-├── services/       8 files — connection_manager, rsync, ffmpeg, keychain, etc.
+├── services/       9 files — connection_manager, rsync, ffmpeg, keychain, sleep_inhibitor, etc.
 ├── utils/          6 files — constants, crash handler, icons, logging, theme, helper
-├── views/          3 windows + 5 dialogs
-├── widgets/        7 reusable UI components
+├── views/          3 windows + 7 dialogs
+├── widgets/        8 reusable UI components
 └── workers/        5 background QThread workers
 
-tests/              Mirrors src/ structure (25 test files, 437 tests)
+tests/              Mirrors src/ structure (26 test files, 448 tests)
 ├── clients/        3 test files
 ├── config/         1 test file
 ├── controllers/    4 test files
