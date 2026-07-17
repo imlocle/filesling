@@ -24,7 +24,7 @@ cd "$PROJECT_ROOT"
 pyinstaller \
     --name=FileSling \
     --windowed \
-    --icon=assets/icons/filesling_logo.png \
+    --icon=assets/icons/generated/FileSling.icns \
     --add-data="assets:assets" \
     --hidden-import=paramiko \
     --hidden-import=pydantic \
