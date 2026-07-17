@@ -8,7 +8,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.accessibility.table=false")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.config.settings import Settings  # noqa: E402
-from src.utils.constants import SOFTWARE_NAME, SPLASH_DURATION_MS, VERSION  # noqa: E402
+from src.utils.constants import SOFTWARE_NAME, VERSION  # noqa: E402
 from src.utils.crash_handler import (  # noqa: E402
     check_previous_crash,
     clear_crash_log,
@@ -18,7 +18,6 @@ from src.utils.crash_handler import (  # noqa: E402
 from src.utils.helper import get_path, rounded_icon  # noqa: E402
 from src.utils.theme import apply_theme  # noqa: E402
 from src.views.main_window import MainWindow  # noqa: E402
-from src.views.splash_screen import SplashScreen  # noqa: E402
 
 
 def _get_version() -> str:
@@ -76,22 +75,14 @@ def main():
 
         clear_crash_log()
 
-    # ---- SPLASH ----
-    logo_path = get_path("assets/icons/filesling_logo.png")
-    splash = SplashScreen(str(logo_path), duration=SPLASH_DURATION_MS)
-    splash.show()
-
     # ---- ICON (rounded) ----
+    logo_path = get_path("assets/icons/filesling_logo.png")
     app.setWindowIcon(rounded_icon(str(logo_path), 15))
 
     # ---- MAIN WINDOW ----
     window = MainWindow()
+    window.show()
 
-    def start_main():
-        splash.close()
-        window.show()
-
-    splash.show_and_wait(start_main, window)
     sys.exit(app.exec())
 
 
