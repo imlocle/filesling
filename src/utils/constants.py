@@ -63,7 +63,7 @@ LOGS_DIR_NAME = "logs"
 # =============================================================================
 # UI Timing
 # =============================================================================
-SPLASH_DURATION_MS = 2500
+SPLASH_DURATION_MS = 1500
 TRANSFER_REFRESH_INTERVAL_MS = 500
 QUIT_CHECK_INTERVAL_MS = 1000
 

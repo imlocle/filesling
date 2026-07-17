@@ -1,28 +1,25 @@
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import QGraphicsDropShadowEffect, QSplashScreen
 
 
 class SplashScreen(QSplashScreen):
     def __init__(self, logo_path: str, duration: int = 2500) -> None:
-        # Load original image
+        # Load original image (already has rounded corners baked in)
         original = QPixmap(logo_path)
 
-        # ---- CREATE ROUNDED VERSION ----
-        size = original.size()
-        rounded = QPixmap(size)
-        rounded.fill(Qt.GlobalColor.transparent)
+        # Scale down to 300px for a compact splash
+        scaled = original.scaled(
+            300,
+            300,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
 
-        painter = QPainter(rounded)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QBrush(original))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(original.rect(), 15, 15)  # 15px radius
-        painter.end()
-
-        super().__init__(rounded)
+        super().__init__(scaled)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.duration = duration
         self.min_duration_timer = None
         self.ready_to_close = False

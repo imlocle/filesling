@@ -15,7 +15,7 @@ help:
 	@echo "  make run           Run the application"
 	@echo "  make format        Format code (black, isort)"
 	@echo "  make lint          Run linting checks (flake8)"
-	@echo "  make test          Run tests with coverage (437 tests)"
+	@echo "  make test          Run tests with coverage (448 tests)"
 	@echo ""
 	@echo "Build & Release:"
 	@echo "  make build         Build wheel and source distributions"
