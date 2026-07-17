@@ -3,7 +3,7 @@
 # =============================================================================
 SOFTWARE_NAME = "FileSling"
 CONFIG_JSON = "config.json"
-VERSION = "3.5.0"
+VERSION = "3.5.1"
 GITHUB_REPO_URL = "https://github.com/imlocle/filesling"
 
 # =============================================================================
