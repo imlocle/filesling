@@ -36,7 +36,8 @@ src/
 │   ├── notification_service.py        macOS notifications + Dock badge
 │   ├── remote_file_service.py         Centralized connection-lost detection
 │   ├── rsync_service.py              rsync fast-path transfers over SSH
-│   └── sleep_inhibitor_service.py     Prevents macOS sleep during transfers
+│   ├── sleep_inhibitor_service.py     Prevents macOS sleep during transfers
+│   └── menu_bar_service.py            macOS menu bar status item (system tray)
 ├── utils/
 │   ├── constants.py                   App-wide constants and defaults
 │   ├── crash_handler.py               Global exception handler + crash log
@@ -54,8 +55,7 @@ src/
 │   │   ├── quick_fix_dialog.py        Container change, timestamps, subtitle selection
 │   │   └── server_selection_dialog.py Server picker on launch / server switch
 │   ├── main_window.py                 Main app window (toolbar, explorer, queue)
-│   ├── settings_window.py             Settings editor (connection, files, appearance)
-│   └── splash_screen.py               Startup splash
+│   └── settings_window.py             Settings editor (connection, files, appearance)
 ├── widgets/
 │   ├── bookmarks_bar.py               Quick-access folder bookmarks
 │   ├── connection_form_widget.py      Reusable SSH/ADB/iOS connection form
@@ -279,6 +279,8 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 - macOS notifications on transfer complete/fail
 - Dock badge shows pending transfer count
 - Exit confirmation with "Quit After Jobs Finish" during active transfers
+- Close button hides window (app stays in menu bar); ⌘Q fully quits
+- Menu bar icon with transfer status and Show/Quit actions
 - Sleep inhibition during active transfers (configurable, uses `caffeinate`)
 
 ## Settings UI

@@ -29,7 +29,7 @@ Presentation Layer (Views, Widgets)
     ↓
 Controller Layer (5 controllers)
     ↓
-Service Layer (9 services)
+Service Layer (10 services)
     ↓
 Client Layer (DeviceClient protocol + 3 implementations)
     ↓
@@ -76,7 +76,8 @@ Infrastructure (Paramiko SFTP, ADB subprocess, pymobiledevice3 AFC)
 - Restored uploads restart after app crash or quit
 - rsync delta transfers when available (only sends changed bytes)
 - Duplicate detection before upload/download
-- Exit confirmation during active transfers
+- Exit confirmation during active transfers (⌘Q or Quit from menu bar)
+- Close button hides window (app persists in menu bar)
 
 ### Testing
 

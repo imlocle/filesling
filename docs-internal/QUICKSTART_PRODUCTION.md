@@ -165,7 +165,7 @@ src/
 ├── config/         1 file  — Settings singleton (Pydantic + JSON)
 ├── controllers/    5 files — main_window, connection, download, file_ops, transfer
 ├── models/         2 files — errors hierarchy, ServerConfig dataclass
-├── services/       9 files — connection_manager, rsync, ffmpeg, keychain, sleep_inhibitor, etc.
+├── services/       9 files — connection_manager, rsync, ffmpeg, keychain, sleep_inhibitor, menu_bar, etc.
 ├── utils/          6 files — constants, crash handler, icons, logging, theme, helper
 ├── views/          3 windows + 7 dialogs
 ├── widgets/        8 reusable UI components

@@ -1,9 +1,40 @@
 # FileSling — Changelog
 
-> **Last updated:** June 2026 — Version 3.4.0
+> **Last updated:** July 2026 — Version 3.5.1
 >
 > For planned/future work, see [ROADMAP.md](ROADMAP.md).
 > For known issues, see [BUGS.md](BUGS.md).
+
+---
+
+## Unreleased (dev)
+
+### Menu Bar Status Item
+
+- [x] macOS menu bar icon (template icon with document + swoosh cutout)
+- [x] Dropdown menu: transfer status, Show FileSling, Quit
+- [x] Transfer count updates live in menu bar dropdown
+- [x] Click menu bar icon to show/raise window
+
+### Close-to-Hide Behavior
+
+- [x] Close button (red ✕) hides the window — app stays alive in menu bar
+- [x] ⌘Q / File → Quit fully exits the application
+- [x] Active transfer confirmation still shown on Quit (with "Hide Window" option)
+- [x] Removed `skip_exit_confirm` setting (no longer needed)
+
+### Splash Screen Removed
+
+- [x] Splash screen removed entirely — main window shows immediately on launch
+- [x] Deleted `src/views/splash_screen.py`
+- [x] Removed `SPLASH_DURATION_MS` constant
+
+### Icon Pipeline
+
+- [x] New app icon with anti-aliased rounded corners (baked into PNG)
+- [x] `scripts/generate_icons.py` — generates all sizes (16–1024px) + `.icns` from source
+- [x] `scripts/generate_menu_bar_icon.py` — generates monochrome template icon for menu bar
+- [x] PyInstaller build uses `.icns` file for proper macOS app bundle icon
 
 ---
 

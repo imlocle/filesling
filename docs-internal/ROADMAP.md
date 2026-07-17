@@ -118,7 +118,7 @@
 
 ## Priority 5: macOS Native Polish
 
-- [ ] Menu bar icon with drop zone (drag file to quick-send)
+- [x] ~~Menu bar icon with drop zone (drag file to quick-send)~~ ✅ Done (menu bar status item with transfer status + Show/Quit)
 - [ ] Finder extension (right-click → "Send with FileSling")
 - [ ] `UserNotifications` framework (richer notifications, action buttons)
 - [ ] Async drag-to-Finder via `NSFilePromiseProvider` (any file size)

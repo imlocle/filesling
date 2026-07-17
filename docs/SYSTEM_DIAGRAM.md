@@ -60,6 +60,7 @@ graph TB
         RS[RsyncService]
         FF[FfmpegService]
         SI[SleepInhibitorService]
+        MB[MenuBarService]
     end
 
     subgraph External["External Systems"]
