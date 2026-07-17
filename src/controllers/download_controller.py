@@ -274,7 +274,9 @@ class DownloadController(QObject):
 
         # Update menu bar activity
         if hasattr(self.view, "menu_bar_service"):
-            uploads = (1 if self.transfer_controller.is_busy() else 0) + self.transfer_controller.queue_size()
+            uploads = (
+                1 if self.transfer_controller.is_busy() else 0
+            ) + self.transfer_controller.queue_size()
             downloads = len(self._active) + len(self._pending)
             conversions = 0
             if hasattr(self.view, "convert_manager"):
@@ -393,8 +395,12 @@ class DownloadController(QObject):
 
         # Update menu bar activity
         if hasattr(self.view, "menu_bar_service"):
-            uploads = (1 if self.transfer_controller.is_busy() else 0) + self.transfer_controller.queue_size()
-            downloads = len(self._active) - 1  # -1 because current slot is about to be removed
+            uploads = (
+                1 if self.transfer_controller.is_busy() else 0
+            ) + self.transfer_controller.queue_size()
+            downloads = (
+                len(self._active) - 1
+            )  # -1 because current slot is about to be removed
             downloads = max(0, downloads) + len(self._pending)
             conversions = 0
             if hasattr(self.view, "convert_manager"):

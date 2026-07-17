@@ -50,7 +50,9 @@ class MenuBarService:
         # No activated signal — left-click on macOS shows the context menu by default
         self._tray.show()
 
-    def update_activity(self, uploads: int = 0, downloads: int = 0, conversions: int = 0) -> None:
+    def update_activity(
+        self, uploads: int = 0, downloads: int = 0, conversions: int = 0
+    ) -> None:
         """Update the activity status line in the dropdown."""
         if not self._status_action:
             return

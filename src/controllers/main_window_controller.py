@@ -267,8 +267,14 @@ class MainWindowController:
         if not hasattr(self.view, "menu_bar_service"):
             return
 
-        uploads = (1 if self.manual_transfer.is_busy() else 0) + self.manual_transfer.queue_size()
-        downloads = len(self.download_ctrl._active) if hasattr(self.download_ctrl, "_active") else 0
+        uploads = (
+            1 if self.manual_transfer.is_busy() else 0
+        ) + self.manual_transfer.queue_size()
+        downloads = (
+            len(self.download_ctrl._active)
+            if hasattr(self.download_ctrl, "_active")
+            else 0
+        )
 
         # Check for active conversions
         conversions = 0
