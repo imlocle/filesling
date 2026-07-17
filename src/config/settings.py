@@ -59,7 +59,6 @@ class SettingsConfig(BaseModel):
 
     # Metadata
     last_modified: str = ""
-    skip_exit_confirm: bool = False
     bookmarks: list[str] = Field(default_factory=list)
     theme_mode: str = "system"
     max_parallel_transfers: int = 1
@@ -386,7 +385,6 @@ class Settings:
             "show_detail_panel": self.config.show_detail_panel,
             "prevent_sleep_during_transfer": self.config.prevent_sleep_during_transfer,
             "skip_patterns": list(self.config.skip_patterns),
-            "skip_exit_confirm": self.config.skip_exit_confirm,
             "last_modified": self.config.last_modified,
             "bookmarks": self.config.bookmarks,
             "theme_mode": self.config.theme_mode,

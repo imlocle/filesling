@@ -52,7 +52,6 @@ def sample_config():
         "notify_sound": True,
         "compress_folders_before_transfer": False,
         "skip_patterns": [".DS_Store", "._*"],
-        "skip_exit_confirm": False,
         "bookmarks": [],
         "theme_mode": "system",
         "max_parallel_transfers": 1,

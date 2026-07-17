@@ -546,7 +546,6 @@ class SettingsWindow(QDialog):
                 "hide_nfo_files": self.hide_nfo_checkbox.isChecked(),
                 "show_detail_panel": self.detail_panel_checkbox.isChecked(),
                 "prevent_sleep_during_transfer": self.prevent_sleep_checkbox.isChecked(),
-                "skip_exit_confirm": self.settings.config.skip_exit_confirm,
                 "bookmarks": self.settings.config.bookmarks,
                 "skip_patterns": [
                     f.strip()

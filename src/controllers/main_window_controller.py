@@ -234,8 +234,10 @@ class MainWindowController:
                 queue._item_widgets[self._current_queue_index]._update_method_dot()
 
     def _on_queue_changed(self, total: int) -> None:
-        """Handle transfer queue size change — update dock badge."""
+        """Handle transfer queue size change — update dock badge and menu bar."""
         self._update_dock_badge()
+        if hasattr(self.view, "menu_bar_service"):
+            self.view.menu_bar_service.set_transfer_count(total)
 
     def _on_cancel_transfer(self, pending_index: int) -> None:
         """Handle cancel request from queue widget."""

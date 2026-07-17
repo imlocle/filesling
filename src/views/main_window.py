@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from src.config.settings import Settings
 from src.controllers.main_window_controller import MainWindowController
 from src.services.connection_manager_service import ConnectionManagerService
+from src.services.menu_bar_service import MenuBarService
 from src.utils.constants import (
     DIALOG_FILES_ALREADY_EXIST,
     DIALOG_SETUP_FAILED,
@@ -85,6 +86,9 @@ class MainWindow(QMainWindow):
         # Create controller
         self.connection_manager_service = ConnectionManagerService(self.settings)
         self.controller = MainWindowController(self, self.connection_manager_service)
+
+        # Menu bar status item (system tray icon)
+        self.menu_bar_service = MenuBarService(self)
 
         # === 2. Build Layout ===
         main_layout = QVBoxLayout()
@@ -487,7 +491,7 @@ class MainWindow(QMainWindow):
         quit_action = QAction(f"Quit {SOFTWARE_NAME}", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.setMenuRole(QAction.MenuRole.QuitRole)
-        quit_action.triggered.connect(self.close)
+        quit_action.triggered.connect(self._force_quit)
         file_menu.addAction(quit_action)
 
         # --- Edit Menu ---
@@ -886,7 +890,11 @@ class MainWindow(QMainWindow):
         # occur elsewhere based on user settings.
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Called when user clicks the window's close button."""
+        """Called when user clicks the window's close button.
+
+        Hides the window instead of quitting — the app stays alive in the
+        menu bar. Use Quit from the menu bar icon or ⌘Q to fully exit.
+        """
         # Guard: controller may not exist if window closes during early init
         if not hasattr(self, "controller"):
             self._save_geometry()
@@ -911,6 +919,9 @@ class MainWindow(QMainWindow):
             quit_after_btn = msg.addButton(
                 "Quit After Jobs Finish", QMessageBox.ButtonRole.AcceptRole
             )
+            hide_btn = msg.addButton(
+                "Hide Window", QMessageBox.ButtonRole.ActionRole
+            )
             cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
             msg.setDefaultButton(cancel_btn)
 
@@ -925,6 +936,12 @@ class MainWindow(QMainWindow):
                 self._quit_after_jobs()
                 event.ignore()
                 return
+            elif clicked == hide_btn:
+                # Just hide — app stays in menu bar
+                self._save_geometry()
+                self.hide()
+                event.ignore()
+                return
             # else: quit_now — fall through to shutdown
 
             self._save_geometry()
@@ -932,40 +949,54 @@ class MainWindow(QMainWindow):
             event.accept()
             return
 
-        # No active work — show normal exit confirmation
-        skip_confirm = self.settings.config.__dict__.get("skip_exit_confirm", False)
+        # No active work — just hide the window (app lives in menu bar)
+        self._save_geometry()
+        self.hide()
+        event.ignore()
 
-        if skip_confirm:
+    def _force_quit(self) -> None:
+        """Fully quit the application (from ⌘Q or menu bar Quit)."""
+        from PySide6.QtWidgets import QApplication
+
+        # Check for active transfers
+        if hasattr(self, "controller"):
+            has_active_work = (
+                self.controller.manual_transfer.is_busy()
+                or self.controller.download_ctrl.is_active
+            )
+
+            if has_active_work:
+                msg = QMessageBox(self)
+                msg.setWindowTitle(f"Exit {SOFTWARE_NAME}")
+                msg.setText("Transfers are still in progress.")
+                msg.setInformativeText("What would you like to do?")
+
+                quit_now_btn = msg.addButton(  # noqa: F841
+                    "Quit Now", QMessageBox.ButtonRole.DestructiveRole
+                )
+                quit_after_btn = msg.addButton(
+                    "Quit After Jobs Finish", QMessageBox.ButtonRole.AcceptRole
+                )
+                cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                msg.setDefaultButton(cancel_btn)
+
+                msg.exec()
+                clicked = msg.clickedButton()
+
+                if clicked == cancel_btn:
+                    return
+                elif clicked == quit_after_btn:
+                    self._quit_after_jobs()
+                    return
+                # else: quit_now — fall through
+
             self._save_geometry()
             self.controller.shutdown()
-            event.accept()
-            return
 
-        from PySide6.QtWidgets import QCheckBox
+        if hasattr(self, "menu_bar_service"):
+            self.menu_bar_service.cleanup()
 
-        msg = QMessageBox(self)
-        msg.setWindowTitle(f"Exit {SOFTWARE_NAME}")
-        msg.setText("Are you sure you want to quit?")
-        msg.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        msg.setDefaultButton(QMessageBox.StandardButton.No)
-
-        checkbox = QCheckBox("Don't ask me again")
-        msg.setCheckBox(checkbox)
-
-        reply = msg.exec()
-
-        if reply == QMessageBox.StandardButton.Yes:
-            if checkbox.isChecked():
-                self.settings.config.skip_exit_confirm = True
-                self.settings.save_config(self.settings._config_to_dict())
-
-            self._save_geometry()
-            self.controller.shutdown()
-            event.accept()
-        else:
-            event.ignore()
+        QApplication.quit()
 
     def _quit_after_jobs(self) -> None:
         """Poll until all transfers finish, then quit."""
@@ -983,6 +1014,8 @@ class MainWindow(QMainWindow):
                 self._quit_timer.stop()
                 self._save_geometry()
                 self.controller.shutdown()
+                if hasattr(self, "menu_bar_service"):
+                    self.menu_bar_service.cleanup()
                 from PySide6.QtWidgets import QApplication
 
                 QApplication.quit()
