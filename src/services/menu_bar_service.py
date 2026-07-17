@@ -1,6 +1,6 @@
 """macOS menu bar status item (system tray icon) for FileSling."""
 
-from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
 from src.utils.constants import SOFTWARE_NAME
@@ -14,7 +14,7 @@ class MenuBarService:
         self._parent = parent
         self._tray: QSystemTrayIcon | None = None
         self._menu: QMenu | None = None
-        self._status_action: QAction | None = None
+        self._status_action = None
         self._setup()
 
     def _setup(self) -> None:
@@ -32,12 +32,13 @@ class MenuBarService:
         # Build dropdown menu
         self._menu = QMenu()
 
+        # Activity status (disabled, informational)
         self._status_action = self._menu.addAction("No active transfers")
         self._status_action.setEnabled(False)
 
         self._menu.addSeparator()
 
-        show_action = self._menu.addAction(f"Show {SOFTWARE_NAME}")
+        show_action = self._menu.addAction(f"Open {SOFTWARE_NAME}")
         show_action.triggered.connect(self._show_window)
 
         self._menu.addSeparator()
@@ -46,27 +47,26 @@ class MenuBarService:
         quit_action.triggered.connect(self._quit)
 
         self._tray.setContextMenu(self._menu)
-        self._tray.activated.connect(self._on_activated)
+        # No activated signal — left-click on macOS shows the context menu by default
         self._tray.show()
 
-    def update_status(self, message: str) -> None:
-        """Update the status line in the dropdown menu."""
-        if self._status_action:
-            self._status_action.setText(message)
+    def update_activity(self, uploads: int = 0, downloads: int = 0, conversions: int = 0) -> None:
+        """Update the activity status line in the dropdown."""
+        if not self._status_action:
+            return
 
-    def set_transfer_count(self, count: int) -> None:
-        """Update status based on active transfer count."""
-        if count == 0:
-            self.update_status("No active transfers")
-        elif count == 1:
-            self.update_status("1 transfer in progress")
+        parts = []
+        if uploads > 0:
+            parts.append(f"{uploads} upload{'s' if uploads > 1 else ''}")
+        if downloads > 0:
+            parts.append(f"{downloads} download{'s' if downloads > 1 else ''}")
+        if conversions > 0:
+            parts.append(f"{conversions} conversion{'s' if conversions > 1 else ''}")
+
+        if parts:
+            self._status_action.setText(", ".join(parts) + " in progress")
         else:
-            self.update_status(f"{count} transfers in progress")
-
-    def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        """Handle click on the tray icon — show/raise the main window."""
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self._show_window()
+            self._status_action.setText("No active transfers")
 
     def _show_window(self) -> None:
         """Show and raise the main window."""

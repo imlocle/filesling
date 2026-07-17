@@ -234,10 +234,8 @@ class MainWindowController:
                 queue._item_widgets[self._current_queue_index]._update_method_dot()
 
     def _on_queue_changed(self, total: int) -> None:
-        """Handle transfer queue size change — update dock badge and menu bar."""
+        """Handle transfer queue size change — update dock badge."""
         self._update_dock_badge()
-        if hasattr(self.view, "menu_bar_service"):
-            self.view.menu_bar_service.set_transfer_count(total)
 
     def _on_cancel_transfer(self, pending_index: int) -> None:
         """Handle cancel request from queue widget."""
@@ -262,6 +260,26 @@ class MainWindowController:
         pending = self.manual_transfer.queue_size()
         active = 1 if self.manual_transfer.is_busy() else 0
         set_dock_badge(pending + active)
+        self._update_menu_bar_activity()
+
+    def _update_menu_bar_activity(self) -> None:
+        """Update the menu bar dropdown with current activity counts."""
+        if not hasattr(self.view, "menu_bar_service"):
+            return
+
+        uploads = (1 if self.manual_transfer.is_busy() else 0) + self.manual_transfer.queue_size()
+        downloads = len(self.download_ctrl._active) if hasattr(self.download_ctrl, "_active") else 0
+
+        # Check for active conversions
+        conversions = 0
+        if hasattr(self.view, "convert_manager"):
+            manager = self.view.convert_manager
+            if hasattr(manager, "_is_running") and manager._is_running:
+                conversions = 1
+
+        self.view.menu_bar_service.update_activity(
+            uploads=uploads, downloads=downloads, conversions=conversions
+        )
 
     def _update_sleep_inhibitor(self) -> None:
         """Acquire or release sleep inhibition based on active work."""

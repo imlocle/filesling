@@ -272,6 +272,19 @@ class DownloadController(QObject):
             logger.download(f"Download: {len(remote_paths)} items")
         logger.info(f"Saving to: {local_dir}")
 
+        # Update menu bar activity
+        if hasattr(self.view, "menu_bar_service"):
+            uploads = (1 if self.transfer_controller.is_busy() else 0) + self.transfer_controller.queue_size()
+            downloads = len(self._active) + len(self._pending)
+            conversions = 0
+            if hasattr(self.view, "convert_manager"):
+                manager = self.view.convert_manager
+                if hasattr(manager, "_is_running") and manager._is_running:
+                    conversions = 1
+            self.view.menu_bar_service.update_activity(
+                uploads=uploads, downloads=downloads, conversions=conversions
+            )
+
     def _on_progress(self, slot: _DownloadSlot, percent: int) -> None:
         """Handle download progress for a specific slot."""
         if hasattr(self.view, "transfer_queue"):
@@ -377,6 +390,20 @@ class DownloadController(QObject):
         pending = self.transfer_controller.queue_size()
         active = 1 if self.transfer_controller.is_busy() else 0
         set_dock_badge(pending + active)
+
+        # Update menu bar activity
+        if hasattr(self.view, "menu_bar_service"):
+            uploads = (1 if self.transfer_controller.is_busy() else 0) + self.transfer_controller.queue_size()
+            downloads = len(self._active) - 1  # -1 because current slot is about to be removed
+            downloads = max(0, downloads) + len(self._pending)
+            conversions = 0
+            if hasattr(self.view, "convert_manager"):
+                manager = self.view.convert_manager
+                if hasattr(manager, "_is_running") and manager._is_running:
+                    conversions = 1
+            self.view.menu_bar_service.update_activity(
+                uploads=uploads, downloads=downloads, conversions=conversions
+            )
 
         # Cleanup slot and start next pending
         self._cleanup_slot(slot, remove=True)

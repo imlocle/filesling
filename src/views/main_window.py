@@ -892,8 +892,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Called when user clicks the window's close button.
 
-        Hides the window instead of quitting — the app stays alive in the
-        menu bar. Use Quit from the menu bar icon or ⌘Q to fully exit.
+        Always hides the window — the app stays alive in the menu bar.
+        Use Quit from the menu bar icon or ⌘Q to fully exit.
         """
         # Guard: controller may not exist if window closes during early init
         if not hasattr(self, "controller"):
@@ -901,55 +901,6 @@ class MainWindow(QMainWindow):
             event.accept()
             return
 
-        # Check if any transfers/conversions are active
-        has_active_work = (
-            self.controller.manual_transfer.is_busy()
-            or self.controller.download_ctrl.is_active
-        )
-
-        if has_active_work:
-            msg = QMessageBox(self)
-            msg.setWindowTitle(f"Exit {SOFTWARE_NAME}")
-            msg.setText("Transfers are still in progress.")
-            msg.setInformativeText("What would you like to do?")
-
-            quit_now_btn = msg.addButton(  # noqa: F841
-                "Quit Now", QMessageBox.ButtonRole.DestructiveRole
-            )
-            quit_after_btn = msg.addButton(
-                "Quit After Jobs Finish", QMessageBox.ButtonRole.AcceptRole
-            )
-            hide_btn = msg.addButton(
-                "Hide Window", QMessageBox.ButtonRole.ActionRole
-            )
-            cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-            msg.setDefaultButton(cancel_btn)
-
-            msg.exec()
-            clicked = msg.clickedButton()
-
-            if clicked == cancel_btn:
-                event.ignore()
-                return
-            elif clicked == quit_after_btn:
-                # Wait for transfers to finish, then quit
-                self._quit_after_jobs()
-                event.ignore()
-                return
-            elif clicked == hide_btn:
-                # Just hide — app stays in menu bar
-                self._save_geometry()
-                self.hide()
-                event.ignore()
-                return
-            # else: quit_now — fall through to shutdown
-
-            self._save_geometry()
-            self.controller.shutdown()
-            event.accept()
-            return
-
-        # No active work — just hide the window (app lives in menu bar)
         self._save_geometry()
         self.hide()
         event.ignore()
