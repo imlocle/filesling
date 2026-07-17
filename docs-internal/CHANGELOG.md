@@ -11,16 +11,17 @@
 
 ### Menu Bar Status Item
 
-- [x] macOS menu bar icon (template icon with document + swoosh cutout)
-- [x] Dropdown menu: transfer status, Show FileSling, Quit
-- [x] Transfer count updates live in menu bar dropdown
-- [x] Click menu bar icon to show/raise window
+- [x] macOS menu bar icon (template icon with document + swoosh/plane cutout)
+- [x] Dropdown menu: live activity status, Open FileSling, Quit FileSling
+- [x] Activity status updates live (uploads, downloads, conversions in progress)
+- [x] Left-click shows dropdown only (no auto-open behavior)
 
 ### Close-to-Hide Behavior
 
-- [x] Close button (red ✕) hides the window — app stays alive in menu bar
+- [x] Close button (red ✕) always hides the window — app stays alive in menu bar
+- [x] No exit confirmation dialog on close (just hides instantly)
 - [x] ⌘Q / File → Quit fully exits the application
-- [x] Active transfer confirmation still shown on Quit (with "Hide Window" option)
+- [x] Active transfer confirmation shown only on Quit (not on close)
 - [x] Removed `skip_exit_confirm` setting (no longer needed)
 
 ### Splash Screen Removed

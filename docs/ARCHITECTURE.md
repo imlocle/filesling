@@ -37,7 +37,7 @@ src/
 │   ├── remote_file_service.py         Centralized connection-lost detection
 │   ├── rsync_service.py              rsync fast-path transfers over SSH
 │   ├── sleep_inhibitor_service.py     Prevents macOS sleep during transfers
-│   └── menu_bar_service.py            macOS menu bar status item (system tray)
+│   └── menu_bar_service.py            macOS menu bar icon + activity dropdown
 ├── utils/
 │   ├── constants.py                   App-wide constants and defaults
 │   ├── crash_handler.py               Global exception handler + crash log
@@ -278,9 +278,9 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 - Downloads auto-reveal in Finder on completion (configurable)
 - macOS notifications on transfer complete/fail
 - Dock badge shows pending transfer count
-- Exit confirmation with "Quit After Jobs Finish" during active transfers
-- Close button hides window (app stays in menu bar); ⌘Q fully quits
-- Menu bar icon with transfer status and Show/Quit actions
+- Close button hides window (app stays alive in menu bar)
+- Menu bar icon with live activity status (uploads/downloads/conversions), Open, and Quit
+- ⌘Q shows confirmation only if transfers are active, otherwise quits immediately
 - Sleep inhibition during active transfers (configurable, uses `caffeinate`)
 
 ## Settings UI

@@ -76,8 +76,9 @@ Infrastructure (Paramiko SFTP, ADB subprocess, pymobiledevice3 AFC)
 - Restored uploads restart after app crash or quit
 - rsync delta transfers when available (only sends changed bytes)
 - Duplicate detection before upload/download
-- Exit confirmation during active transfers (⌘Q or Quit from menu bar)
 - Close button hides window (app persists in menu bar)
+- ⌘Q confirms only during active transfers, otherwise quits immediately
+- Menu bar icon with live activity status dropdown
 
 ### Testing
 
