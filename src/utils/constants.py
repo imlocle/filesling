@@ -1,10 +1,22 @@
 # =============================================================================
 # App Identity
 # =============================================================================
+import os
+import sys
+from pathlib import Path
+
 SOFTWARE_NAME = "FileSling"
 CONFIG_JSON = "config.json"
 VERSION = "3.6.1"
 GITHUB_REPO_URL = "https://github.com/imlocle/filesling"
+
+# App data directory (config, logs, history, queue)
+# Windows: %APPDATA%\FileSling  (e.g., C:\Users\user\AppData\Roaming\FileSling)
+# macOS/Linux: ~/.FileSling
+if sys.platform == "win32":
+    APP_DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / SOFTWARE_NAME
+else:
+    APP_DATA_DIR = Path.home() / f".{SOFTWARE_NAME}"
 
 # =============================================================================
 # Connection Types

@@ -1,8 +1,8 @@
 """
-Tests for the macOS Keychain service.
+Tests for the credential storage service.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.services.keychain_service import (
     delete_password,
@@ -13,85 +13,55 @@ from src.services.keychain_service import (
 
 
 class TestStorePassword:
-    @patch("src.services.keychain_service.subprocess.Popen")
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_store_success(self, mock_run, mock_popen):
-        mock_run.return_value = MagicMock(returncode=0)
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = ("", "")
-        mock_proc.returncode = 0
-        mock_popen.return_value = mock_proc
+    @patch("src.services.keychain_service.store_credential")
+    def test_store_success(self, mock_store):
+        mock_store.return_value = True
         result = store_password("user@host", "secret123")
         assert result is True
-        assert mock_run.call_count == 1  # delete
-        assert mock_popen.call_count == 1  # add (via Popen)
+        mock_store.assert_called_once_with("user@host", "secret123")
 
-    @patch("src.services.keychain_service.subprocess.Popen")
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_store_failure(self, mock_run, mock_popen):
-        # Delete succeeds, but add (via Popen) fails
-        mock_run.return_value = MagicMock(returncode=0)
-        mock_proc = MagicMock()
-        mock_proc.communicate.return_value = ("", "keychain error")
-        mock_proc.returncode = 1
-        mock_popen.return_value = mock_proc
-        result = store_password("user@host", "secret123")
-        assert result is False
-
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_store_handles_exception(self, mock_run):
-        mock_run.side_effect = OSError("command not found")
+    @patch("src.services.keychain_service.store_credential")
+    def test_store_failure(self, mock_store):
+        mock_store.return_value = False
         result = store_password("user@host", "secret123")
         assert result is False
 
 
 class TestRetrievePassword:
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_retrieve_success(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0, stdout="secret123\n")
+    @patch("src.services.keychain_service.get_credential")
+    def test_retrieve_success(self, mock_get):
+        mock_get.return_value = "secret123"
         result = retrieve_password("user@host")
         assert result == "secret123"
 
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_retrieve_not_found(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=44)
-        result = retrieve_password("user@host")
-        assert result is None
-
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_retrieve_handles_exception(self, mock_run):
-        mock_run.side_effect = OSError("command not found")
+    @patch("src.services.keychain_service.get_credential")
+    def test_retrieve_not_found(self, mock_get):
+        mock_get.return_value = None
         result = retrieve_password("user@host")
         assert result is None
 
 
 class TestDeletePassword:
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_delete_success(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0)
+    @patch("src.services.keychain_service.delete_credential")
+    def test_delete_success(self, mock_delete):
+        mock_delete.return_value = True
         result = delete_password("user@host")
         assert result is True
 
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_delete_not_found(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=44)
-        result = delete_password("user@host")
-        assert result is False
-
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_delete_handles_exception(self, mock_run):
-        mock_run.side_effect = OSError("command not found")
+    @patch("src.services.keychain_service.delete_credential")
+    def test_delete_not_found(self, mock_delete):
+        mock_delete.return_value = False
         result = delete_password("user@host")
         assert result is False
 
 
 class TestHasStoredPassword:
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_has_password(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0, stdout="secret\n")
+    @patch("src.services.keychain_service.has_credential")
+    def test_has_password(self, mock_has):
+        mock_has.return_value = True
         assert has_stored_password("user@host") is True
 
-    @patch("src.services.keychain_service.subprocess.run")
-    def test_no_password(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=44)
+    @patch("src.services.keychain_service.has_credential")
+    def test_no_password(self, mock_has):
+        mock_has.return_value = False
         assert has_stored_password("user@host") is False

@@ -1,18 +1,19 @@
 """
-macOS notification service for FileSling.
+Notification service for FileSling.
 
-Sends native macOS notifications when transfers complete, fail, etc.
-Uses osascript (AppleScript) for reliable delivery without extra dependencies.
-Also manages the Dock badge for pending transfer count.
+Sends native desktop notifications when transfers complete, fail, etc.
+Also manages the taskbar/dock badge for pending transfer count.
+
+Uses the src.platform abstraction for cross-platform support.
 """
 
 from __future__ import annotations
 
-import subprocess
 from typing import Optional
 
-from src.utils.constants import SOFTWARE_NAME, TIMEOUT_NOTIFICATION
-from src.utils.logging_signal import logger
+from src.platform import notify as _platform_notify
+from src.platform import set_dock_badge as _platform_set_dock_badge
+from src.utils.constants import SOFTWARE_NAME
 
 
 def notify(
@@ -22,7 +23,7 @@ def notify(
     sound: bool = False,
 ) -> None:
     """
-    Send a macOS notification via osascript.
+    Send a desktop notification.
 
     Args:
         title: Notification title (e.g. "FileSling")
@@ -30,25 +31,7 @@ def notify(
         subtitle: Optional subtitle line
         sound: Whether to play the default notification sound
     """
-    try:
-        script = (
-            f'display notification "{_escape(message)}" '
-            f'with title "{_escape(title)}"'
-        )
-        if subtitle:
-            script += f' subtitle "{_escape(subtitle)}"'
-        if sound:
-            script += ' sound name "default"'
-
-        subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True,
-            timeout=TIMEOUT_NOTIFICATION,
-        )
-    except subprocess.TimeoutExpired:
-        logger.warn("Notification: osascript timed out")
-    except Exception as e:
-        logger.warn(f"Notification: Failed to send: {e}")
+    _platform_notify(title=title, message=message, subtitle=subtitle, sound=sound)
 
 
 def notify_transfer_complete(
@@ -86,31 +69,7 @@ def notify_batch_complete(
 
 def set_dock_badge(count: int) -> None:
     """
-    Set the Dock icon badge to show pending transfer count.
+    Set the taskbar/dock icon badge to show pending transfer count.
     Pass 0 to clear the badge.
     """
-    try:
-        _set_badge_via_qt(count)
-    except Exception as e:
-        logger.warn(f"Notification: Badge update failed: {e}")
-
-
-def _set_badge_via_qt(count: int) -> None:
-    """Set dock badge using Qt's macOS integration."""
-    try:
-        from PySide6.QtWidgets import QApplication
-
-        app = QApplication.instance()
-        if app:
-            if count > 0:
-                app.setBadgeNumber(count)  # type: ignore
-            else:
-                app.setBadgeNumber(0)  # type: ignore
-    except (AttributeError, TypeError):
-        # setBadgeNumber may not be available on older Qt versions
-        pass
-
-
-def _escape(text: str) -> str:
-    """Escape special characters for AppleScript strings."""
-    return text.replace("\\", "\\\\").replace('"', '\\"')
+    _platform_set_dock_badge(count)

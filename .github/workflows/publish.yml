@@ -78,8 +78,41 @@ jobs:
           name: macos-dmg
           path: FileSling.dmg
 
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install keyring pyinstaller pillow
+
+      - name: Generate Windows icon
+        run: python scripts/generate_icons.py
+
+      - name: Build .exe with PyInstaller
+        run: |
+          pyinstaller --name=FileSling --windowed --icon=assets/icons/generated/FileSling.ico --add-data="assets;assets" --hidden-import=paramiko --hidden-import=pydantic --hidden-import=PySide6 --hidden-import=keyring main.py
+
+      - name: Zip Windows build
+        run: Compress-Archive -Path dist/FileSling/* -DestinationPath FileSling-Windows.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: windows-zip
+          path: FileSling-Windows.zip
+
   release:
-    needs: [build-python, build-macos]
+    needs: [build-python, build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -95,12 +128,18 @@ jobs:
           name: macos-dmg
           path: macos/
 
+      - uses: actions/download-artifact@v5
+        with:
+          name: windows-zip
+          path: windows/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*
             macos/FileSling.dmg
+            windows/FileSling-Windows.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

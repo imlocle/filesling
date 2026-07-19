@@ -312,8 +312,8 @@ class TransferItemWidget(QFrame):
             self.method_dot.setToolTip("SFTP (standard transfer)")
 
     def _reveal_in_finder(self) -> None:
-        """Open the downloaded file's location in Finder."""
-        import subprocess
+        """Open the downloaded file's location in the system file manager."""
+        from src.platform import reveal_in_file_manager
 
         # Use the destination stored on the transfer item (set when queued)
         # instead of looking up Settings on every click.
@@ -328,14 +328,11 @@ class TransferItemWidget(QFrame):
         filename = self.item.display_name.lstrip("⬇ ").strip()
         path = os.path.join(download_dir, filename)
 
-        try:
-            if os.path.exists(path):
-                subprocess.run(["open", "-R", path], check=False)
-            else:
-                # File might have been moved — just open the directory
-                subprocess.run(["open", download_dir], check=False)
-        except Exception:
-            pass
+        if os.path.exists(path):
+            reveal_in_file_manager(path)
+        else:
+            # File might have been moved — just open the directory
+            reveal_in_file_manager(download_dir)
 
 
 class TransferQueueWidget(QWidget):

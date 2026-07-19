@@ -444,10 +444,7 @@ class DownloadController(QObject):
             self._active.remove(slot)
 
     def _reveal_in_finder(self, path: str) -> None:
-        """Reveal a file in Finder (macOS)."""
-        import subprocess
+        """Reveal a file in the system file manager."""
+        from src.platform import reveal_in_file_manager
 
-        try:
-            subprocess.run(["open", "-R", path], check=False)
-        except Exception:
-            pass
+        reveal_in_file_manager(path)

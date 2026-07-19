@@ -7,14 +7,15 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from src.utils.constants import (
+    APP_DATA_DIR,
     ERROR_LOG_FILE,
     LOGS_DIR_NAME,
     MAX_ERROR_LOG_ENTRIES,
     SOFTWARE_NAME,
 )
 
-# Logs directory — stored alongside config in the user's home (~/.FileSling/logs)
-_LOGS_DIR = str(Path.home() / f".{SOFTWARE_NAME}" / LOGS_DIR_NAME)
+# Logs directory — stored alongside config in the app data directory
+_LOGS_DIR = str(APP_DATA_DIR / LOGS_DIR_NAME)
 
 
 def _ensure_logs_dir() -> None:

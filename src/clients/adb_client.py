@@ -12,6 +12,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from stat import S_IFDIR, S_IFREG, S_ISDIR
 from typing import Callable, Generator, List, Optional
@@ -417,18 +418,46 @@ def get_connected_devices() -> List[dict]:
 
 
 def get_adb_path() -> str:
+    """Find the ADB binary path, searching platform-specific locations."""
     adb_path = shutil.which("adb")
 
     if not adb_path:
-        for candidate in [
-            "/opt/homebrew/bin/adb",
-            "/usr/local/bin/adb",
-        ]:
-            if os.path.exists(candidate):
+        if sys.platform == "win32":
+            # Common Windows ADB locations
+            candidates = [
+                os.path.join(
+                    os.environ.get("LOCALAPPDATA", ""),
+                    "Android",
+                    "Sdk",
+                    "platform-tools",
+                    "adb.exe",
+                ),
+                os.path.join(
+                    os.environ.get("USERPROFILE", ""),
+                    "AppData",
+                    "Local",
+                    "Android",
+                    "Sdk",
+                    "platform-tools",
+                    "adb.exe",
+                ),
+                os.path.join("C:\\", "Android", "platform-tools", "adb.exe"),
+            ]
+        else:
+            # macOS / Linux candidates
+            candidates = [
+                "/opt/homebrew/bin/adb",
+                "/usr/local/bin/adb",
+                os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"),
+            ]
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
                 adb_path = candidate
                 break
+
     if not adb_path:
-        raise IOError("abd path error")
+        raise IOError("ADB not found. Install Android Platform Tools.")
     return adb_path
 
 

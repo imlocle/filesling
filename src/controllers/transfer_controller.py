@@ -18,7 +18,7 @@ from src.config.settings import Settings
 from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
 from src.services.rsync_service import RsyncConfig
-from src.utils.constants import MAX_UPLOAD_RETRIES, SOFTWARE_NAME, TRANSFER_QUEUE_FILE
+from src.utils.constants import APP_DATA_DIR, MAX_UPLOAD_RETRIES, SOFTWARE_NAME, TRANSFER_QUEUE_FILE
 from src.utils.logging_signal import logger
 from src.workers.transfer_worker import TransferWorker
 
@@ -125,7 +125,7 @@ class ManualTransferController(QObject):
 
     def _queue_file_path(self) -> Path:
         """Path used to persist pending upload queue state."""
-        return Path.home() / f".{SOFTWARE_NAME}" / TRANSFER_QUEUE_FILE
+        return APP_DATA_DIR / TRANSFER_QUEUE_FILE
 
     def _persist_queue(self) -> None:
         """Persist active and pending transfers for crash recovery."""

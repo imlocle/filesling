@@ -16,6 +16,7 @@ from src.models.errors import (
     SSHKeyValidationError,
 )
 from src.utils.constants import (
+    APP_DATA_DIR,
     CONFIG_JSON,
     DEFAULT_REMOTE_BASE_DIR,
     DEFAULT_SSH_KEY_PATH,
@@ -145,7 +146,7 @@ class Settings:
     def __new__(cls) -> "Settings":
         if cls._instance is None:
             cls._instance = super(Settings, cls).__new__(cls)
-            local_config_path = Path.home() / f".{SOFTWARE_NAME}" / CONFIG_JSON
+            local_config_path = APP_DATA_DIR / CONFIG_JSON
             if local_config_path.exists() and local_config_path.is_file():
                 config_data = cls._load_config(local_config_path)
             else:
@@ -233,7 +234,7 @@ class Settings:
 
     def save_config(self, config_data: dict) -> None:
         """Save configuration to JSON file."""
-        save_dir = Path.home() / f".{SOFTWARE_NAME}"
+        save_dir = APP_DATA_DIR
 
         try:
             save_dir.mkdir(exist_ok=True)

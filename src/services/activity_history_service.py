@@ -13,6 +13,7 @@ from typing import List
 
 from src.utils.constants import (
     ACTIVITY_HISTORY_FILE,
+    APP_DATA_DIR,
     MAX_ACTIVITY_HISTORY,
     SOFTWARE_NAME,
 )
@@ -40,7 +41,7 @@ class ActivityHistoryService:
     """Manages persistent activity history."""
 
     def __init__(self) -> None:
-        self._history_path = Path.home() / f".{SOFTWARE_NAME}" / ACTIVITY_HISTORY_FILE
+        self._history_path = APP_DATA_DIR / ACTIVITY_HISTORY_FILE
         self._records: List[ActivityRecord] = []
         self._load()
 
