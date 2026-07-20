@@ -102,7 +102,9 @@ def notify(
                     full_message = message
                     if subtitle:
                         full_message = f"{subtitle}\n{message}"
-                    tray.showMessage(title, full_message, QSystemTrayIcon.Information, 5000)
+                    tray.showMessage(
+                        title, full_message, QSystemTrayIcon.Information, 5000
+                    )
                     return
 
         # Fallback: try win11toast if available

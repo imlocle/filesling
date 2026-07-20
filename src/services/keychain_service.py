@@ -10,7 +10,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from src.platform import delete_credential, get_credential, has_credential, store_credential
+from src.platform import (
+    delete_credential,
+    get_credential,
+    has_credential,
+    store_credential,
+)
 
 
 def store_password(account: str, password: str) -> bool:

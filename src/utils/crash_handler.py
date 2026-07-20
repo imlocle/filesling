@@ -13,7 +13,13 @@ from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type
 
-from src.utils.constants import APP_DATA_DIR, CRASH_LOG_FILE, GITHUB_REPO_URL, SOFTWARE_NAME, VERSION
+from src.utils.constants import (
+    APP_DATA_DIR,
+    CRASH_LOG_FILE,
+    GITHUB_REPO_URL,
+    SOFTWARE_NAME,
+    VERSION,
+)
 
 CRASH_LOG_PATH = APP_DATA_DIR / CRASH_LOG_FILE
 
