@@ -1,7 +1,7 @@
 # FileSling — Quick Reference
 
 > Copy-paste commands for common development and release tasks.
-> **Last updated:** July 2026 — Version 3.5.1
+> **Last updated:** July 2026 — Version 3.7.1
 
 ---
 

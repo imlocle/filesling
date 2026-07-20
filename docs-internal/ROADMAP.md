@@ -1,6 +1,6 @@
 # FileSling — Roadmap
 
-> **Last updated:** June 2026 — Version 3.4.0
+> **Last updated:** July 2026 — Version 3.7.1
 >
 > Forward-looking only. For completed work, see [CHANGELOG.md](CHANGELOG.md).
 > For known issues, see [BUGS.md](BUGS.md).
@@ -156,4 +156,4 @@
 
 ---
 
-_Last updated: June 2026_
+_Last updated: July 2026_

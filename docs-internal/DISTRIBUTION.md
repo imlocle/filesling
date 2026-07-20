@@ -1,6 +1,6 @@
 # FileSling — Distribution & Release Guide
 
-> **Last updated:** July 2026 — Version 3.5.1
+> **Last updated:** July 2026 — Version 3.7.1
 
 ## Overview
 

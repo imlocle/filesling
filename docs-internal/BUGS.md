@@ -1,6 +1,6 @@
 # Bugs
 
-> **Last updated:** June 2026 — Version 3.4.0
+> **Last updated:** July 2026 — Version 3.7.1
 >
 > Bug tracking for FileSling. For roadmap, see [ROADMAP.md](ROADMAP.md).
 

@@ -218,9 +218,10 @@ To regenerate app icons from the source logo (after updating `assets/icons/files
 
 ```bash
 .venv/bin/python scripts/generate_icons.py
+.venv/bin/python scripts/generate_menu_bar_icon.py
 ```
 
-This produces all required sizes (16×16 through 1024×1024) plus the macOS `.icns` bundle in `assets/icons/generated/`.
+These scripts are local dev tools (not committed to the repo). They produce all required sizes (16×16 through 1024×1024), the macOS `.icns` bundle, the Windows `.ico`, and the menu bar template icon in `assets/icons/generated/`.
 
 ## Docs
 
