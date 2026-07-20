@@ -105,7 +105,7 @@ It checks:
 
 1. **Formatting** — `black --check` and `isort --check-only`
 2. **Lint** — `flake8`
-3. **Tests** — `pytest` (448 tests)
+3. **Tests** — `pytest` (437 tests)
 
 All must pass before merging to main.
 
@@ -176,7 +176,7 @@ git checkout dev
 ## Pre-Release Checklist
 
 - [ ] All changes committed and pushed to dev
-- [ ] Tests passing (`make test` — 448 tests)
+- [ ] Tests passing (`make test` — 437 tests)
 - [ ] Lint passing (`make lint`)
 - [ ] Version bumped in `pyproject.toml`
 - [ ] Version bumped in `src/utils/constants.py`

@@ -33,7 +33,7 @@ make format
 # Lint (flake8)
 make lint
 
-# Run tests (448 unit tests with coverage)
+# Run tests (437 unit tests with coverage)
 make test
 
 # Run tests without coverage (faster)
@@ -165,13 +165,14 @@ src/
 ├── config/         1 file  — Settings singleton (Pydantic + JSON)
 ├── controllers/    5 files — main_window, connection, download, file_ops, transfer
 ├── models/         2 files — errors hierarchy, ServerConfig dataclass
-├── services/       9 files — connection_manager, rsync, ffmpeg, keychain, sleep_inhibitor, menu_bar, etc.
+├── platform/       3 files — OS abstraction (macOS, Windows, base stubs)
+├── services/       10 files — connection_manager, rsync, ffmpeg, keychain, sleep_inhibitor, menu_bar, etc.
 ├── utils/          6 files — constants, crash handler, icons, logging, theme, helper
-├── views/          3 windows + 7 dialogs
+├── views/          2 windows + 7 dialogs
 ├── widgets/        8 reusable UI components
 └── workers/        5 background QThread workers
 
-tests/              Mirrors src/ structure (26 test files, 448 tests)
+tests/              Mirrors src/ structure (26 test files, 437 tests)
 ├── clients/        3 test files
 ├── config/         1 test file
 ├── controllers/    4 test files

@@ -63,6 +63,11 @@ graph TB
         MB[MenuBarService]
     end
 
+    subgraph Platform["Platform Layer (src/platform/)"]
+        PM[macOS — Keychain, osascript, caffeinate, Finder]
+        PW[Windows — keyring, toast, SetThreadExecutionState, Explorer]
+    end
+
     subgraph External["External Systems"]
         SSH[SSH/SFTP Server]
         Android[Android Device USB/WiFi]

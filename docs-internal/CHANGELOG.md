@@ -15,6 +15,7 @@
 - [x] Dropdown menu: live activity status, Open FileSling, Quit FileSling
 - [x] Activity status updates live (uploads, downloads, conversions in progress)
 - [x] Left-click shows dropdown only (no auto-open behavior)
+- [x] Dock icon click (macOS) and taskbar click (Windows) re-shows hidden window
 
 ### Close-to-Hide Behavior
 
@@ -33,9 +34,22 @@
 ### Icon Pipeline
 
 - [x] New app icon with anti-aliased rounded corners (baked into PNG)
-- [x] `scripts/generate_icons.py` — generates all sizes (16–1024px) + `.icns` from source
+- [x] `scripts/generate_icons.py` — generates all sizes (16–1024px) + `.icns` + `.ico` from source
 - [x] `scripts/generate_menu_bar_icon.py` — generates monochrome template icon for menu bar
-- [x] PyInstaller build uses `.icns` file for proper macOS app bundle icon
+- [x] PyInstaller build uses `.icns` (macOS) or `.ico` (Windows) for app bundle icon
+
+### Windows Compatibility (Platform Abstraction)
+
+- [x] Created `src/platform/` package (macOS, Windows, base stubs)
+- [x] Credential storage: macOS Keychain / Windows Credential Manager via `keyring`
+- [x] Notifications: osascript (macOS) / QSystemTrayIcon toast (Windows)
+- [x] Sleep inhibition: caffeinate (macOS) / SetThreadExecutionState (Windows)
+- [x] File reveal: `open -R` (macOS) / `explorer /select,` (Windows)
+- [x] Dock/taskbar badge: Qt's `setBadgeNumber` (cross-platform)
+- [x] ADB path detection searches Windows SDK locations
+- [x] Config stored at `%APPDATA%\FileSling` (Windows) / `~/.FileSling` (macOS)
+- [x] QSS themes include `Segoe UI` font fallback
+- [x] Windows PyInstaller build job added to CI
 
 ---
 

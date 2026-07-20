@@ -27,6 +27,10 @@ src/
 ├── models/
 │   ├── errors.py                      Custom exception hierarchy
 │   └── server_config.py              Typed ServerConfig dataclass
+├── platform/
+│   ├── base.py                        No-op stubs (unsupported platforms)
+│   ├── macos.py                       macOS: Keychain, osascript, caffeinate, Finder
+│   └── windows.py                     Windows: keyring, toast, SetThreadExecutionState, Explorer
 ├── services/
 │   ├── activity_history_service.py    Persistent activity log
 │   ├── connection_manager_service.py  SSH/SFTP lifecycle + health monitoring
@@ -279,6 +283,7 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 - macOS notifications on transfer complete/fail
 - Dock badge shows pending transfer count
 - Close button hides window (app stays alive in menu bar)
+- Dock icon click (macOS) or taskbar click (Windows) re-shows the window
 - Menu bar icon with live activity status (uploads/downloads/conversions), Open, and Quit
 - ⌘Q shows confirmation only if transfers are active, otherwise quits immediately
 - Sleep inhibition during active transfers (configurable, uses `caffeinate`)

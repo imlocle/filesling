@@ -23,7 +23,7 @@ Built with Python, PySide6, and Paramiko.
 - **Multi-server** — Quick-switch dropdown, per-server bookmarks and settings
 - **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
 - **Sleep prevention** — Mac stays awake during active transfers (configurable)
-- **Menu bar icon** — App lives in the menu bar; close hides the window, ⌘Q fully quits
+- **Menu bar icon** — App lives in the menu bar; close hides the window, click Dock/taskbar or menu bar to reopen, ⌘Q fully quits
 - **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain
 - **Notifications** — macOS alerts on transfer complete/fail, Dock badge for pending count
 - **Media info** — View detailed stream info and edit tags in a dedicated dialog
@@ -135,7 +135,7 @@ make format
 # Lint (flake8)
 make lint
 
-# Run tests (448 unit tests)
+# Run tests (437 unit tests)
 make test
 
 # Build distribution (wheel + sdist)
@@ -171,9 +171,10 @@ src/
 ├── config/         Settings singleton (Pydantic model)
 ├── controllers/    UI event routing (5 controllers)
 ├── models/         ServerConfig dataclass, error hierarchy
+├── platform/       OS abstraction (macOS, Windows, base stubs)
 ├── services/       Business logic (10 services)
 ├── utils/          Constants, crash handler, icons, theme
-├── views/          Windows and dialogs (3 windows + 7 dialogs)
+├── views/          Windows and dialogs (2 windows + 7 dialogs)
 ├── widgets/        Reusable UI components (8 widgets)
 └── workers/        Background QThread workers (5 workers)
 ```
