@@ -34,11 +34,11 @@ Built with Python, PySide6, and Paramiko.
 
 ## Quick Start
 
-### Download the app
+### macOS
 
 Grab `FileSling.dmg` from the [latest release](https://github.com/imlocle/filesling/releases/latest), open it, and drag `FileSling.app` to Applications.
 
-**First launch on macOS:** Apple blocks unsigned apps by default. Run this once in Terminal to allow it:
+**First launch:** Apple blocks unsigned apps by default. Run this once in Terminal to allow it:
 
 ```bash
 xattr -cr /Applications/FileSling.app
@@ -46,26 +46,42 @@ xattr -cr /Applications/FileSling.app
 
 Then open FileSling normally.
 
+### Windows
+
+Grab `FileSling-Windows.zip` from the [latest release](https://github.com/imlocle/filesling/releases/latest), extract it, and run `FileSling.exe`.
+
+No installer needed — it's a portable app. You can move the folder anywhere (e.g., `C:\Program Files\FileSling\`).
+
+**Optional:** For credential storage (remember SSH passwords), install the `keyring` package if running from source.
+
 ### Run from source
 
 ```bash
+# macOS / Linux
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python main.py
+
+# Windows (PowerShell)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install keyring
 python main.py
 ```
 
 ## Requirements
 
 - Python 3.9+ (3.13 recommended)
-- macOS (primary platform)
+- macOS or Windows (macOS is the primary platform)
 - SSH access to your server (key-based or password)
-- For Android: `brew install android-platform-tools` + USB Debugging enabled
+- For Android: ADB installed (macOS: `brew install android-platform-tools`, Windows: [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools)) + USB Debugging enabled
 - For iOS: `pip install pymobiledevice3` + device unlocked and trusted
 
 ## Configuration
 
-Stored at `~/.FileSling/config.json`:
+Stored at `~/.FileSling/config.json` (macOS/Linux) or `%APPDATA%\FileSling\config.json` (Windows):
 
 ```json
 {
