@@ -7,7 +7,7 @@ from pathlib import Path
 
 SOFTWARE_NAME = "FileSling"
 CONFIG_JSON = "config.json"
-VERSION = "3.7.0"
+VERSION = "3.7.1"
 GITHUB_REPO_URL = "https://github.com/imlocle/filesling"
 
 # App data directory (config, logs, history, queue)
