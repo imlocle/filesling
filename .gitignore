@@ -221,3 +221,7 @@ config.json
 
 # Application logs
 logs/
+
+# Icon generation scripts (local dev tools, not needed in repo)
+scripts/generate_icons.py
+scripts/generate_menu_bar_icon.py
