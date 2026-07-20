@@ -21,7 +21,6 @@ from src.services.rsync_service import RsyncConfig
 from src.utils.constants import (
     APP_DATA_DIR,
     MAX_UPLOAD_RETRIES,
-    SOFTWARE_NAME,
     TRANSFER_QUEUE_FILE,
 )
 from src.utils.logging_signal import logger

@@ -21,7 +21,6 @@ from src.utils.constants import (
     DEFAULT_REMOTE_BASE_DIR,
     DEFAULT_SSH_KEY_PATH,
     DEFAULT_SSH_PORT,
-    SOFTWARE_NAME,
 )
 from src.utils.logging_signal import logger
 

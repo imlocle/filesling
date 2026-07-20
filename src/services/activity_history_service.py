@@ -8,14 +8,12 @@ Tracks: uploads, downloads, renames, deletes, moves.
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import List
 
 from src.utils.constants import (
     ACTIVITY_HISTORY_FILE,
     APP_DATA_DIR,
     MAX_ACTIVITY_HISTORY,
-    SOFTWARE_NAME,
 )
 
 

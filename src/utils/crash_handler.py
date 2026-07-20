@@ -9,7 +9,6 @@ Crash handler — catches unhandled exceptions and shows a user-friendly dialog.
 import sys
 import traceback
 from datetime import datetime
-from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type
 

@@ -2,7 +2,6 @@ import json
 import os
 import traceback
 from datetime import datetime
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
@@ -11,7 +10,6 @@ from src.utils.constants import (
     ERROR_LOG_FILE,
     LOGS_DIR_NAME,
     MAX_ERROR_LOG_ENTRIES,
-    SOFTWARE_NAME,
 )
 
 # Logs directory — stored alongside config in the app data directory
