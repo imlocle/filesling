@@ -5,6 +5,7 @@ import sys
 # Must be set before any Qt imports.
 os.environ.setdefault("QT_LOGGING_RULES", "qt.accessibility.table=false")
 
+from PySide6.QtCore import QEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.config.settings import Settings  # noqa: E402
@@ -18,6 +19,25 @@ from src.utils.crash_handler import (  # noqa: E402
 from src.utils.helper import get_path, rounded_icon  # noqa: E402
 from src.utils.theme import apply_theme  # noqa: E402
 from src.views.main_window import MainWindow  # noqa: E402
+
+
+class FileSlingApp(QApplication):
+    """Custom QApplication that re-shows the main window on Dock icon click (macOS)."""
+
+    def __init__(self, argv: list) -> None:
+        super().__init__(argv)
+        self._main_window: MainWindow | None = None
+
+    def set_main_window(self, window: MainWindow) -> None:
+        self._main_window = window
+
+    def event(self, event: QEvent) -> bool:
+        # ApplicationActivate fires on macOS when the Dock icon is clicked
+        if event.type() == QEvent.Type.ApplicationActivate and self._main_window:
+            self._main_window.show()
+            self._main_window.raise_()
+            self._main_window.activateWindow()
+        return super().event(event)
 
 
 def _get_version() -> str:
@@ -47,7 +67,7 @@ def main():
         except ImportError:
             pass
 
-    app = QApplication(sys.argv)
+    app = FileSlingApp(sys.argv)
     app.setApplicationName(SOFTWARE_NAME)
     app.setApplicationVersion(_get_version())
 
@@ -81,6 +101,7 @@ def main():
 
     # ---- MAIN WINDOW ----
     window = MainWindow()
+    app.set_main_window(window)
     window.show()
 
     sys.exit(app.exec())
