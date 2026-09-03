@@ -1,5 +1,6 @@
 """macOS menu bar status item (system tray icon) for FileSling."""
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
@@ -24,7 +25,17 @@ class MenuBarService:
 
         # Load template icon (monochrome, macOS auto-tints for light/dark)
         icon_path = get_path("assets/icons/menubar_iconTemplate.png")
-        icon = QIcon(QPixmap(str(icon_path)))
+        pixmap = QPixmap(str(icon_path))
+        # Scale to proper menu bar size (22pt = 44px on Retina)
+        if pixmap.width() > 44:
+            pixmap = pixmap.scaled(
+                44,
+                44,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        pixmap.setDevicePixelRatio(2.0)  # Retina
+        icon = QIcon(pixmap)
         icon.setIsMask(True)  # Tell macOS this is a template image
 
         self._tray = QSystemTrayIcon(icon, self._parent)
