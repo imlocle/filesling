@@ -18,10 +18,8 @@ def is_connection_lost_error(error: Exception) -> bool:
     return (
         "socket is closed" in msg
         or "not open" in msg
-        or "no such file" in msg
-        and "socket" in msg
-        or "eof" in msg
-        and "transport" in msg
+        or ("no such file" in msg and "socket" in msg)
+        or ("eof" in msg and "transport" in msg)
     )
 
 

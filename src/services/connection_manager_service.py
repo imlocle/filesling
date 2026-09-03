@@ -102,7 +102,7 @@ class ConnectionManagerService:
                 connect_kwargs = {
                     "hostname": self.settings.host,
                     "username": self.settings.username,
-                    "timeout": 10,
+                    "timeout": TIMEOUT_SSH_CONNECT,
                 }
 
                 if password:
@@ -320,18 +320,36 @@ class ConnectionManagerService:
         """
         test_ssh = None
         try:
-            if not os.path.exists(self.settings.ssh_key_path):
+            # Determine auth method
+            server_config = self.settings.get_server(
+                self.settings.config.current_server_id
+            )
+            password = server_config.get("password") if server_config else None
+
+            # Validate SSH key exists (key auth only)
+            if not password and not os.path.exists(self.settings.ssh_key_path):
                 logger.error(f"Test: SSH key not found: {self.settings.ssh_key_path}")
                 return False
 
             test_ssh = SSHClient()
             test_ssh.set_missing_host_key_policy(AutoAddPolicy())
-            test_ssh.connect(
-                hostname=self.settings.host,
-                username=self.settings.username,
-                key_filename=self.settings.ssh_key_path,
-                timeout=TIMEOUT_SSH_CONNECT,
-            )
+
+            connect_kwargs = {
+                "hostname": self.settings.host,
+                "username": self.settings.username,
+                "timeout": TIMEOUT_SSH_CONNECT,
+            }
+            if password:
+                connect_kwargs["password"] = password
+            else:
+                connect_kwargs["key_filename"] = self.settings.ssh_key_path
+                passphrase = (
+                    server_config.get("key_passphrase") if server_config else None
+                )
+                if passphrase:
+                    connect_kwargs["passphrase"] = passphrase
+
+            test_ssh.connect(**connect_kwargs)
             logger.success("Test: Connection successful")
             return True
         except AuthenticationException as e:

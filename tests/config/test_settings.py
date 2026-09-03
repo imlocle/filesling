@@ -33,9 +33,15 @@ class TestSettingsConfig:
         config = SettingsConfig(host="192.168.1.1")
         assert config.host == "192.168.1.1"
 
+    def test_valid_hostname_accepted(self):
+        # Hostnames (not just IPs) are valid hosts, e.g. a local NAS.
+        config = SettingsConfig(host="nas.local")
+        assert config.host == "nas.local"
+
     def test_invalid_host_raises(self):
+        # A value that is neither a valid IP nor a valid hostname (contains a space).
         with pytest.raises(IPAddressValidationError):
-            SettingsConfig(host="not-an-ip")
+            SettingsConfig(host="not a valid host")
 
     def test_empty_host_is_valid(self):
         config = SettingsConfig(host="")
@@ -85,7 +91,8 @@ class TestSettingsConfig:
         assert not hasattr(config, "file_extensions")
 
     def test_from_json_invalid_raises(self):
-        data = {"host": "not-valid-ip", "username": "x"}
+        # Host with a space is invalid as both an IP and a hostname.
+        data = {"host": "not valid host", "username": "x"}
         with pytest.raises(InvalidConfigurationError):
             SettingsConfig.from_json(data)
 

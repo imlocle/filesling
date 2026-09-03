@@ -292,9 +292,12 @@ class DownloadController(QObject):
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
             idx = slot.queue_index
-            if 0 <= idx < len(queue._items):
-                item = queue._items[idx]
-                item.transferred_bytes = int(item.total_bytes * percent / 100)
+            try:
+                if 0 <= idx < len(queue._items):
+                    item = queue._items[idx]
+                    item.transferred_bytes = int(item.total_bytes * percent / 100)
+            except (IndexError, AttributeError):
+                pass
 
     def _on_error(self, slot: _DownloadSlot, error_msg: str) -> None:
         """Store error for a slot (read on main thread when thread finishes)."""

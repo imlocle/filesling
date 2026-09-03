@@ -195,7 +195,10 @@ class IOSClient:
             # Get file size for progress
             info = self._afc.stat(remote_path)
             total_size = int(info.get("st_size", 0))
+        except Exception as e:
+            raise IOError(f"iOS: Failed to stat {remote_path}: {e}")
 
+        try:
             # Stream the file in chunks to avoid loading it all into memory
             with self._afc.open(remote_path, "r") as remote_file:
                 with open(local_path, "wb") as local_file:

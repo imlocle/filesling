@@ -72,14 +72,24 @@ class SettingsConfig(BaseModel):
     @field_validator("host")
     @classmethod
     def validate_host(cls, v: str) -> str:
-        """Validate IP address format if not empty."""
+        """Validate host — accepts IP addresses and hostnames."""
         if v and v.strip():
+            host = v.strip()
+            # Accept valid IP addresses
             try:
-                ipaddress.ip_address(v.strip())
+                ipaddress.ip_address(host)
+                return v
             except ValueError:
+                pass
+            # Otherwise accept valid hostnames (letters, digits, hyphens, dots)
+            import re
+
+            if not re.match(
+                r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$", host
+            ):
                 raise IPAddressValidationError(
-                    f"Invalid IP address format: {v}",
-                    details="Please enter a valid IPv4 or IPv6 address",
+                    f"Invalid host: {v}",
+                    details="Please enter a valid IP address or hostname",
                 )
         return v
 
