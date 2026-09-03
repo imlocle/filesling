@@ -261,7 +261,7 @@ class ManualTransferController(QObject):
 
         # Determine delete preference
         if delete_after is None:
-            delete_after = self.settings.delete_after_transfer
+            delete_after = self.settings.get_delete_after_transfer_for_server()
 
         # Determine remote destination
         if remote_destination:

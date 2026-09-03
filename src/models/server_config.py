@@ -8,7 +8,7 @@ validated dataclass that provides IDE autocomplete and prevents typo bugs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from src.utils.constants import (
     CONN_TYPE_SSH,
@@ -44,9 +44,11 @@ class ServerConfig:
     # Path
     remote_base_dir: str = DEFAULT_REMOTE_BASE_DIR
 
-    # Per-server overrides
+    # Per-server overrides (None = use global default)
     download_directory: str = ""
     extension_filter: str = ""
+    delete_after_transfer: Optional[bool] = None
+    activity_history_enabled: Optional[bool] = None
 
     # Navigation state
     bookmarks: List[str] = field(default_factory=list)
@@ -80,6 +82,8 @@ class ServerConfig:
             ),
             download_directory=data.get("download_directory", ""),
             extension_filter=data.get("extension_filter", ""),
+            delete_after_transfer=data.get("delete_after_transfer", None),
+            activity_history_enabled=data.get("activity_history_enabled", None),
             bookmarks=list(data.get("bookmarks", [])),
             default_bookmark=data.get("default_bookmark", ""),
         )
@@ -110,6 +114,10 @@ class ServerConfig:
             d["download_directory"] = self.download_directory
         if self.extension_filter:
             d["extension_filter"] = self.extension_filter
+        if self.delete_after_transfer is not None:
+            d["delete_after_transfer"] = self.delete_after_transfer
+        if self.activity_history_enabled is not None:
+            d["activity_history_enabled"] = self.activity_history_enabled
         if self.bookmarks:
             d["bookmarks"] = self.bookmarks
         if self.default_bookmark:
@@ -137,3 +145,15 @@ class ServerConfig:
     def get_download_directory(self, fallback: str) -> str:
         """Return per-server download dir, or fallback to global."""
         return self.download_directory or fallback
+
+    def get_delete_after_transfer(self, fallback: bool) -> bool:
+        """Return per-server delete preference, or fallback to global."""
+        if self.delete_after_transfer is not None:
+            return self.delete_after_transfer
+        return fallback
+
+    def get_activity_history_enabled(self, fallback: bool = True) -> bool:
+        """Return per-server history preference, or fallback (default: enabled)."""
+        if self.activity_history_enabled is not None:
+            return self.activity_history_enabled
+        return fallback

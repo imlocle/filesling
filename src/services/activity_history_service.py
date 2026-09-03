@@ -85,7 +85,13 @@ class ActivityHistoryService:
         # Keep backward compat for old callers using "direction"
         direction: str = "",
     ) -> None:
-        """Add an activity record."""
+        """Add an activity record. Skipped if history is disabled for the active server."""
+        from src.config.settings import Settings
+
+        settings = Settings()
+        if not settings.get_activity_history_enabled_for_server():
+            return
+
         actual_action = direction or action
         record = ActivityRecord(
             filename=filename,
