@@ -9,9 +9,11 @@ This dialog has two tabs:
 import os
 from typing import Any, Dict, Optional
 
+from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -63,6 +65,8 @@ class MediaInfoDialog(QDialog):
         self._nfo_data = nfo_data
         self._sftp = sftp
         self._tag_fields: Dict[str, QLineEdit] = {}
+        self._imdb_thread: Optional[QThread] = None
+        self._imdb_worker: Optional[Any] = None
 
         filename = os.path.basename(remote_path)
         self.setWindowTitle(f"Media Info — {filename}")
@@ -200,6 +204,35 @@ class MediaInfoDialog(QDialog):
         hint.setObjectName("secondary_label")
         hint.setWordWrap(True)
         tags_layout.addWidget(hint)
+
+        # --- Fetch from IMDb row ---
+        imdb_row = QHBoxLayout()
+        imdb_row.setSpacing(8)
+        imdb_row.addWidget(QLabel("IMDb ID:"))
+
+        self._imdb_id_input = QLineEdit()
+        self._imdb_id_input.setPlaceholderText("e.g., tt0983514 (or paste an IMDb URL)")
+        self._imdb_id_input.setToolTip(
+            "Enter the IMDb ID for this title (show or episode) and click Fetch\n"
+            "to auto-fill the fields below. Review before saving."
+        )
+        self._imdb_id_input.returnPressed.connect(self._fetch_from_imdb)
+        imdb_row.addWidget(self._imdb_id_input, stretch=1)
+
+        self._imdb_fetch_btn = QPushButton("🔍 Fetch")
+        self._imdb_fetch_btn.setToolTip(
+            "Fetch metadata from IMDb (via OMDb) and populate the fields below."
+        )
+        self._imdb_fetch_btn.clicked.connect(self._fetch_from_imdb)
+        imdb_row.addWidget(self._imdb_fetch_btn)
+
+        tags_layout.addLayout(imdb_row)
+
+        self._imdb_status = QLabel("")
+        self._imdb_status.setObjectName("secondary_label")
+        self._imdb_status.setWordWrap(True)
+        self._imdb_status.setVisible(False)
+        tags_layout.addWidget(self._imdb_status)
 
         # Get embedded tags from ffprobe
         fmt = self._probe_data.get("format", {})
@@ -346,6 +379,111 @@ class MediaInfoDialog(QDialog):
 
         scroll.setWidget(widget)
         return scroll
+
+    # ------------------------------------------------------------------
+    # Fetch from IMDb
+    # ------------------------------------------------------------------
+
+    def _fetch_from_imdb(self) -> None:
+        """Kick off an OMDb metadata lookup on a background thread."""
+        # Prevent concurrent fetches
+        if self._imdb_thread is not None:
+            return
+
+        imdb_id = self._imdb_id_input.text().strip()
+        if not imdb_id:
+            self._set_imdb_status(
+                "Enter an IMDb ID first (e.g., tt0983514).", error=True
+            )
+            return
+
+        from src.config.settings import Settings
+
+        config = Settings().config
+        omdb_key = config.omdb_api_key
+        tmdb_key = config.tmdb_api_key
+        if not omdb_key.strip() and not tmdb_key.strip():
+            self._set_imdb_status(
+                "No metadata API key set. Add an OMDb or TMDB key in "
+                "Settings → Files → Metadata Lookup.",
+                error=True,
+            )
+            return
+
+        from src.workers.imdb_worker import IMDbWorker
+
+        self._imdb_fetch_btn.setEnabled(False)
+        self._imdb_id_input.setEnabled(False)
+        self._set_imdb_status("Fetching from IMDb…", error=False)
+
+        self._imdb_thread = QThread(self)
+        self._imdb_worker = IMDbWorker(imdb_id, omdb_key, tmdb_key)
+        self._imdb_worker.moveToThread(self._imdb_thread)
+
+        self._imdb_thread.started.connect(self._imdb_worker.run)
+        self._imdb_worker.finished.connect(self._on_imdb_finished)
+        self._imdb_worker.error.connect(self._on_imdb_error)
+        self._imdb_worker.finished.connect(self._imdb_thread.quit)
+        self._imdb_worker.error.connect(self._imdb_thread.quit)
+        self._imdb_thread.finished.connect(self._cleanup_imdb_thread)
+
+        self._imdb_thread.start()
+
+    def _on_imdb_finished(self, fields: Dict[str, str]) -> None:
+        """Populate tag fields from the fetched metadata (existing values kept if empty)."""
+        if not fields:
+            self._set_imdb_status("No metadata found for that IMDb ID.", error=True)
+            return
+
+        populated = self._apply_fetched_fields(fields)
+        self._set_imdb_status(
+            f"Filled {populated} field(s) from IMDb. Review, then Save.",
+            error=False,
+        )
+
+    def _on_imdb_error(self, message: str) -> None:
+        """Show a fetch error to the user."""
+        self._set_imdb_status(f"Fetch failed: {message}", error=True)
+
+    def _apply_fetched_fields(self, fields: Dict[str, str]) -> int:
+        """
+        Write fetched values into the tag fields.
+
+        Overwrites existing values so the fetched data wins (the user explicitly
+        asked to fetch). Returns the number of fields populated.
+        """
+        count = 0
+        for key, value in fields.items():
+            if not value:
+                continue
+            field = self._tag_fields.get(key)
+            if field is None:
+                # Field not in the standard list — add it as a custom row is
+                # overkill here; skip silently. Common keys are already present.
+                continue
+            field.setText(value)
+            count += 1
+        return count
+
+    def _set_imdb_status(self, message: str, error: bool) -> None:
+        """Update the IMDb status line under the fetch row."""
+        self._imdb_status.setText(message)
+        self._imdb_status.setVisible(True)
+        # Reuse existing object names for consistent theming; red-ish for errors.
+        self._imdb_status.setStyleSheet(
+            "color: #f48771;" if error else "color: #4ec9b0;"
+        )
+
+    def _cleanup_imdb_thread(self) -> None:
+        """Tear down the fetch thread and re-enable the controls."""
+        if self._imdb_worker is not None:
+            self._imdb_worker.deleteLater()
+            self._imdb_worker = None
+        if self._imdb_thread is not None:
+            self._imdb_thread.deleteLater()
+            self._imdb_thread = None
+        self._imdb_fetch_btn.setEnabled(True)
+        self._imdb_id_input.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Save NFO

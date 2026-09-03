@@ -63,6 +63,12 @@ class SettingsConfig(BaseModel):
     theme_mode: str = "system"
     max_parallel_transfers: int = 1
 
+    # IMDb metadata lookup
+    # OMDb (primary) — https://www.omdbapi.com/apikey.aspx
+    # TMDB (fallback) — https://www.themoviedb.org/settings/api
+    omdb_api_key: str = ""
+    tmdb_api_key: str = ""
+
     @field_validator("host")
     @classmethod
     def validate_host(cls, v: str) -> str:
@@ -214,6 +220,26 @@ class Settings:
     def delete_after_transfer(self) -> bool:
         return self.config.delete_after_transfer
 
+    def get_delete_after_transfer_for_server(
+        self, server_id: Optional[str] = None
+    ) -> bool:
+        """Get delete-after-transfer preference for a server, falling back to global."""
+        sid = server_id or self.config.current_server_id
+        server = self.get_server(sid)
+        if server and server.get("delete_after_transfer") is not None:
+            return bool(server["delete_after_transfer"])
+        return self.config.delete_after_transfer
+
+    def get_activity_history_enabled_for_server(
+        self, server_id: Optional[str] = None
+    ) -> bool:
+        """Get activity-history preference for a server, falling back to enabled."""
+        sid = server_id or self.config.current_server_id
+        server = self.get_server(sid)
+        if server and server.get("activity_history_enabled") is not None:
+            return bool(server["activity_history_enabled"])
+        return True
+
     @property
     def download_directory(self) -> str:
         return self.config.download_directory
@@ -230,6 +256,14 @@ class Settings:
     @property
     def last_modified(self) -> str:
         return self.config.last_modified
+
+    @property
+    def omdb_api_key(self) -> str:
+        return self.config.omdb_api_key
+
+    @property
+    def tmdb_api_key(self) -> str:
+        return self.config.tmdb_api_key
 
     def save_config(self, config_data: dict) -> None:
         """Save configuration to JSON file."""
@@ -389,4 +423,6 @@ class Settings:
             "bookmarks": self.config.bookmarks,
             "theme_mode": self.config.theme_mode,
             "max_parallel_transfers": self.config.max_parallel_transfers,
+            "omdb_api_key": self.config.omdb_api_key,
+            "tmdb_api_key": self.config.tmdb_api_key,
         }

@@ -156,6 +156,35 @@ class SettingsWindow(QDialog):
             )
             layout.addWidget(self.server_filter_input)
 
+            # Per-server: move to trash after transfer
+            self.server_delete_after_checkbox = ToggleSwitch()
+            # Default to global setting when not explicitly set for this server
+            delete_val = self.server_config.get("delete_after_transfer")
+            if delete_val is None:
+                self.server_delete_after_checkbox.setChecked(
+                    self.settings.delete_after_transfer
+                )
+            else:
+                self.server_delete_after_checkbox.setChecked(bool(delete_val))
+            row = QHBoxLayout()
+            row.addWidget(QLabel("Move to trash after transfer"))
+            row.addStretch()
+            row.addWidget(self.server_delete_after_checkbox)
+            layout.addLayout(row)
+
+            # Per-server: activity history
+            self.server_activity_history_checkbox = ToggleSwitch()
+            history_val = self.server_config.get("activity_history_enabled")
+            if history_val is None:
+                self.server_activity_history_checkbox.setChecked(True)
+            else:
+                self.server_activity_history_checkbox.setChecked(bool(history_val))
+            row = QHBoxLayout()
+            row.addWidget(QLabel("Save to Activity History"))
+            row.addStretch()
+            row.addWidget(self.server_activity_history_checkbox)
+            layout.addLayout(row)
+
         layout.addStretch()
         scroll.setWidget(tab)
         self.tab_widget.addTab(scroll, "Connection")
@@ -285,6 +314,43 @@ class SettingsWindow(QDialog):
 
         info = QLabel("Hidden files (starting with .) are automatically skipped.")
         info.setObjectName("secondary_label")
+        layout.addWidget(info)
+
+        # IMDb / OMDb metadata lookup
+        layout.addWidget(QLabel(""))
+        layout.addWidget(QLabel("Metadata Lookup"))
+
+        self.omdb_api_key_input = QLineEdit(self.settings.config.omdb_api_key)
+        self.omdb_api_key_input.setPlaceholderText("OMDb API key (primary)")
+        self.omdb_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.omdb_api_key_input.setToolTip(
+            "Primary source for metadata lookups by IMDb ID.\n"
+            "Get a free key at https://www.omdbapi.com/apikey.aspx"
+        )
+        omdb_row = QHBoxLayout()
+        omdb_row.addWidget(QLabel("OMDb key:"))
+        omdb_row.addWidget(self.omdb_api_key_input, stretch=1)
+        layout.addLayout(omdb_row)
+
+        self.tmdb_api_key_input = QLineEdit(self.settings.config.tmdb_api_key)
+        self.tmdb_api_key_input.setPlaceholderText("TMDB API key (fallback, optional)")
+        self.tmdb_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tmdb_api_key_input.setToolTip(
+            "Fallback used when OMDb has no record for an IMDb ID\n"
+            "(common for brand-new episodes).\n"
+            "Get a free key at https://www.themoviedb.org/settings/api"
+        )
+        tmdb_row = QHBoxLayout()
+        tmdb_row.addWidget(QLabel("TMDB key:"))
+        tmdb_row.addWidget(self.tmdb_api_key_input, stretch=1)
+        layout.addLayout(tmdb_row)
+
+        info = QLabel(
+            'Enables "Fetch from IMDb" when editing metadata. OMDb is tried '
+            "first; TMDB is used as a fallback for titles OMDb doesn't have yet."
+        )
+        info.setObjectName("secondary_label")
+        info.setWordWrap(True)
         layout.addWidget(info)
 
         layout.addStretch()
@@ -492,6 +558,14 @@ class SettingsWindow(QDialog):
                 ext_filter = self.server_filter_input.text().strip()
                 if ext_filter:
                     config["extension_filter"] = ext_filter
+            if hasattr(self, "server_delete_after_checkbox"):
+                config["delete_after_transfer"] = (
+                    self.server_delete_after_checkbox.isChecked()
+                )
+            if hasattr(self, "server_activity_history_checkbox"):
+                config["activity_history_enabled"] = (
+                    self.server_activity_history_checkbox.isChecked()
+                )
 
             # Validate SSH config
             if config.get(CONN_TYPE_KEY) == CONN_TYPE_SSH:
@@ -553,6 +627,9 @@ class SettingsWindow(QDialog):
                     if f.strip()
                 ],
                 "theme_mode": self.theme_combo.currentData(),
+                "max_parallel_transfers": self.settings.config.max_parallel_transfers,
+                "omdb_api_key": self.omdb_api_key_input.text().strip(),
+                "tmdb_api_key": self.tmdb_api_key_input.text().strip(),
                 "last_modified": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
             }
 
