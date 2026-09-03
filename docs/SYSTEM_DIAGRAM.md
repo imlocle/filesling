@@ -41,6 +41,7 @@ graph TB
         DL[DirectoryLoader]
         SR[SearchWorker]
         DU[DiskUsageWorker]
+        IW[IMDbWorker]
     end
 
     subgraph Clients["Device Clients (src/clients/)"]
@@ -61,6 +62,12 @@ graph TB
         FF[FfmpegService]
         SI[SleepInhibitorService]
         MB[MenuBarService]
+        IS[IMDbService]
+    end
+
+    subgraph MetadataAPIs["Metadata Providers (HTTP)"]
+        OMDB[OMDb API]
+        TMDB[TMDB API]
     end
 
     subgraph Platform["Platform Layer (src/platform/)"]
@@ -102,6 +109,10 @@ graph TB
     FE --> SR
     FE --> DU
     VCM --> FF
+    MID --> IW
+    IW --> IS
+    IS --> OMDB
+    IS --> TMDB
 
     DC_PROTO <|.. SFTP
     DC_PROTO <|.. ADB
@@ -324,6 +335,35 @@ flowchart LR
     style TryRsync fill:#90EE90
     style UseSFTP fill:#87CEEB
     style UseADB fill:#FFD700
+```
+
+## IMDb Metadata Fetch Flow
+
+```mermaid
+flowchart TD
+    Start[User enters IMDb ID → Fetch] --> Worker[IMDbWorker on QThread]
+    Worker --> Normalize[Normalize ID<br/>tt0983514 / digits / IMDb URL]
+    Normalize --> Keys{Which keys set?}
+    Keys -->|None| ErrKeys[Error: add OMDb or TMDB key]
+    Keys -->|OMDb set| OMDb[OMDb lookup]
+
+    OMDb --> OMDbResult{Result?}
+    OMDbResult -->|Found| MapO[Map fields + resolve show name] --> Done[Populate tag fields ✓]
+    OMDbResult -->|Auth / network error| Stop[Error: report to user]
+    OMDbResult -->|Not found| HasTMDB{TMDB key set?}
+
+    Keys -->|Only TMDB| TMDB
+    HasTMDB -->|No| Surface[Surface OMDb 'not found']
+    HasTMDB -->|Yes| TMDB[TMDB /find?external_source=imdb_id]
+
+    TMDB --> TMDBResult{Result?}
+    TMDBResult -->|Episode| Ep[Map episode + /tv/show_id for name & genres] --> Done
+    TMDBResult -->|Movie / TV| MapT[Map result + resolve genres] --> Done
+    TMDBResult -->|Empty| NotFound[Error: no metadata on OMDb or TMDB]
+
+    style OMDb fill:#90EE90
+    style TMDB fill:#87CEEB
+    style Done fill:#90EE90
 ```
 
 ## SFTP Channel Architecture

@@ -20,6 +20,7 @@ Built with Python, PySide6, and Paramiko.
 - **Quick Fix** — Fix timestamps, change container, selectively remove subtitle tracks (no re-encoding)
 - **Media metadata** — Edit .nfo sidecar files, batch edit across multiple files, view stream info
 - **Batch metadata** — Multi-select → apply shared fields (Artist, Series, Season, Episode #) to all
+- **Fetch from IMDb** — Enter an IMDb ID (or paste an IMDb URL) to auto-fill metadata fields via OMDb, with automatic TMDB fallback for titles OMDb doesn't have yet
 - **Multi-server** — Quick-switch dropdown, per-server bookmarks and settings
 - **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
 - **Sleep prevention** — Mac stays awake during active transfers (configurable)
@@ -78,6 +79,7 @@ python main.py
 - SSH access to your server (key-based or password)
 - For Android: ADB installed (macOS: `brew install android-platform-tools`, Windows: [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools)) + USB Debugging enabled
 - For iOS: `pip install pymobiledevice3` + device unlocked and trusted
+- For IMDb metadata lookup (optional): a free [OMDb API key](https://www.omdbapi.com/apikey.aspx) and/or [TMDB API key](https://www.themoviedb.org/settings/api), entered in Settings → Files → Metadata Lookup
 
 ## Configuration
 
@@ -116,9 +118,22 @@ Stored at `~/.FileSling/config.json` (macOS/Linux) or `%APPDATA%\FileSling\confi
   "delete_after_transfer": true,
   "download_directory": "~/Downloads",
   "theme_mode": "system",
-  "skip_patterns": [".DS_Store", "._*", "Thumbs.db", ".Trashes"]
+  "skip_patterns": [".DS_Store", "._*", "Thumbs.db", ".Trashes"],
+  "omdb_api_key": "",
+  "tmdb_api_key": ""
 }
 ```
+
+### Metadata Lookup (IMDb)
+
+FileSling can auto-fill video metadata from an IMDb ID. In the Media Info dialog (right-click a video → **Edit Metadata**), enter an IMDb ID like `tt0983514` (or paste a full IMDb URL) and click **Fetch**. The fields populate for review before you save the `.nfo` file.
+
+Two providers are used, in order:
+
+1. **OMDb** (primary) — set `omdb_api_key`. Get a free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) (activate it via the confirmation email).
+2. **TMDB** (fallback) — set `tmdb_api_key`. Get a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api). Used automatically when OMDb has no record for an ID (common for brand-new episodes).
+
+Keys are stored locally in your config and entered via Settings → Files → Metadata Lookup. FileSling does not scrape IMDb; it uses these providers' public APIs.
 
 ## Keyboard Shortcuts
 
@@ -151,7 +166,7 @@ make format
 # Lint (flake8)
 make lint
 
-# Run tests (437 unit tests)
+# Run tests (477 unit tests)
 make test
 
 # Build distribution (wheel + sdist)
@@ -188,11 +203,11 @@ src/
 ├── controllers/    UI event routing (5 controllers)
 ├── models/         ServerConfig dataclass, error hierarchy
 ├── platform/       OS abstraction (macOS, Windows, base stubs)
-├── services/       Business logic (10 services)
+├── services/       Business logic (11 services, incl. IMDb/OMDb+TMDB lookup)
 ├── utils/          Constants, crash handler, icons, theme
 ├── views/          Windows and dialogs (2 windows + 7 dialogs)
 ├── widgets/        Reusable UI components (8 widgets)
-└── workers/        Background QThread workers (5 workers)
+└── workers/        Background QThread workers (6 workers)
 ```
 
 ## Releasing

@@ -36,6 +36,7 @@ src/
 │   ├── connection_manager_service.py  SSH/SFTP lifecycle + health monitoring
 │   ├── ffmpeg_service.py              Remote video conversion via SSH
 │   ├── file_deletion_service.py       Safe deletion via send2trash
+│   ├── imdb_service.py                IMDb metadata lookup (OMDb primary, TMDB fallback)
 │   ├── keychain_service.py            macOS Keychain credential storage
 │   ├── notification_service.py        macOS notifications + Dock badge
 │   ├── remote_file_service.py         Centralized connection-lost detection
@@ -73,6 +74,7 @@ src/
     ├── connection_worker.py           Async SSH connection in background
     ├── disk_usage_worker.py           Background disk space calculation
     ├── download_worker.py             Background SFTP/ADB download
+    ├── imdb_worker.py                 Background IMDb/OMDb/TMDB metadata fetch
     ├── search_worker.py               Background recursive file search
     └── transfer_worker.py             Background SFTP/ADB upload
 ```
@@ -203,6 +205,28 @@ Multi-select videos → right-click → "✏️ Edit Metadata (N videos)"
   → Writes .nfo sidecar files for all selected files
 ```
 
+### IMDb Metadata Fetch
+
+```
+MediaInfoDialog (Tags tab) → enter IMDb ID → "🔍 Fetch"
+  → IMDbWorker runs on QThread (keeps UI responsive)
+    → imdb_service.fetch_metadata(imdb_id, omdb_key, tmdb_key)
+      → Normalizes the ID (accepts tt0983514, bare digits, or IMDb URL)
+      → Primary: OMDb lookup (urllib GET → JSON)
+        → On success: map fields, resolve episode → show name (2nd OMDb call)
+        → On "not found" (MetadataNotFoundError): fall through to fallback
+        → On auth/network error: stop and report
+      → Fallback: TMDB /find?external_source=imdb_id (only if a TMDB key is set)
+        → Resolves movie / tv / episode result
+        → For episodes: 1 follow-up /tv/{show_id} call for show name + genres
+        → Genre IDs resolved to names via cached /genre/{type}/list
+  → Fetched fields populate the tag inputs for review
+  → User reviews, edits, and clicks Save → writes .nfo sidecar
+```
+
+Metadata is fetched via provider APIs (OMDb, TMDB) using the standard-library
+`urllib` — no scraping of imdb.com and no extra HTTP dependency in the bundle.
+
 ## SFTP Channel Architecture
 
 ```
@@ -235,6 +259,7 @@ This eliminates thread contention — Paramiko SFTP is NOT thread-safe, so each 
 | TransferWorker   | Background file upload (per-transfer)         | own session        |
 | DownloadWorker   | Background file download (per-download)       | own session        |
 | SearchWorker     | Background recursive search                   | sftp_background    |
+| IMDbWorker       | OMDb/TMDB metadata fetch over HTTP            | (none — HTTP)      |
 | \_ConvertWorker  | Remote ffmpeg execution                       | own SSH connection |
 | \_QuickFixWorker | Quick Fix ffmpeg execution                    | own SSH session    |
 | HealthTimer      | Connection keepalive + latency (15s interval) | sftp_client        |
@@ -258,6 +283,7 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 - Multi-server support with default server for auto-connect
 - `ServerConfig` dataclass (`src/models/server_config.py`) for typed server access
 - Server configs store: connection type, credentials, base directory, per-server download dir, extension filters, bookmarks
+- Global config stores `omdb_api_key` and `tmdb_api_key` for IMDb metadata lookup
 - Transfer history stored in `~/.FileSling/transfer_history.json` (last 200 records)
 - Pending and in-progress upload queue recovery stored in `~/.FileSling/transfer_queue.json`
 - Error logs stored in `~/.FileSling/logs/errors.json` (last 500 entries)
@@ -296,6 +322,7 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 - Theme dropdown applies immediately (live preview)
 - "Test Connection" button in footer alongside Cancel/Save
 - Per-server settings: download directory, extension filter
+- Metadata Lookup section (Files tab): OMDb key (primary) + TMDB key (fallback), password-masked
 
 ## Theming
 
@@ -334,3 +361,5 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 | Pydantic        | ≥2.0.0  | Settings validation          |
 | send2trash      | ≥1.8.3  | Safe file deletion           |
 | pymobiledevice3 | ≥4.0.0  | iOS device access (optional) |
+
+IMDb metadata lookup (OMDb + TMDB) uses the standard-library `urllib` — no extra HTTP dependency is added.

@@ -9,6 +9,27 @@
 
 ## Unreleased (dev)
 
+### IMDb Metadata Lookup (OMDb + TMDB)
+
+- [x] "Fetch from IMDb" in the Media Info dialog — enter an IMDb ID (or paste an IMDb URL) to auto-fill metadata fields
+- [x] `src/services/imdb_service.py` — normalizes IMDb IDs, fetches via OMDb, maps to internal NFO field keys
+- [x] OMDb is the primary provider; TMDB is an automatic fallback when OMDb has no record (common for brand-new episodes)
+- [x] Episode lookups resolve the parent series name (and genres, on TMDB) via a follow-up call
+- [x] `src/workers/imdb_worker.py` — runs the lookup on a background QThread (UI stays responsive)
+- [x] New settings: `omdb_api_key` and `tmdb_api_key`, entered in Settings → Files → Metadata Lookup (password-masked)
+- [x] Uses standard-library `urllib` — no scraping of imdb.com, no new HTTP dependency
+- [x] 40 unit tests covering ID normalization, OMDb/TMDB field mapping, and the fallback orchestration
+
+### Bug Fixes (pre-release audit)
+
+- [x] Host validator now accepts hostnames (e.g. `nas.local`), not only IP addresses
+- [x] `test_connection()` supports password auth (previously always required an SSH key)
+- [x] SSH `connect()` uses the `TIMEOUT_SSH_CONNECT` constant instead of a hardcoded value
+- [x] `is_connection_lost_error()` operator-precedence fix (parenthesized `and`/`or` groups)
+- [x] iOS `get()` no longer risks a `NameError` when the fallback path is hit
+- [x] Download progress guards against a stale/out-of-range queue index after retries
+- [x] `_save_global_settings` no longer drops `max_parallel_transfers` (and now persists the new API keys)
+
 ### Menu Bar Status Item
 
 - [x] macOS menu bar icon (template icon with document + swoosh/plane cutout)
