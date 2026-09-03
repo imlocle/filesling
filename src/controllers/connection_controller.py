@@ -298,6 +298,8 @@ class ConnectionController(QObject):
             self._set_status("", "connection_connected")
             start_path = self._get_initial_path(root_path)
             self.view.remote_explorer.root_path = root_path
+            # Clear stale SSH background channel before setting ADB client
+            self.view.remote_explorer.set_sftp_background(None)
             self.view.remote_explorer.set_sftp(client)
             self.view.remote_explorer.refresh(start_path)
 
@@ -351,6 +353,8 @@ class ConnectionController(QObject):
             self._set_status("", "connection_connected")
             start_path = self._get_initial_path(root_path)
             self.view.remote_explorer.root_path = root_path
+            # Clear stale SSH background channel before setting iOS client
+            self.view.remote_explorer.set_sftp_background(None)
             self.view.remote_explorer.set_sftp(client)
             self.view.remote_explorer.refresh(start_path)
 
@@ -434,13 +438,27 @@ class ConnectionController(QObject):
     def handle_explorer_failure(self, error_msg: str) -> None:
         """Handle remote explorer errors by attempting to reconnect."""
         logger.error(f"Explorer Error: {error_msg}")
-        ok = self.connection_manager.connect()
-        if ok and self.connection_manager.sftp_client:
-            self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
-            self.view.remote_explorer.refresh(self.settings.remote_base_dir)
+
+        # Determine connection type so we use the correct reconnect path
+        server_config = self.settings.get_server(self.settings.config.current_server_id)
+        connection_type = (
+            server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
+            if server_config
+            else CONN_TYPE_SSH
+        )
+
+        if connection_type == CONN_TYPE_ADB:
+            self._connect_adb(server_config)  # type: ignore
+        elif connection_type == CONN_TYPE_IOS:
+            self._connect_ios(server_config)  # type: ignore
         else:
-            self._set_status("● Disconnected", "connection_disconnected")
-            logger.error("Cannot recover connection.")
+            ok = self.connection_manager.connect()
+            if ok and self.connection_manager.sftp_client:
+                self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
+                self.view.remote_explorer.refresh(self.settings.remote_base_dir)
+            else:
+                self._set_status("● Disconnected", "connection_disconnected")
+                logger.error("Cannot recover connection.")
 
     def _prompt_install_adb(self) -> None:
         """Show dialog to help user install ADB."""
