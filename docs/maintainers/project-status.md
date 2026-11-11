@@ -1,7 +1,7 @@
 # Project Status
 
 > Reviewed: November 2026
-> Package version in the repository: 3.7.2
+> Package version in the repository: 3.8.0
 
 This is a snapshot of the repository configuration and documentation. It records what is configured, not whether a CI run or release succeeded on the review date.
 

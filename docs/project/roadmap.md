@@ -1,6 +1,6 @@
 # FileSling: Roadmap
 
-> **Last updated:** November 2026: Version 3.7.2
+> **Last updated:** November 2026: Version 3.8.0
 >
 > Completed work is listed in the [changelog](changelog.md). Potential issues from older audits are in [known issues](known-issues.md) and need revalidation.
 

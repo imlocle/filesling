@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last updated:** November 2026: Version 3.7.2
+> **Last updated:** November 2026: Version 3.8.0
 
 ## Overview
 

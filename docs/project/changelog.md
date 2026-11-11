@@ -1,13 +1,13 @@
 # FileSling: Changelog
 
-> **Reviewed:** November 2026. Current package version: 3.7.2.
+> **Reviewed:** November 2026. Current package version: 3.8.0.
 >
 > For planned work, see [the roadmap](roadmap.md).
 > For audit candidates that need current triage, see [known issues](known-issues.md).
 
 ---
 
-## Unreleased (3.7.2 development)
+## 3.8.0 (November 2026)
 
 ### Destination Profiles
 

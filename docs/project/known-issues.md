@@ -1,6 +1,6 @@
 # Known Issues and Audit Notes
 
-> **Last updated:** November 2026: Version 3.7.2
+> **Last updated:** November 2026: Version 3.8.0
 
 This file contains findings from earlier audits. The unchecked items have not
 all been reproduced against the current code, so treat them as candidates for
@@ -13,7 +13,7 @@ For planned work, see the [roadmap](roadmap.md). Recent fixes are in the
 
 ## Confirmed current issues
 
-No issues have been confirmed in this document against the 3.7.2 codebase.
+No issues have been confirmed in this document against the 3.8.0 codebase.
 The older audit findings below are retained as investigation leads.
 
 ---
