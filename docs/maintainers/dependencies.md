@@ -1,15 +1,15 @@
 # Dependency Management Guide
 
-> **Last updated:** July 2026 — Version 3.7.1
+> **Reviewed:** November 2026. Current package version: 3.7.2.
 
 ## Overview
 
 FileSling uses **pip-tools** for dependency management. This provides:
 
-- Reproducible builds — exact versions locked in `.txt` files
-- Separated concerns — production vs development dependencies
-- Easy updates — human-editable `.in` files compiled to `.txt` lock files
-- Transitive dependency tracking — all sub-dependencies documented
+- Reproducible builds: exact versions locked in `.txt` files
+- Separated concerns: production vs development dependencies
+- Easy updates: human-editable `.in` files compiled to `.txt` lock files
+- Transitive dependency tracking: all sub-dependencies documented
 
 ## File Structure
 
@@ -29,7 +29,7 @@ pyproject.toml           # Package metadata + optional dependency groups
 | pydantic        | ≥2.0.0  | Settings validation          |
 | pyside6         | ≥6.10.0 | Qt UI framework              |
 | send2trash      | ≥1.8.3  | Safe file deletion           |
-| pymobiledevice3 | ≥4.0.0  | iOS device access (optional) |
+`pymobiledevice3>=4.0.0` is optional iOS support. It is declared in the `ios` optional dependency group and included in `requirements-dev.in` for development.
 
 ## Development Dependencies
 

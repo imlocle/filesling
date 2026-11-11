@@ -1,6 +1,6 @@
 # System Diagram
 
-> **Last updated:** July 2026 — Version 3.7.1
+> **Last updated:** November 2026: Version 3.7.2
 
 ## High-Level Architecture
 
@@ -24,6 +24,7 @@ graph TB
         FPD[FolderPickerDialog]
         MID[MediaInfoDialog]
         QFD[QuickFixDialog]
+        TSW[TrackSelectionWidget]
     end
 
     subgraph Controllers["Controller Layer"]
@@ -31,6 +32,7 @@ graph TB
         CC[ConnectionController]
         DC[DownloadController]
         FOC[FileOperationsController]
+        MTC[MediaToolsController]
         TC[TransferController]
     end
 
@@ -39,9 +41,13 @@ graph TB
         TW[TransferWorker]
         DW[DownloadWorker]
         DL[DirectoryLoader]
-        SR[SearchWorker]
+        NFW[NfoCacheWorker]
+        SW[SearchWorker]
         DU[DiskUsageWorker]
         IW[IMDbWorker]
+        JFW[JellyfinRefreshWorker]
+        CVW[ConvertWorker]
+        QFW[QuickFixWorker]
     end
 
     subgraph Clients["Device Clients (src/clients/)"]
@@ -49,20 +55,33 @@ graph TB
         ADB[ADBClient]
         IOS[IOSClient]
         SFTP[Paramiko SFTPClient]
+        SSHCmd[SSH session helper]
     end
 
     subgraph Services["Service Layer"]
         CM[ConnectionManagerService]
         RFS[RemoteFileService]
+        MFS[MediaFileService]
         FDS[FileDeletionService]
+        BRS[BatchRenameService]
         AHS[ActivityHistoryService]
         NS[NotificationService]
         KS[KeychainService]
         RS[RsyncService]
+        RCS[RcloneService]
         FF[FfmpegService]
+        RMS[RemoteMediaService]
+        NFC[NfoMetadataCacheService]
+        TQS[TransferQueueService]
         SI[SleepInhibitorService]
         MB[MenuBarService]
         IS[IMDbService]
+    end
+
+    subgraph Repositories["Persistence Repositories"]
+        SRepo[SettingsRepository]
+        AHR[ActivityHistoryRepository]
+        TQR[TransferQueueRepository]
     end
 
     subgraph MetadataAPIs["Metadata Providers (HTTP)"]
@@ -70,9 +89,13 @@ graph TB
         TMDB[TMDB API]
     end
 
+    subgraph MediaServer["Media Server API"]
+        Jellyfin[Jellyfin HTTP API]
+    end
+
     subgraph Platform["Platform Layer (src/platform/)"]
-        PM[macOS — Keychain, osascript, caffeinate, Finder]
-        PW[Windows — keyring, toast, SetThreadExecutionState, Explorer]
+        PM[macOS: Keychain, notifications, caffeinate, Finder]
+        PW[Windows: credential manager, tray notifications, sleep control, Explorer]
     end
 
     subgraph External["External Systems"]
@@ -85,10 +108,10 @@ graph TB
     subgraph Config["Configuration & Storage"]
         Settings[Settings Singleton]
         JSON["~/.FileSling/config.json"]
-        History["~/.FileSling/transfer_history.json"]
+        History["~/.FileSling/activity_history.json"]
         Queue["~/.FileSling/transfer_queue.json"]
         Errors["~/.FileSling/logs/errors.json"]
-        Keychain["macOS Keychain"]
+        Keychain["Operating system credential store"]
     end
 
     MW --> MWC
@@ -99,20 +122,48 @@ graph TB
     MWC --> CC
     MWC --> DC
     MWC --> FOC
+    MWC --> MTC
     MWC --> TC
+    FE --> MTC
     MWC --> NS
     CC --> CW
     CC --> CM
     TC --> TW
+    TC --> TQS
     DC --> DW
     FE --> DL
-    FE --> SR
+    FE --> NFW
+    FE --> NFC
+    FE --> SW
     FE --> DU
     VCM --> FF
+    MTC --> RMS
+    QFD --> TSW
+    NFW --> RMS
+    NFW --> NFC
+    MTC --> CVW
+    MTC --> QFW
+    MTC --> AHS
+    BRD --> BRS
+    BRS --> AHS
+    BRS --> MFS
+    AHS --> AHR
+    TQS --> TQR
+    RMS --> SSHCmd
+    FF --> SSHCmd
+    TW --> SSHCmd
+    DU --> SSHCmd
+    QFW --> SSHCmd
+    Settings --> SRepo
+    SRepo --> JSON
+    AHR --> History
+    TQR --> Queue
     MID --> IW
     IW --> IS
     IS --> OMDB
     IS --> TMDB
+    MWC --> JFW
+    JFW --> Jellyfin
 
     DC_PROTO <|.. SFTP
     DC_PROTO <|.. ADB
@@ -125,6 +176,7 @@ graph TB
     AHS --> History
     KS --> Keychain
     RS --> SSH
+    RCS --> SSH
     Settings --> JSON
     TC --> Queue
 
@@ -137,6 +189,28 @@ graph TB
     DL --> SFTP
     DL --> ADB
     DL --> IOS
+    NFW --> SFTP
+```
+
+## NFO Cache Flow
+
+```mermaid
+sequenceDiagram
+    participant FE as FileExplorerWidget
+    participant DL as DirectoryLoader
+    participant NW as NfoCacheWorker
+    participant SFTP as Metadata SFTP channel
+    participant Cache as NfoMetadataCacheService
+    participant DP as DetailPanel
+
+    FE->>DL: Load current directory
+    DL-->>FE: Listing and NFO sidecar names
+    FE->>NW: Prefetch listed sidecars in background
+    NW->>SFTP: Read NFO files
+    NW-->>Cache: Parsed metadata by NFO path
+    FE->>Cache: Get metadata for selected file
+    Cache-->>FE: Cached metadata
+    FE->>DP: Render sidecar values
 ```
 
 ## Upload Flow
@@ -161,10 +235,14 @@ sequenceDiagram
     MW->>TC: queue_transfer(paths, destination)
     TC->>TC: Persist to transfer_queue.json
     TC->>TC: _process_next()
-    alt SSH with rsync available
-        TC->>Client: Try rsync (delta transfer)
-        alt rsync fails
-            TC->>Client: Fallback to SFTP
+    alt SSH with rclone available and key authentication
+        TC->>Client: Try rclone (4 parallel transfers)
+        TC->>Client: Verify uploaded files with SHA-256
+        alt rclone fails
+            TC->>Client: Try rsync
+            alt rsync fails
+                TC->>Client: Fallback to SFTP
+            end
         end
     else SFTP / ADB / iOS
         TC->>Client: Open dedicated session
@@ -175,10 +253,15 @@ sequenceDiagram
     TW->>Client: put() / push
     TW-->>TC: progress signal
     TW-->>TC: finished signal
+    Note over TW,Client: SFTP stages each file remotely and verifies SHA-256 before replacement
     TC->>AHS: Record in activity history
     TC->>NS: Send notification + update Dock badge
     TC->>MW: transfer_completed signal
     MW->>Explorer: refresh()
+    opt Jellyfin refresh enabled for this server
+        MW->>MW: Wait until queued transfers finish, then debounce request
+        MW->>JFW: Request library refresh over HTTP
+    end
 ```
 
 ## Download Flow
@@ -234,7 +317,7 @@ flowchart TD
     StartCW --> CheckAuth{Auth method?}
     CheckAuth -->|Key| ConnSSH[SSH Connect with key + optional passphrase]
     CheckAuth -->|Password| ConnSSHPW[SSH Connect with password]
-    CheckAuth -->|Keychain| FetchKC[Fetch from macOS Keychain]
+    CheckAuth -->|Credential store| FetchKC[Fetch from platform credential store]
     FetchKC --> ConnSSHPW
     ConnSSH --> Connected
     ConnSSHPW --> Connected
@@ -262,9 +345,44 @@ flowchart TD
     SetExplorer --> Refresh[Load directory listing]
     Refresh --> HealthTimer[Start 15s health check timer]
     HealthTimer --> CheckAlive{Connection alive?}
-    CheckAlive -->|Yes| UpdateLatency[Update latency indicator]
-    CheckAlive -->|No| AutoReconnect[Auto-reconnect]
-    AutoReconnect --> StartCW
+    CheckAlive -->|Yes| UpdateLatency[Update latency indicator + reset attempts]
+    CheckAlive -->|No| Guard{Reconnect allowed?}
+    Guard -->|already reconnecting / disabled| SkipRC[Skip]
+    Guard -->|attempts >= MAX| GiveUp[Give up: disable until manual connect]
+    Guard -->|OK| BeginRC[_begin_reconnect: disconnect + async worker]
+    BeginRC --> StartCW
+    StartCW --> RCResult{Worker result?}
+    RCResult -->|connected| RebindRefresh[Rebind channels + refresh, reset attempts]
+    RCResult -->|failed & capped| GiveUp
+    RCResult -->|failed| MarkDisc[Mark disconnected]
+```
+
+## Auto-Reconnect (bounded, off the UI thread)
+
+```mermaid
+flowchart TD
+    Trigger[Dead socket OR explorer listdir failure] --> G{Guard}
+    G -->|_reconnecting or _reconnect_disabled| Ignore[Ignore]
+    G -->|attempts >= MAX_AUTO_RECONNECT_ATTEMPTS| GiveUp[_give_up_reconnect<br/>disable until manual connect]
+    G -->|allowed| Type{Connection type?}
+
+    Type -->|SSH| Begin[_begin_reconnect<br/>disconnect + set _reconnecting]
+    Begin --> Async[_start_async_connect → ConnectionWorker on QThread]
+    Async --> Conn[connect_should_cancel: interruptible retry loop]
+    Conn -->|connected| OK[_on_reconnect_succeeded<br/>rebind + refresh]
+    OK -->|first directory listing succeeds| Reset[Reset attempts and clear guard]
+    OK -->|first directory listing fails| Retry[Count failure and retry or give up]
+    Conn -->|failed| Fail[_on_reconnect_failed]
+    Fail -->|capped| GiveUp
+    Fail -->|below cap| Disc[Mark disconnected]
+
+    Type -->|ADB/iOS| Local[_reconnect_local<br/>synchronous, fast USB, same cap]
+    Local -->|success| ResetL[Reset attempts]
+    Local -->|capped| GiveUp
+
+    style Async fill:#87CEEB
+    style OK fill:#90EE90
+    style GiveUp fill:#f4a3a3
 ```
 
 ## Backend Abstraction
@@ -317,15 +435,20 @@ classDiagram
 ```mermaid
 flowchart LR
     Start[Upload requested] --> CheckType{Connection type?}
-    CheckType -->|SSH| CheckRsync{rsync available?}
+    CheckType -->|SSH| CheckRclone{rclone available and key auth?}
     CheckType -->|ADB| UseADB[adb push]
     CheckType -->|iOS| UseIOS[AFC write]
 
+    CheckRclone -->|Yes| TryRclone[rclone --transfers 4]
+    CheckRclone -->|No| CheckRsync{rsync available?}
     CheckRsync -->|Yes| TryRsync[rsync --progress]
     CheckRsync -->|No| UseSFTP[SFTP put]
 
+    TryRclone --> RcloneOK{Success and SHA-256 verified?}
+    RcloneOK -->|Yes| Done[Transfer complete ✓]
+    RcloneOK -->|No| CheckRsync
     TryRsync --> RsyncOK{Success?}
-    RsyncOK -->|Yes| Done[Transfer complete ✓]
+    RsyncOK -->|Yes| Done
     RsyncOK -->|No| UseSFTP
 
     UseSFTP --> Done

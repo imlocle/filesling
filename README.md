@@ -4,34 +4,41 @@
   <img src="assets/icons/filesling_logo.png" alt="FileSling" width="128">
 </p>
 
-A file manager for Mac that sends files to connected devices — SSH servers, Raspberry Pis, Android phones, tablets, and VR headsets — through a clean drag-and-drop interface.
+A desktop file manager for macOS and Windows that sends files to SSH servers and connected Android and iOS devices through drag and drop.
 
 Built with Python, PySide6, and Paramiko.
 
 ## Features
 
-- **Remote file explorer** — Browse, upload, download, and manage files on SSH servers and Android devices
-- **Drag-and-drop** — Drop files from Finder into the current directory
-- **Android USB + WiFi** — Connect phones, tablets, and VR headsets via ADB (wired or wireless)
-- **iPhone/iPad USB** — Browse and back up camera roll photos/videos via AFC protocol
-- **Transfer queue** — Queued uploads/downloads with speed, ETA, auto-retry, and resume
-- **rsync fast path** — Delta transfers for SSH servers (only sends changed bytes)
-- **Remote video convert** — Right-click → Convert to H.264/H.265/VP9 (runs ffmpeg on server)
-- **Quick Fix** — Fix timestamps, change container, selectively remove subtitle tracks (no re-encoding)
-- **Media metadata** — Edit .nfo sidecar files, batch edit across multiple files, view stream info
-- **Batch metadata** — Multi-select → apply shared fields (Artist, Series, Season, Episode #) to all
-- **Fetch from IMDb** — Enter an IMDb ID (or paste an IMDb URL) to auto-fill metadata fields via OMDb, with automatic TMDB fallback for titles OMDb doesn't have yet
-- **Multi-server** — Quick-switch dropdown, per-server bookmarks and settings
-- **Auto-reconnect** — Detects dropped connections and reconnects with latency indicator
-- **Sleep prevention** — Mac stays awake during active transfers (configurable)
-- **Menu bar icon** — App lives in the menu bar; close hides the window, click Dock/taskbar or menu bar to reopen, ⌘Q fully quits
-- **Flexible auth** — SSH key (with passphrase), password, or macOS Keychain
-- **Notifications** — macOS alerts on transfer complete/fail, Dock badge for pending count
-- **Media info** — View detailed stream info and edit tags in a dedicated dialog
-- **Batch operations** — Multi-select download, move, delete, and batch rename
-- **Detail panel** — Side panel showing metadata + stream info on file select (⌘I)
-- **Themes** — Modern dark mode with macOS-style toggle switches, light mode, or follow system
-- **Keyboard shortcuts** — ⌘+R, ⌘+N, ⌘+F, ⌘+I, ⌘+Delete, etc.
+- **Remote file explorer:** Browse, upload, download, and manage files on SSH servers and Android devices
+- **Drag and drop:** Drop files from Finder or Explorer into the current directory
+- **Android USB and WiFi:** Connect phones, tablets, and VR headsets via ADB
+- **iPhone and iPad USB:** Browse and back up camera roll photos and videos via AFC protocol
+- **Transfer queue:** Queued uploads and downloads with speed, ETA, automatic retry, and resume
+- **rsync fast path:** Delta transfers for SSH servers when rsync is available
+- **Verified uploads:** SHA-256 checks and staged remote replacement before source files can be moved to Trash
+- **Fast SSH transfers:** Use rclone parallel uploads or rsync when installed, with verified SFTP fallback
+- **Jellyfin integration:** Optionally request a library scan after an upload batch completes
+- **Remote video conversion:** Convert to H.264, H.265, or VP9 with ffmpeg on the server
+- **Quick Fix:** Fix timestamps, change containers, or choose audio and subtitle tracks to keep without re-encoding. Apply container and timestamp fixes to multiple videos at once.
+- **Media metadata:** Edit NFO sidecar files, batch edit multiple files, infer TV details from common folder names, and keep matching NFO files beside renamed videos
+- **NFO cache:** Preload remote sidecar metadata in the background for faster detail
+  panel updates
+- **Batch metadata:** Apply shared fields such as Artist, Series, Season, and Episode to selected files
+- **Fetch from IMDb:** Enter an IMDb ID or URL to fetch metadata through OMDb, with TMDB fallback
+- **Multi-server:** Switch servers quickly with per-server bookmarks and settings
+- **Destination profiles:** Save a connection, destination folder, and duplicate
+  handling as a one-click upload target
+- **Auto-reconnect:** Detect dropped connections and reconnect in the background with a bounded retry count
+- **Sleep prevention:** Prevent sleep during active transfers where the platform supports it
+- **Menu bar and tray icon:** Hide the window while the app stays available, then reopen it from the Dock, taskbar, or menu bar
+- **Flexible authentication:** SSH key, password, or the platform credential store
+- **Notifications:** Transfer status notifications and activity indicators where supported
+- **Media info**: View detailed stream info and edit tags in a dedicated dialog
+- **Batch operations**: Multi-select download, move, delete, and batch rename
+- **Detail panel:** Show metadata and stream information for the selected file
+- **Themes:** Dark mode, light mode, or follow system appearance
+- **Keyboard shortcuts:** Common actions for refresh, new folder, search, details, and delete
 
 ## Quick Start
 
@@ -51,9 +58,9 @@ Then open FileSling normally.
 
 Grab `FileSling-Windows.zip` from the [latest release](https://github.com/imlocle/filesling/releases/latest), extract it, and run `FileSling.exe`.
 
-No installer needed — it's a portable app. You can move the folder anywhere (e.g., `C:\Program Files\FileSling\`).
+No installer is needed. The app is portable and can be moved to another folder.
 
-**Optional:** For credential storage (remember SSH passwords), install the `keyring` package if running from source.
+**Optional:** For credential storage when running from source, install the `keyring` package.
 
 ### Run from source
 
@@ -75,11 +82,14 @@ python main.py
 ## Requirements
 
 - Python 3.9+ (3.13 recommended)
-- macOS or Windows (macOS is the primary platform)
+- macOS or Windows. Linux is not a packaged desktop target.
 - SSH access to your server (key-based or password)
 - For Android: ADB installed (macOS: `brew install android-platform-tools`, Windows: [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools)) + USB Debugging enabled
 - For iOS: `pip install pymobiledevice3` + device unlocked and trusted
 - For IMDb metadata lookup (optional): a free [OMDb API key](https://www.omdbapi.com/apikey.aspx) and/or [TMDB API key](https://www.themoviedb.org/settings/api), entered in Settings → Files → Metadata Lookup
+- For Jellyfin scans (optional): enter the URL and API key in server settings, then choose the server default or a profile override
+
+SSH connections require a trusted host key. Verify the server fingerprint, then connect once with your system SSH client so it is recorded in `~/.ssh/known_hosts`.
 
 ## Configuration
 
@@ -130,10 +140,26 @@ FileSling can auto-fill video metadata from an IMDb ID. In the Media Info dialog
 
 Two providers are used, in order:
 
-1. **OMDb** (primary) — set `omdb_api_key`. Get a free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) (activate it via the confirmation email).
-2. **TMDB** (fallback) — set `tmdb_api_key`. Get a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api). Used automatically when OMDb has no record for an ID (common for brand-new episodes).
+1. **OMDb** (primary): set `omdb_api_key`. Get a free key at [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) (activate it via the confirmation email).
+2. **TMDB** (fallback): set `tmdb_api_key`. Get a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api). Used automatically when OMDb has no record for an ID (common for brand-new episodes).
 
-Keys are stored locally in your config and entered via Settings → Files → Metadata Lookup. FileSling does not scrape IMDb; it uses these providers' public APIs.
+Keys are stored in the operating system credential store and entered via Settings → Files → Metadata Lookup. FileSling does not scrape IMDb; it uses these providers' public APIs.
+
+Passwords, SSH key passphrases, and API keys are stored in the operating system credential store when available. Existing saved credentials are migrated automatically. The config file is written with private permissions and replaced atomically.
+
+### Jellyfin Library Scans
+
+Enter the Jellyfin server URL and API key in the server's settings. Enable **Scan libraries after uploads** for the server default, or set a different scan action on an individual destination profile. FileSling batches queued uploads and sends a library refresh request when the batch finishes. This does not configure library paths or change Jellyfin's library settings.
+
+### Destination Profiles
+
+Use the **Destination** dropdown in the toolbar to save and switch between upload
+targets such as a Jellyfin Movies folder, a VR headset, or an archive. Each profile
+references a saved server or device connection, remembers its remote folder, and can
+ask about duplicate files, skip them, or overwrite them. Credentials stay with the
+saved connection. Uploads remain checksum verified. Profiles can inherit the
+connection's Jellyfin scan setting, always scan after uploads, or disable the scan.
+Wait for queued uploads to finish before changing destinations.
 
 ## Keyboard Shortcuts
 
@@ -166,7 +192,7 @@ make format
 # Lint (flake8)
 make lint
 
-# Run tests (477 unit tests)
+# Run tests
 make test
 
 # Build distribution (wheel + sdist)
@@ -200,21 +226,21 @@ Keep messages lowercase, imperative, and under 72 characters.
 src/
 ├── clients/        Device backends (DeviceClient protocol, ADB, iOS)
 ├── config/         Settings singleton (Pydantic model)
-├── controllers/    UI event routing (5 controllers)
+├── controllers/    UI event routing and application workflows
 ├── models/         ServerConfig dataclass, error hierarchy
 ├── platform/       OS abstraction (macOS, Windows, base stubs)
-├── services/       Business logic (11 services, incl. IMDb/OMDb+TMDB lookup)
+├── services/       Connection, transfer, metadata, and utility services
 ├── utils/          Constants, crash handler, icons, theme
-├── views/          Windows and dialogs (2 windows + 7 dialogs)
-├── widgets/        Reusable UI components (8 widgets)
-└── workers/        Background QThread workers (6 workers)
+├── views/          Main windows and dialogs
+├── widgets/        Reusable UI components
+└── workers/        Background tasks
 ```
 
 ## Releasing
 
 ```bash
-# Release a new version (bumps version, merges to main, tags, pushes)
-make release V=3.3.0
+# Release a new version (changes branches and pushes commits and a tag)
+make release V=X.Y.Z
 ```
 
 This single command:
@@ -222,28 +248,19 @@ This single command:
 1. Updates the version in `pyproject.toml` and `src/utils/constants.py`
 2. Commits and pushes to `dev`
 3. Merges `dev` → `main` and pushes
-4. Creates a `v3.3.0` tag and pushes it
+4. Creates a `vX.Y.Z` tag and pushes it
 5. Switches back to `dev`
 
-GitHub Actions then builds `FileSling.dmg` and creates the release automatically.
-
-## Icon Generation
-
-To regenerate app icons from the source logo (after updating `assets/icons/filesling_logo.png`):
-
-```bash
-.venv/bin/python scripts/generate_icons.py
-.venv/bin/python scripts/generate_menu_bar_icon.py
-```
-
-These scripts are local dev tools (not committed to the repo). They produce all required sizes (16×16 through 1024×1024), the macOS `.icns` bundle, the Windows `.ico`, and the menu bar template icon in `assets/icons/generated/`.
+GitHub Actions builds the Python distributions, macOS DMG, and Windows ZIP, then creates the release. See the [release guide](docs/maintainers/releases.md) before running this command.
 
 ## Docs
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [System Diagram](docs/SYSTEM_DIAGRAM.md)
-- [Changelog](docs-internal/CHANGELOG.md)
-- [Roadmap](docs-internal/ROADMAP.md)
+- [Documentation index](docs/README.md)
+- [Architecture](docs/development/architecture.md)
+- [System diagrams](docs/development/system-diagram.md)
+- [Raspberry Pi and Jellyfin setup](docs/user-guides/raspberry-pi-jellyfin.md)
+- [Changelog](docs/project/changelog.md)
+- [Roadmap](docs/project/roadmap.md)
 - [Case Study](https://imlocle.com/#/work/case-study/filesling)
 
 ## License

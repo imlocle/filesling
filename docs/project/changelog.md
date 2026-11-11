@@ -1,26 +1,92 @@
-# FileSling — Changelog
+# FileSling: Changelog
 
-> **Last updated:** July 2026 — Version 3.7.1
+> **Reviewed:** November 2026. Current package version: 3.7.2.
 >
-> For planned/future work, see [ROADMAP.md](ROADMAP.md).
-> For known issues, see [BUGS.md](BUGS.md).
+> For planned work, see [the roadmap](roadmap.md).
+> For audit candidates that need current triage, see [known issues](known-issues.md).
 
 ---
 
-## Unreleased (dev)
+## Unreleased (3.7.2 development)
+
+### Destination Profiles
+
+- [x] Added saved upload targets that reference existing server or device connections
+- [x] Profiles remember a remote folder, duplicate handling, and Jellyfin scan behavior
+- [x] The toolbar destination picker switches connections and opens the saved folder
+- [x] Profiles reuse server credentials and can inherit or override the Jellyfin scan setting
+- [x] Connection switching is blocked while uploads are queued or active
+
+### Batch NFO Cache
+
+- [x] Sidecar names are collected during remote directory listing, including hidden NFO files
+- [x] NFO files are read and parsed in a background worker on the dedicated metadata channel
+- [x] Detail panel uses cached sidecar values and refreshes the cache after NFO edits
+- [x] Cache state resets on folder refresh and remote connection changes
+
+### rclone SFTP Fast Path
+
+- [x] Use local rclone for SSH key-authenticated uploads when it is installed
+- [x] Require the existing OpenSSH `known_hosts` file for host-key verification
+- [x] Run four concurrent file transfers within rclone folder uploads
+- [x] Verify rclone output with FileSling's SHA-256 check before completing
+- [x] Fall back to rsync and then SFTP when an optimized transfer fails
+- [x] Include hidden files in reported upload sizes and progress totals
+
+### Jellyfin Media Workflow
+
+- [x] Rename matching `.nfo` sidecars with videos in single and batch rename flows, with rollback if the sidecar move fails
+- [x] Infer show, season, episode, and title hints from common TV folder and filename patterns when editing metadata
+- [x] Apply Quick Fix container and timestamp operations to multiple selected videos in sequence
+- [x] Choose which audio and subtitle streams to keep during a single-file Quick Fix
+- [x] Keep the original video recoverable while installing a Quick Fix output with a new extension
+- [x] Hide SSH-only NFO editing actions for ADB and iOS connections
+
+### Connection Reliability: Bounded Async Reconnect
+
+- [x] Fixed an endless "socket connection lost" loop that could occur after a
+      transfer when the server dropped the socket (no attempt cap or guard before)
+- [x] Fixed a shutdown crash (`QThread: Destroyed while thread is still running`,
+      SIGABRT) caused by a reconnect worker left blocked in `socket.connect()`
+- [x] Auto-reconnect is now bounded: capped at `MAX_AUTO_RECONNECT_ATTEMPTS` (3)
+      with a shared in-progress guard, then gives up until a manual reconnect
+- [x] SSH reconnect now runs off the UI thread (shared `_start_async_connect` +
+      `ConnectionWorker`), so a failing reconnect no longer freezes the window;
+      ADB/iOS reconnect stays synchronous but is now equally bounded
+- [x] `connect()`/`reconnect()` accept a `should_cancel` hook (interruptible
+      sliced sleep between retries); `shutdown()` requests interruption, waits,
+      and force-terminates a stuck thread as a last resort
+- [x] Re-entrancy hardening: a failing post-reconnect refresh can no longer
+      restart the reconnect loop from within the success handler
+- [x] Bookmark pills gain a right-click menu: Set/Clear Default, Edit Path, Remove
+- [x] Tests: reconnect guard, give-up, async success/failure, ADB/iOS bounds,
+      shutdown interruption/terminate, and connect cancellation
+
+### Transfer Integrity, Credentials, and Jellyfin
+
+- [x] SFTP uploads are staged remotely and SHA-256 verified before replacing a destination
+- [x] Existing remote files are skipped only when their content matches; rsync uses checksum matching
+- [x] Folder uploads include hidden files so a successful transfer does not silently omit local data
+- [x] SSH host keys are verified against `known_hosts`, and configured SSH ports apply to Paramiko connections
+- [x] Legacy SSH credentials and API keys migrate to the platform credential store; config writes are private and atomic
+- [x] Remote video conversion installs its output before removing the original and refuses a conflicting target
+- [x] Optional per-server Jellyfin settings request one library scan after queued uploads complete
+- [x] Reconnect attempts reset only after a remote directory listing succeeds
 
 ### IMDb Metadata Lookup (OMDb + TMDB)
 
-- [x] "Fetch from IMDb" in the Media Info dialog — enter an IMDb ID (or paste an IMDb URL) to auto-fill metadata fields
-- [x] `src/services/imdb_service.py` — normalizes IMDb IDs, fetches via OMDb, maps to internal NFO field keys
+- [x] "Fetch from IMDb" in the Media Info dialog: enter an IMDb ID (or paste an IMDb URL) to auto-fill metadata fields
+- [x] `src/services/imdb_service.py`: normalizes IMDb IDs, fetches via OMDb, maps to internal NFO field keys
 - [x] OMDb is the primary provider; TMDB is an automatic fallback when OMDb has no record (common for brand-new episodes)
 - [x] Episode lookups resolve the parent series name (and genres, on TMDB) via a follow-up call
-- [x] `src/workers/imdb_worker.py` — runs the lookup on a background QThread (UI stays responsive)
+- [x] `src/workers/imdb_worker.py`: runs the lookup on a background QThread (UI stays responsive)
 - [x] New settings: `omdb_api_key` and `tmdb_api_key`, entered in Settings → Files → Metadata Lookup (password-masked)
-- [x] Uses standard-library `urllib` — no scraping of imdb.com, no new HTTP dependency
+- [x] Uses standard-library `urllib`: no scraping of imdb.com, no new HTTP dependency
 - [x] 40 unit tests covering ID normalization, OMDb/TMDB field mapping, and the fallback orchestration
 
 ### Bug Fixes (pre-release audit)
+
+The audit fixes listed below are implemented. See [known issues](known-issues.md) for the remaining historical audit notes.
 
 - [x] Host validator now accepts hostnames (e.g. `nas.local`), not only IP addresses
 - [x] `test_connection()` supports password auth (previously always required an SSH key)
@@ -40,7 +106,7 @@
 
 ### Close-to-Hide Behavior
 
-- [x] Close button (red ✕) always hides the window — app stays alive in menu bar
+- [x] Close button (red ✕) always hides the window: app stays alive in menu bar
 - [x] No exit confirmation dialog on close (just hides instantly)
 - [x] ⌘Q / File → Quit fully exits the application
 - [x] Active transfer confirmation shown only on Quit (not on close)
@@ -48,15 +114,15 @@
 
 ### Splash Screen Removed
 
-- [x] Splash screen removed entirely — main window shows immediately on launch
+- [x] Splash screen removed entirely: main window shows immediately on launch
 - [x] Deleted `src/views/splash_screen.py`
 - [x] Removed `SPLASH_DURATION_MS` constant
 
 ### Icon Pipeline
 
 - [x] New app icon with anti-aliased rounded corners (baked into PNG)
-- [x] `scripts/generate_icons.py` — generates all sizes (16–1024px) + `.icns` + `.ico` from source
-- [x] `scripts/generate_menu_bar_icon.py` — generates monochrome template icon for menu bar
+- [x] `scripts/generate_icons.py`: generates all sizes (16–1024px) + `.icns` + `.ico` from source
+- [x] `scripts/generate_menu_bar_icon.py`: generates monochrome template icon for menu bar
 - [x] PyInstaller build uses `.icns` (macOS) or `.ico` (Windows) for app bundle icon
 
 ### Windows Compatibility (Platform Abstraction)
@@ -76,7 +142,7 @@
 
 ## 3.4.0 (June 2026)
 
-### Quick Fix — Background Execution + Subtitle Picker
+### Quick Fix: Background Execution + Subtitle Picker
 
 - [x] Quick Fix now runs on a background thread (no more UI freeze)
 - [x] Shows "🔧 Fixing" status in the activity panel with progress
@@ -91,7 +157,7 @@
 - [x] Multi-select videos → right-click → "✏️ Edit Metadata (N videos)"
 - [x] Shared fields: Artist, Director, Album/Series, Show Name, Season, Episode #, Sort Title, Date, Genre, Description
 - [x] Episode # and Sort Title auto-increment per file (toggle checkbox)
-- [x] Merges with existing NFOs — per-file titles preserved
+- [x] Merges with existing NFOs: per-file titles preserved
 - [x] Auto-populates title from filename (strips SxxExx pattern) if not set
 - [x] Reports success/failure count on completion
 
@@ -132,7 +198,7 @@
 
 ### Code Organization
 
-- [x] Created `src/clients/` package — extracted DeviceClient, ADBClient, IOSClient
+- [x] Created `src/clients/` package: extracted DeviceClient, ADBClient, IOSClient
 - [x] Moved `server_selection_dialog.py` to `src/views/dialogs/`
 - [x] Removed dead code: `src/widgets/ui_components.py`
 - [x] New files: `sleep_inhibitor_service.py`, `toggle_switch.py`, `batch_metadata_dialog.py`
@@ -147,11 +213,11 @@
 
 ---
 
-## Unreleased (dev)
+## Earlier development notes (before 3.1.0)
 
 ### Code Organization Refactor
 
-- [x] Created `src/clients/` package — extracted `DeviceClient`, `ADBClient`, `IOSClient` from models/services
+- [x] Created `src/clients/` package: extracted `DeviceClient`, `ADBClient`, `IOSClient` from models/services
 - [x] Moved `server_selection_dialog.py` to `src/views/dialogs/` (all dialogs now in one place)
 - [x] Removed dead code: `src/widgets/ui_components.py` (was never imported)
 - [x] Services reduced from 11 → 8 (client code extracted to own package)
@@ -169,7 +235,7 @@
 
 ### Architecture Refactor
 
-- [x] Multi-channel SFTP: 3 dedicated channels (explorer UI, metadata, background workers) — eliminates thread contention and UI lag
+- [x] Multi-channel SFTP: 3 dedicated channels (explorer UI, metadata, background workers): eliminates thread contention and UI lag
 - [x] Async SSH connect via `ConnectionWorker` (eliminates 30s UI freeze)
 - [x] Parallel downloads (up to 3 concurrent, each with own SFTP session)
 - [x] Batched SFTP stat calls (duplicate detection: 2s → 40ms)
@@ -207,12 +273,12 @@
 - [x] Pill-style buttons (grey default, blue hover) matching Aethra website design
 - [x] Pill-shaped search bar, dropdown, bookmarks
 - [x] Toolbar: transparent background, no visible container
-- [x] Standard Edit menu (Undo, Cut, Copy, Paste, Select All) — enables Emojis & Symbols
+- [x] Standard Edit menu (Undo, Cut, Copy, Paste, Select All): enables Emojis & Symbols
 - [x] "Toggle Detail Panel" in View menu (⌘I)
 - [x] Back button disabled during directory load (prevents rapid-fire navigation)
 - [x] Exit confirmation with "Quit After Jobs Finish" option during active transfers
 
-### Bug Fixes (Production Audit — 18 bugs)
+### Bug Fixes (Production Audit: 18 bugs)
 
 - [x] BUG-1: SFTP session leak in `_retry_download`
 - [x] BUG-2: Batch delete doesn't record activity history
@@ -240,8 +306,8 @@
 
 ### rsync Fast Transfers
 
-- [x] rsync backend for SSH servers — delta sync, only transfers changed bytes
-- [x] Auto-pick fastest method — rsync if available, falls back to SFTP
+- [x] rsync backend for SSH servers: delta sync, only transfers changed bytes
+- [x] Auto-pick fastest method: rsync if available, falls back to SFTP
 - [x] Per-file progress via `--progress` flag (compatible with openrsync + GNU rsync)
 - [x] Transfer method indicator dot in queue (green=rsync, blue=SFTP, orange=ADB)
 - [x] Dot updates in real-time on fallback (green → blue when rsync fails)
@@ -258,7 +324,7 @@
 - [x] Handles trust prompt (guides user to unlock + tap "Trust This Computer")
 - [x] Bundled in .dmg builds (PyInstaller + CI updated)
 
-### ADB over WiFi — Wireless Android Transfers
+### ADB over WiFi: Wireless Android Transfers
 
 - [x] "Connect via WiFi" option in the ADB device setup (enter phone's IP address)
 - [x] Runs `adb connect <ip>:5555` to establish wireless session
@@ -269,14 +335,14 @@
 
 ### Multi-Server Quick-Switch
 
-- [x] Server dropdown in the toolbar — switch with one click, no dialog
+- [x] Server dropdown in the toolbar: switch with one click, no dialog
 - [x] Instant disconnect → reconnect on selection change
 - [x] "Manage Servers…" at bottom of dropdown
 
 ### Remote Video Convert (ffmpeg)
 
 - [x] Right-click video file → "Convert to H.264" (runs ffmpeg on the server via SSH)
-- [x] Queued conversions — queue multiple videos, processed one at a time
+- [x] Queued conversions: queue multiple videos, processed one at a time
 - [x] Progress shown in Activity panel with ETA
 - [x] Replaces original file with H.264 version when done
 - [x] Settings: `-preset fast -crf 18` (visually lossless, fast encode)
@@ -294,7 +360,7 @@
 - [x] External drag-and-drop always uploads to current directory (no accidental sub-folder targeting)
 - [x] Internal drag (rearrange) still highlights folders as drop targets
 - [x] Error logs moved from project-root to `~/.FileSling/logs/errors.json`
-- [x] Removed status bar — connection shown by green power button instead
+- [x] Removed status bar: connection shown by green power button instead
 - [x] Server dropdown shows just names (no type icons), auto-sizes to fit
 - [x] "Manage Servers…" option at bottom of server dropdown (separator + link to dialog)
 - [x] Search bar left padding fixed (magnifying glass no longer clipped)
@@ -303,20 +369,20 @@
 
 ### Bug Fixes
 
-- [x] Drop target wrong folder — uses highlighted item only, not pixel position
-- [x] Internal drag also used wrong target — same fix
+- [x] Drop target wrong folder: uses highlighted item only, not pixel position
+- [x] Internal drag also used wrong target: same fix
 - [x] rsync path quoting for parentheses/spaces/brackets in remote paths
-- [x] rsync folder uploads extracted contents — fixed trailing slash stripping
-- [x] `dragMoveEvent` network call on every pixel — now skips when hovering same item
-- [x] Method dot didn't update on fallback — added `method_changed` signal
-- [x] Ghost "Uploading" stuck in queue after transfer completes — fallback scan for in-progress items
+- [x] rsync folder uploads extracted contents: fixed trailing slash stripping
+- [x] `dragMoveEvent` network call on every pixel: now skips when hovering same item
+- [x] Method dot didn't update on fallback: added `method_changed` signal
+- [x] Ghost "Uploading" stuck in queue after transfer completes: fallback scan for in-progress items
 - [x] rsync compression flag removed (`-z` slowed local network transfers)
-- [x] `cancel_active_transfer` double-fires `_cleanup_and_next` — disconnects signal before explicit call
+- [x] `cancel_active_transfer` double-fires `_cleanup_and_next`: disconnects signal before explicit call
 
 ### Deep Audit Fixes (24 bugs found, all resolved)
 
-- [x] DA-01: TransferWorker emits both `error` and `finished` — potential data loss (file deletion after failed transfer). Fixed: only success emits `finished`.
-- [x] DA-02: SFTP sessions leaked after every transfer — eventual SSH channel exhaustion. Fixed: sessions stored and explicitly closed.
+- [x] DA-01: TransferWorker emits both `error` and `finished`: potential data loss (file deletion after failed transfer). Fixed: only success emits `finished`.
+- [x] DA-02: SFTP sessions leaked after every transfer: eventual SSH channel exhaustion. Fixed: sessions stored and explicitly closed.
 - [x] DA-03: iOS async device detection broken. Fixed: simplified to `asyncio.run()`.
 - [x] DA-06: Fragile `startswith(remote_base_dir)` for remote/local detection. Fixed: uses `sftp is not None`.
 - [x] DA-07: Health check reconnect TOCTOU race with download workers. Fixed: also checks `_download_thread`.
@@ -330,22 +396,22 @@
 - [x] DA-18/DA-19: iOS client OOM on large files. Fixed: chunked 1MB streaming.
 - [x] DA-20: Partial download files left as truncated data. Fixed: size verification + cleanup.
 - [x] DA-21: Health check reconnect conflicts with DirectoryLoader. Fixed: returns early if loader running.
-- [x] Batch rename name collisions — appends `_2`, `_3` suffix to resolve.
-- [x] Multi-move self-move check — filters out self-moves with batch warning.
+- [x] Batch rename name collisions: appends `_2`, `_3` suffix to resolve.
+- [x] Multi-move self-move check: filters out self-moves with batch warning.
 
 ---
 
-## v3.1.0 — May 2026
+## v3.1.0: May 2026
 
 ### Bug Fixes
 
-- [x] Download retry doesn't reset `_download_attempts` — fixed: reset to 0
-- [x] Drag-to-Finder leaks temp files — fixed: `atexit.register` cleanup
-- [x] Health check runs during active transfer — fixed: skips when busy
-- [x] `_upload_file` overwrites `remote_dir` variable — fixed: renamed to `target_dir`
-- [x] Drop target lands in wrong folder — fixed: coordinate mapping with `mapFrom`
-- [x] Rename timer conflicts with drag — fixed: moved to `mouseReleaseEvent`
-- [x] "Opened file" log misleading — removed `file_opened` signal entirely
+- [x] Download retry doesn't reset `_download_attempts`: fixed: reset to 0
+- [x] Drag-to-Finder leaks temp files: fixed: `atexit.register` cleanup
+- [x] Health check runs during active transfer: fixed: skips when busy
+- [x] `_upload_file` overwrites `remote_dir` variable: fixed: renamed to `target_dir`
+- [x] Drop target lands in wrong folder: fixed: coordinate mapping with `mapFrom`
+- [x] Rename timer conflicts with drag: fixed: moved to `mouseReleaseEvent`
+- [x] "Opened file" log misleading: removed `file_opened` signal entirely
 
 ### Code Quality
 
@@ -353,7 +419,7 @@
 - [x] 147 unit tests (services, models, controllers, icons, rsync)
 - [x] CI/CD quality workflow (lint + test on every push to dev)
 - [x] Removed dead code: `styles.qss`, `DIALOG_RENAME_FAILED`, `shuttle.egg-info/`
-- [x] Makefile `format` fixed — removed `autoflake`, uses `black` + `isort` via venv
+- [x] Makefile `format` fixed: removed `autoflake`, uses `black` + `isort` via venv
 
 ### UI
 
@@ -363,7 +429,7 @@
 
 ---
 
-## v3.0.0 — May 2026
+## v3.0.0: May 2026
 
 ### New Features
 
@@ -371,7 +437,7 @@
 - [x] Latency indicator in status bar (color-coded green/orange/red)
 - [x] File type icons (play for video, volume for audio, etc.)
 - [x] File info tooltip on hover (full path, size)
-- [x] Batch rename — select multiple files, find/replace in filenames
+- [x] Batch rename: select multiple files, find/replace in filenames
 - [x] Drag remote files to Finder to download
 - [x] Resume interrupted uploads (skip fully-uploaded files by size)
 - [x] Download retry (up to 3 attempts)
@@ -395,9 +461,9 @@
 
 ---
 
-## v2.4.0 — May 2026
+## v2.4.0: May 2026
 
-- [x] Transfer history — persistent log of uploads/downloads, searchable
+- [x] Transfer history: persistent log of uploads/downloads, searchable
 - [x] Activity history service with "already uploaded?" lookup
 - [x] Open in Finder after download (reveal option)
 - [x] Confirm before deleting files (single and multi-select)
@@ -409,7 +475,7 @@
 
 ---
 
-## v2.3.0 — May 2026
+## v2.3.0: May 2026
 
 - [x] Download from server (right-click → Download)
 - [x] Download progress in transfer queue
@@ -421,32 +487,32 @@
 
 ---
 
-## v2.2.1 — May 2026
+## v2.2.1: May 2026
 
-- [x] Fixed auto-connect to device (removed — was unreliable)
+- [x] Fixed auto-connect to device (removed: was unreliable)
 - [x] ADB path resolved from Homebrew for .app bundles
 
 ---
 
-## v2.2.0 — May 2026
+## v2.2.0: May 2026
 
 - [x] Dark and light theme support (Follow System option)
 - [x] Diagnostics log moved out of main UI → View menu
-- [x] Transfer resilience — auto-retry uploads (3 attempts)
-- [x] Queue persistence — don't lose uploads on crash
+- [x] Transfer resilience: auto-retry uploads (3 attempts)
+- [x] Queue persistence: don't lose uploads on crash
 - [x] Per-server bookmarks with default start folder
 - [x] Disk space bar updates per browsed directory
 
 ---
 
-## v2.1.0 — May 2026
+## v2.1.0: May 2026
 
 - [x] macOS menu bar (File, Edit, View, Help)
 - [x] MainWindow converted to QMainWindow
 
 ---
 
-## v2.0.0 — May 2026
+## v2.0.0: May 2026
 
 - [x] Download files and folders from server
 - [x] Transfer history logic
@@ -458,13 +524,13 @@
 
 ---
 
-## v1.2.0 — May 2026
+## v1.2.0: May 2026
 
 - [x] Duplicate file detection (warn before overwriting on remote)
 
 ---
 
-## v1.1.0 — May 2026
+## v1.1.0: May 2026
 
 - [x] Android device support (USB via ADB)
 - [x] ADB client that mimics SFTPClient interface
@@ -478,7 +544,7 @@
 
 ---
 
-## v1.0.0 — May 2026 (Initial)
+## v1.0.0: May 2026 (Initial)
 
 - [x] SSH/SFTP connection to remote servers
 - [x] Remote file explorer with drag-and-drop upload

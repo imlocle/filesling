@@ -4,7 +4,7 @@ PYTHON = .venv/bin/python
 PIP = .venv/bin/pip
 
 help:
-	@echo "FileSling — Build & Development"
+	@echo "FileSling: Build & Development"
 	@echo "=============================="
 	@echo ""
 	@echo "Setup:"
@@ -15,7 +15,7 @@ help:
 	@echo "  make run           Run the application"
 	@echo "  make format        Format code (black, isort)"
 	@echo "  make lint          Run linting checks (flake8)"
-	@echo "  make test          Run tests with coverage (437 tests)"
+	@echo "  make test          Run tests with coverage"
 	@echo ""
 	@echo "Build & Release:"
 	@echo "  make build         Build wheel and source distributions"
@@ -51,8 +51,8 @@ clean:
 	rm -rf .pytest_cache/ .coverage htmlcov/
 
 # ==============================================================================
-# Release — bumps version, merges to main, tags, and pushes
-# Usage: make release V=2.4.0
+# Release: bump version, merge to main, tag, and push
+# Usage: make release V=X.Y.Z
 # ==============================================================================
 release:
 ifndef V
@@ -78,4 +78,4 @@ endif
 	@# 7. Back to dev
 	git checkout dev
 	@echo ""
-	@echo "✅ Released v$(V) — GitHub Actions will build the .dmg"
+	@echo "✅ Released v$(V). GitHub Actions will build the release artifacts."
