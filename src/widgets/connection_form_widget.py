@@ -1,5 +1,5 @@
 """
-Connection form widget — reusable SSH/ADB connection configuration form.
+Connection form widget: reusable SSH/ADB connection configuration form.
 
 Used by both the "Add Server" dialog and the main Settings window.
 Test Connection button has been moved to the SettingsWindow footer;
@@ -212,7 +212,7 @@ class ConnectionFormWidget(QWidget):
         ios_row.setSpacing(8)
         self.ios_device_combo = QComboBox()
         self.ios_device_combo.setView(QListView())
-        self.ios_device_combo.setPlaceholderText("No iPhone detected — plug in via USB")
+        self.ios_device_combo.setPlaceholderText("No iPhone detected: plug in via USB")
         self._refresh_ios_devices()
         self.ios_refresh_btn = QPushButton("↻")
         self.ios_refresh_btn.setObjectName("icon_btn")
@@ -398,18 +398,18 @@ class ConnectionFormWidget(QWidget):
                     if self.adb_device_combo.itemData(i) == saved_device_id:
                         self.adb_device_combo.setCurrentIndex(i)
                         return
-                # Saved device not in connected list — add it as disconnected
+                # Saved device not in connected list: add it as disconnected
                 disconnected_label = (
-                    f"{saved_name} — {saved_device_id} (disconnected)"
+                    f"{saved_name}: {saved_device_id} (disconnected)"
                     if saved_name
                     else f"{saved_device_id} (disconnected)"
                 )
                 self.adb_device_combo.addItem(disconnected_label, saved_device_id)
                 self.adb_device_combo.setCurrentIndex(self.adb_device_combo.count() - 1)
         elif saved_device_id:
-            # No devices connected — show the saved device as disconnected
+            # No devices connected: show the saved device as disconnected
             disconnected_label = (
-                f"{saved_name} — {saved_device_id} (disconnected)"
+                f"{saved_name}: {saved_device_id} (disconnected)"
                 if saved_name
                 else f"{saved_device_id} (disconnected)"
             )
@@ -481,23 +481,33 @@ class ConnectionFormWidget(QWidget):
             self.ios_device_combo.addItem(disconnected_label, saved_device_id)
         else:
             self.ios_device_combo.setPlaceholderText(
-                "No iPhone detected — plug in via USB"
+                "No iPhone detected: plug in via USB"
             )
 
     def _test_ssh(self) -> None:
+        from types import SimpleNamespace
+
         from src.config.settings import SettingsConfig
 
         class TempSettings:
-            def __init__(self, config: "SettingsConfig") -> None:
+            def __init__(self, config: "SettingsConfig", raw_config: dict) -> None:
                 self.username = config.username
                 self.host = config.host
                 self.ssh_key_path = config.ssh_key_path
                 self.ssh_port = config.ssh_port
+                self.config = SimpleNamespace(current_server_id="test")
+                self._raw_config = raw_config
+
+            def get_server(self, _server_id: str) -> dict:
+                return self._raw_config
+
+            def get_server_secret(self, _server_id: str, field: str) -> str:
+                return self._raw_config.get(field, "")
 
         config = self.get_config()
         try:
             temp_config = SettingsConfig.from_json(config)
-            temp_settings = TempSettings(temp_config)
+            temp_settings = TempSettings(temp_config, config)
             cms = ConnectionManagerService(temp_settings)  # type: ignore
         except Exception:
             self.status_label.setText("● Invalid configuration")
@@ -512,7 +522,13 @@ class ConnectionFormWidget(QWidget):
             self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(True)
         else:
-            self.status_label.setText("● Connection failed")
+            detail = getattr(cms, "last_test_error", "")
+            if "not found in known_hosts" in detail.lower():
+                self.status_label.setText("● Verify and trust the server host key")
+            elif "bad host key" in detail.lower():
+                self.status_label.setText("● Server identity changed")
+            else:
+                self.status_label.setText("● Connection failed")
             self.status_label.setObjectName("status_error")
             self.status_label.style().polish(self.status_label)
             self.connection_tested.emit(False)

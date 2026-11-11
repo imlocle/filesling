@@ -126,3 +126,62 @@ class TestConnectionManagerService:
 
         result = service.open_sftp_session()
         assert result is mock_sftp
+
+
+class TestConnectCancellation:
+    """The should_cancel hook lets shutdown abort the retry loop promptly."""
+
+    @pytest.fixture
+    def mock_settings(self):
+        settings = MagicMock()
+        settings.host = "192.168.1.100"
+        settings.username = "testuser"
+        settings.ssh_key_path = "/tmp/fake_key"
+        settings.ssh_port = 22
+        settings.config.current_server_id = "test-server"
+        # Password auth so the SSH-key existence check is skipped and we reach
+        # the retry loop where the cancel check lives.
+        settings.get_server.return_value = {
+            "connection_type": "ssh",
+            "username": "testuser",
+            "host": "192.168.1.100",
+            "password": "secret",
+        }
+        return settings
+
+    @pytest.fixture
+    def service(self, mock_settings):
+        return ConnectionManagerService(mock_settings)
+
+    def test_connect_cancels_before_attempt(self, service):
+        """If should_cancel() is True up front, connect returns False, no SSH."""
+        from unittest.mock import patch
+
+        with patch(
+            "src.services.connection_manager_service.SSHClient"
+        ) as mock_ssh_cls:
+            result = service.connect(should_cancel=lambda: True)
+
+        assert result is False
+        # Loop bailed before constructing an SSHClient
+        mock_ssh_cls.assert_not_called()
+
+    def test_connect_without_cancel_still_attempts(self, service):
+        """A None/False should_cancel does not short-circuit the loop."""
+        from unittest.mock import patch
+
+        # Make the SSH connect raise so we don't need a real server, but confirm
+        # the loop actually tried (SSHClient was constructed).
+        with patch(
+            "src.services.connection_manager_service.SSHClient"
+        ) as mock_ssh_cls, patch(
+            "src.services.connection_manager_service.sleep"
+        ):
+            instance = mock_ssh_cls.return_value
+            instance.connect.side_effect = OSError("unreachable")
+            try:
+                service.connect(should_cancel=lambda: False)
+            except Exception:
+                pass  # exhausted retries raise SSHConnectionError — that's fine
+
+        mock_ssh_cls.assert_called()

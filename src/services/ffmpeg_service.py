@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import re
 import shlex
+import time
 from typing import Callable, Optional
 
+from paramiko import Transport
+
+from src.clients.ssh_command_client import open_ssh_session
 from src.utils.logging_signal import logger
 
 # ffmpeg progress output: "time=00:01:23.45"
@@ -65,10 +69,8 @@ def get_video_duration(ssh_client: object, remote_path: str) -> float:
             f"-of default=noprint_wrappers=1:nokey=1 "
             f"{shlex.quote(remote_path)}"
         )
-        session = transport.open_session()
-        session.exec_command(cmd)
-        output = session.recv(1024).decode("utf-8").strip()
-        session.close()
+        with open_ssh_session(transport, cmd) as session:
+            output = session.recv(1024).decode("utf-8").strip()
 
         return float(output) if output else 0.0
     except (ValueError, TypeError, OSError):
@@ -82,28 +84,67 @@ def check_ffmpeg_installed(ssh_client: object) -> bool:
         if not transport:
             return False
 
-        session = transport.open_session()
-        session.exec_command("which ffmpeg")
-        output = session.recv(1024).decode("utf-8").strip()
-        exit_code = session.recv_exit_status()
-        session.close()
+        with open_ssh_session(transport, "which ffmpeg") as session:
+            output = session.recv(1024).decode("utf-8").strip()
+            exit_code = session.recv_exit_status()
 
         return exit_code == 0 and bool(output)
     except Exception:
         return False
 
 
-def _get_transport(client: object) -> object:
+def _get_transport(client: object) -> Optional[Transport]:
     """Get the SSH transport from either an SFTPClient or SSHClient."""
     # SFTPClient path
     if hasattr(client, "get_channel"):
-        channel = client.get_channel()  # type: ignore
+        channel = client.get_channel()  # type: ignore[attr-defined]
         if channel:
             return channel.get_transport()
     # SSHClient path
     if hasattr(client, "get_transport"):
-        return client.get_transport()  # type: ignore
+        return client.get_transport()  # type: ignore[attr-defined]
     return None
+
+
+def _run_conversion_session(
+    transport: Transport,
+    command: str,
+    duration: float,
+    progress_cb: Optional[Callable[[int], None]],
+) -> int:
+    """Run ffmpeg, parse progress, and return the remote exit code."""
+    with open_ssh_session(transport, command) as session:
+        buffer = ""
+        last_progress_time = time.time()
+        while True:
+            if session.exit_status_ready():
+                while session.recv_ready():
+                    buffer += session.recv(4096).decode("utf-8", errors="ignore")
+                break
+
+            if session.recv_ready():
+                buffer += session.recv(4096).decode("utf-8", errors="ignore")
+                if duration > 0 and progress_cb:
+                    matches = _TIME_RE.findall(buffer)
+                    if matches:
+                        hours, minutes, seconds = matches[-1]
+                        current_seconds = (
+                            int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+                        )
+                        progress = min(int(current_seconds * 100 / duration), 99)
+                        progress_cb(progress)
+                elif progress_cb and duration <= 0:
+                    now = time.time()
+                    if now - last_progress_time > 2.0:
+                        last_progress_time = now
+                        progress_cb(-1)
+
+                if len(buffer) > 8192:
+                    buffer = buffer[-4096:]
+            else:
+                time.sleep(0.1)
+
+        return session.recv_exit_status()
 
 
 def convert_video(
@@ -172,52 +213,9 @@ def convert_video(
         if not transport:
             raise RuntimeError("No SSH connection")
 
-        session = transport.open_session()
-        session.exec_command(cmd)
-
-        # Read progress output
-        buffer = ""
-        import time
-
-        last_progress_time = time.time()
-        while True:
-            if session.exit_status_ready():
-                # Read remaining output
-                while session.recv_ready():
-                    buffer += session.recv(4096).decode("utf-8", errors="ignore")
-                break
-
-            if session.recv_ready():
-                chunk = session.recv(4096).decode("utf-8", errors="ignore")
-                buffer += chunk
-
-                # Parse time from progress output
-                if duration > 0 and progress_cb:
-                    matches = _TIME_RE.findall(buffer)
-                    if matches:
-                        last = matches[-1]
-                        current_secs = (
-                            int(last[0]) * 3600 + int(last[1]) * 60 + float(last[2])
-                        )
-                        pct = min(int(current_secs * 100 / duration), 99)
-                        progress_cb(pct)
-                elif progress_cb and duration <= 0:
-                    # Duration unknown — pulse progress to show activity
-                    now = time.time()
-                    if now - last_progress_time > 2.0:
-                        last_progress_time = now
-                        # Emit a small increment so the UI shows movement
-                        progress_cb(-1)  # -1 = indeterminate pulse
-
-                # Keep buffer manageable
-                if len(buffer) > 8192:
-                    buffer = buffer[-4096:]
-            else:
-                # No data available yet — sleep briefly to avoid busy-wait
-                time.sleep(0.1)
-
-        exit_code = session.recv_exit_status()
-        session.close()
+        exit_code = _run_conversion_session(
+            transport, cmd, duration, progress_cb
+        )
 
         if exit_code != 0:
             raise RuntimeError(f"ffmpeg exited with code {exit_code}")
@@ -240,8 +238,8 @@ def replace_original(
     """
     Replace the original file with the converted one.
 
-    Deletes the original and renames the converted file. The final name
-    uses the original base name with the converted file's extension.
+    Installs the converted file before removing the original. If the converted
+    extension would collide with another file, the operation fails safely.
     """
     import os
 
@@ -250,26 +248,30 @@ def replace_original(
         if not transport:
             raise RuntimeError("No SSH connection")
 
-        # Determine final name — keep original base name, use converted extension
+        # Determine final name: keep original base name, use converted extension
         base = os.path.splitext(original_path)[0]
         converted_ext = os.path.splitext(converted_path)[1]
         final_path = f"{base}{converted_ext}"
 
-        # If original and final are different files, remove original first
+        # Preserve any pre-existing target with a different extension. When
+        # replacing the same path, mv performs the final rename atomically on
+        # the same filesystem and leaves the original intact if it fails.
         if original_path != final_path:
-            cmd = f"rm -f {shlex.quote(original_path)}"
-            session = transport.open_session()
-            session.exec_command(cmd)
-            session.recv_exit_status()
-            session.close()
+            cmd = (
+                f"if [ -e {shlex.quote(final_path)} ]; then exit 17; fi; "
+                f"mv {shlex.quote(converted_path)} {shlex.quote(final_path)} "
+                f"&& rm -f {shlex.quote(original_path)}"
+            )
+        else:
+            cmd = f"mv {shlex.quote(converted_path)} {shlex.quote(final_path)}"
+        with open_ssh_session(transport, cmd) as session:
+            exit_code = session.recv_exit_status()
 
-        # Rename converted to final
-        cmd = f"mv {shlex.quote(converted_path)} {shlex.quote(final_path)}"
-        session = transport.open_session()
-        session.exec_command(cmd)
-        exit_code = session.recv_exit_status()
-        session.close()
-
+        if exit_code == 17:
+            raise RuntimeError(
+                f"Cannot replace original because {os.path.basename(final_path)} "
+                "already exists"
+            )
         if exit_code != 0:
             raise RuntimeError("Failed to rename converted file")
 

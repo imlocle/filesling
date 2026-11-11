@@ -58,7 +58,7 @@ class MenuBarService:
         quit_action.triggered.connect(self._quit)
 
         self._tray.setContextMenu(self._menu)
-        # No activated signal — left-click on macOS shows the context menu by default
+        # No activated signal: left-click on macOS shows the context menu by default
         self._tray.show()
 
     def update_activity(

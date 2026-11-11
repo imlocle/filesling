@@ -44,8 +44,7 @@ def is_rsync_available() -> bool:
 def _build_ssh_option(config: RsyncConfig) -> str:
     """Build the -e ssh option string with key and port."""
     key = os.path.expanduser(config.ssh_key_path)
-    # BatchMode avoids interactive prompts; StrictHostKeyChecking=accept-new
-    # matches the app's AutoAddPolicy behavior without failing on first connect.
+    # BatchMode avoids interactive prompts. Require a pre-verified host key.
     parts = [
         "ssh",
         "-p",
@@ -55,7 +54,7 @@ def _build_ssh_option(config: RsyncConfig) -> str:
         "-o",
         "BatchMode=yes",
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=yes",
     ]
     return " ".join(parts)
 
@@ -99,12 +98,13 @@ class RsyncTransfer:
         # -a: archive (recursive, preserve timestamps/perms)
         # --partial: keep partially transferred files for resume
         # --progress: per-file progress (compatible with openrsync + GNU rsync)
-        # NOTE: no -z (compression) — on local networks it slows things down
+        # NOTE: no -z (compression): on local networks it slows things down
         # by adding CPU overhead without meaningful size reduction for media files.
         cmd = [
             "rsync",
             "-a",
             "--partial",
+            "--checksum",
             "--progress",
             "-e",
             ssh_opt,
@@ -115,7 +115,7 @@ class RsyncTransfer:
         if not remote_dir.endswith("/"):
             remote_dir += "/"
 
-        # Strip trailing slashes from local paths — rsync treats
+        # Strip trailing slashes from local paths: rsync treats
         # "folder/" as "copy contents of folder" vs "folder" as "copy the folder"
         # NOTE: brackets [] in local paths are safe because we pass args as a list
         # (not through shell). rsync only interprets wildcards in filter patterns.

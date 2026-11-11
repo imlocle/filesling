@@ -1,5 +1,5 @@
 """
-Download controller — manages file downloads from remote to local.
+Download controller: manages file downloads from remote to local.
 
 Supports parallel downloads (up to MAX_PARALLEL_DOWNLOADS concurrent) with:
 - Per-download retry logic (up to 3 attempts)
@@ -246,7 +246,7 @@ class DownloadController(QObject):
         )
         slot.worker.moveToThread(slot.thread)
 
-        # Connect signals — use lambdas with explicit QueuedConnection
+        # Connect signals: use lambdas with explicit QueuedConnection
         # because lambdas don't have QObject affinity for auto-detection.
         from PySide6.QtCore import Qt
 
@@ -261,7 +261,7 @@ class DownloadController(QObject):
             Qt.ConnectionType.QueuedConnection,
         )
         slot.worker.error.connect(slot.thread.quit)
-        # thread.finished is emitted on the main thread — safe without QueuedConnection
+        # thread.finished is emitted on the main thread: safe without QueuedConnection
         slot.thread.finished.connect(lambda s=slot: self._on_finished(s))
 
         slot.thread.start()

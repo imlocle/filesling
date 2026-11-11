@@ -213,6 +213,19 @@ class ADBClient:
             size = 0
         return ADBStat(st_mode=S_IFREG | 0o644, st_size=size)
 
+    def sha256(self, path: str) -> str:
+        """Return a remote file's SHA-256 digest when Android supports it."""
+        output = self._shell(
+            f"sha256sum {shlex.quote(self._normalize_remote_path(path))}",
+            timeout=600,
+        ).strip()
+        digest = output.split(maxsplit=1)[0].lower()
+        if len(digest) != 64 or any(
+            char not in "0123456789abcdef" for char in digest
+        ):
+            raise IOError(f"Could not read a SHA-256 digest for {path}")
+        return digest
+
     def rename(self, old_path: str, new_path: str) -> None:
         """Rename/move a file or directory."""
         old_path = self._normalize_remote_path(old_path)
@@ -251,7 +264,7 @@ class ADBClient:
     def get(
         self, remote_path: str, local_path: str, callback: Optional[Callable] = None
     ) -> None:
-        """Alias for pull() — matches Paramiko SFTPClient interface."""
+        """Alias for pull(): matches Paramiko SFTPClient interface."""
         self.pull(remote_path, local_path, callback)
 
     def put(
@@ -263,7 +276,7 @@ class ADBClient:
         Args:
             local_path: Local file path
             remote_path: Destination path on device
-            callback: Progress callback(transferred, total) — limited with adb
+            callback: Progress callback(transferred, total): limited with adb
         """
         total_size = os.path.getsize(local_path)
 
@@ -313,11 +326,11 @@ class ADBClient:
             callback(total_size, total_size)
 
     def get_channel(self) -> "ADBClient":
-        """Compatibility stub — returns self for disk usage."""
+        """Compatibility stub: returns self for disk usage."""
         return self
 
     def get_transport(self) -> "ADBClient":
-        """Compatibility stub — returns self for disk usage."""
+        """Compatibility stub: returns self for disk usage."""
         return self
 
     def open_session(self) -> "ADBSession":
@@ -325,7 +338,7 @@ class ADBClient:
         return ADBSession(self)
 
     def close(self) -> None:
-        """No-op — ADB doesn't maintain a persistent connection."""
+        """No-op: ADB doesn't maintain a persistent connection."""
 
 
 class ADBSession:

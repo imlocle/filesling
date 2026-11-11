@@ -1,5 +1,5 @@
 """
-Platform abstraction — macOS implementation.
+Platform abstraction: macOS implementation.
 
 Uses:
 - `security` CLI for Keychain credential storage
@@ -31,15 +31,9 @@ _caffeinate_process: Optional[subprocess.Popen] = None
 def store_credential(account: str, password: str) -> bool:
     """Store a password in the macOS Keychain."""
     try:
-        # Delete existing entry first (ignore errors if not found)
-        subprocess.run(
-            ["security", "delete-generic-password", "-s", _SERVICE_NAME, "-a", account],
-            capture_output=True,
-            timeout=TIMEOUT_KEYCHAIN,
-        )
-
-        # Add new entry — password via stdin to avoid ps visibility
-        proc = subprocess.Popen(
+        # `-U` updates an existing item. `-w` requires the value as an argument;
+        # the previous stdin-based invocation could block on an interactive prompt.
+        result = subprocess.run(
             [
                 "security",
                 "add-generic-password",
@@ -48,19 +42,18 @@ def store_credential(account: str, password: str) -> bool:
                 "-a",
                 account,
                 "-w",
+                password,
                 "-U",
             ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
+            timeout=TIMEOUT_KEYCHAIN,
         )
-        _, stderr = proc.communicate(input=password, timeout=TIMEOUT_KEYCHAIN)
-        if proc.returncode == 0:
+        if result.returncode == 0:
             logger.info(f"Keychain: Stored credentials for {account}")
             return True
         else:
-            logger.warn(f"Keychain: Failed to store: {stderr.strip()}")
+            logger.warn(f"Keychain: Failed to store: {result.stderr.strip()}")
             return False
     except Exception as e:
         logger.warn(f"Keychain: Store failed: {e}")
@@ -85,7 +78,12 @@ def get_credential(account: str) -> Optional[str]:
             timeout=TIMEOUT_KEYCHAIN,
         )
         if result.returncode == 0:
-            return result.stdout.strip()
+            value = result.stdout
+            if value.endswith("\r\n"):
+                return value[:-2]
+            if value.endswith("\n"):
+                return value[:-1]
+            return value
         return None
     except Exception as e:
         logger.warn(f"Keychain: Retrieve failed: {e}")

@@ -1,5 +1,5 @@
 """
-Crash handler — catches unhandled exceptions and shows a user-friendly dialog.
+Crash handler: catches unhandled exceptions and shows a user-friendly dialog.
 
 - Writes crash details to ~/.FileSling/crash.log
 - Shows a dialog with error info and a "Copy to Clipboard" button
@@ -48,7 +48,7 @@ def write_crash_log(
         with open(CRASH_LOG_PATH, "w") as f:
             f.write(report)
     except Exception:
-        pass  # Can't write log — still show the dialog
+        pass  # Can't write log: still show the dialog
 
     return report
 
@@ -72,7 +72,7 @@ def show_crash_dialog(report: str) -> None:
             app = QApplication(sys.argv)
 
         dialog = QDialog()
-        dialog.setWindowTitle(f"{SOFTWARE_NAME} — Unexpected Error")
+        dialog.setWindowTitle(f"{SOFTWARE_NAME}: Unexpected Error")
         dialog.setMinimumSize(500, 350)
 
         layout = QVBoxLayout(dialog)
@@ -134,7 +134,7 @@ def _open_github_issue(report: str) -> None:
     # Truncate report for URL length limits (~2000 chars safe for URLs)
     short_report = report[:1500]
     if len(report) > 1500:
-        short_report += "\n\n... (truncated — full report copied to clipboard)"
+        short_report += "\n\n... (truncated: full report copied to clipboard)"
 
     title = "Crash Report"
     # Extract the actual error line for the title

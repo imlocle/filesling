@@ -1,5 +1,5 @@
 """
-Folder picker dialog — lets users choose a destination folder for move operations.
+Folder picker dialog: lets users choose a destination folder for move operations.
 
 Provides a lazy-loading tree view of the remote (or local) filesystem
 with auto-expansion to the current directory.

@@ -6,85 +6,22 @@ and processed sequentially so the user can keep browsing and dropping
 files while uploads run in the background.
 """
 
-import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from src.config.settings import Settings
+from src.models.transfer import QueuedTransfer
 from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
+from src.services.rclone_service import RcloneConfig, is_rclone_available
 from src.services.rsync_service import RsyncConfig
-from src.utils.constants import (
-    APP_DATA_DIR,
-    MAX_UPLOAD_RETRIES,
-    TRANSFER_QUEUE_FILE,
-)
+from src.services.transfer_queue_service import TransferQueueService
+from src.utils.constants import MAX_UPLOAD_RETRIES
 from src.utils.logging_signal import logger
 from src.workers.transfer_worker import TransferWorker
-
-
-@dataclass
-class QueuedTransfer:
-    """A transfer waiting in the queue."""
-
-    local_paths: List[str]
-    remote_destination: str
-    delete_after: bool
-    total_bytes: int = 0
-    display_name: str = ""
-    attempts: int = 0
-
-    def __post_init__(self) -> None:
-        if not self.display_name:
-            names = [os.path.basename(p.rstrip("/")) for p in self.local_paths]
-            self.display_name = ", ".join(names[:3])
-            if len(names) > 3:
-                self.display_name += f" (+{len(names) - 3} more)"
-        # Calculate total bytes if not provided
-        if self.total_bytes == 0:
-            for p in self.local_paths:
-                if os.path.isdir(p):
-                    for root, _, files in os.walk(p):
-                        for f in files:
-                            if not f.startswith("."):
-                                try:
-                                    self.total_bytes += os.path.getsize(
-                                        os.path.join(root, f)
-                                    )
-                                except OSError:
-                                    pass
-                elif os.path.isfile(p):
-                    try:
-                        self.total_bytes += os.path.getsize(p)
-                    except OSError:
-                        pass
-
-    def to_dict(self) -> dict:
-        """Serialize a queued transfer for crash recovery."""
-        return {
-            "local_paths": self.local_paths,
-            "remote_destination": self.remote_destination,
-            "delete_after": self.delete_after,
-            "total_bytes": self.total_bytes,
-            "display_name": self.display_name,
-            "attempts": self.attempts,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "QueuedTransfer":
-        """Create a queued transfer from persisted state."""
-        return cls(
-            local_paths=list(data.get("local_paths", [])),
-            remote_destination=data.get("remote_destination", ""),
-            delete_after=bool(data.get("delete_after", True)),
-            total_bytes=int(data.get("total_bytes", 0) or 0),
-            display_name=data.get("display_name", ""),
-            attempts=int(data.get("attempts", 0) or 0),
-        )
 
 
 class ManualTransferController(QObject):
@@ -108,11 +45,14 @@ class ManualTransferController(QObject):
         settings: Settings,
         connection_manager: ConnectionManagerService,
         parent: Optional[QObject] = None,
+        queue_service: Optional[TransferQueueService] = None,
+        history_service: Optional[ActivityHistoryService] = None,
     ) -> None:
         super().__init__(parent)
         self.settings = settings
         self.connection_manager = connection_manager
-        self.history = ActivityHistoryService()
+        self.history = history_service or ActivityHistoryService(settings=settings)
+        self.queue_service = queue_service or TransferQueueService()
 
         # Queue state
         self._queue: List[QueuedTransfer] = []
@@ -127,34 +67,13 @@ class ManualTransferController(QObject):
         self._retry_current_transfer = False
         self._restored_from_disk = False
 
-    def _queue_file_path(self) -> Path:
-        """Path used to persist pending upload queue state."""
-        return APP_DATA_DIR / TRANSFER_QUEUE_FILE
-
     def _persist_queue(self) -> None:
         """Persist active and pending transfers for crash recovery."""
-        payload = {
-            "active": (
-                self._current_transfer.to_dict()
-                if self._current_transfer is not None
-                else None
-            ),
-            "pending": [transfer.to_dict() for transfer in self._queue],
-        }
-        queue_path = self._queue_file_path()
-        try:
-            queue_path.parent.mkdir(exist_ok=True)
-            with open(queue_path, "w") as f:
-                json.dump(payload, f, indent=2)
-        except Exception as e:
-            logger.warn(f"Transfer: Could not persist queue: {e}")
+        self.queue_service.save(self._current_transfer, self._queue)
 
     def _clear_persisted_queue(self) -> None:
         """Remove persisted queue state when there is nothing left to recover."""
-        try:
-            self._queue_file_path().unlink(missing_ok=True)
-        except Exception as e:
-            logger.warn(f"Transfer: Could not clear persisted queue: {e}")
+        self.queue_service.clear()
 
     def restore_persisted_queue(self) -> list[QueuedTransfer]:
         """
@@ -166,37 +85,11 @@ class ManualTransferController(QObject):
             return []
         self._restored_from_disk = True
 
-        queue_path = self._queue_file_path()
-        if not queue_path.exists():
-            return []
-
-        try:
-            with open(queue_path, "r") as f:
-                data = json.load(f)
-        except Exception as e:
-            logger.warn(f"Transfer: Could not restore queue: {e}")
-            self._clear_persisted_queue()
-            return []
-
-        restored = []
-        active = data.get("active")
-        if active:
-            restored.append(QueuedTransfer.from_dict(active))
-        restored.extend(
-            QueuedTransfer.from_dict(item) for item in data.get("pending", [])
-        )
-        restored = [transfer for transfer in restored if transfer.local_paths]
-        restored = [
-            transfer
-            for transfer in restored
-            if any(os.path.exists(path) for path in transfer.local_paths)
-        ]
+        restored = self.queue_service.restore()
         if not restored:
-            self._clear_persisted_queue()
             return []
 
         self._queue.extend(restored)
-        logger.info(f"Transfer: Restored {len(restored)} queued upload(s)")
         self.queue_changed.emit(len(self._queue))
         return restored
 
@@ -217,7 +110,7 @@ class ManualTransferController(QObject):
         """
         Determine which transfer method will be used for the current server.
 
-        Returns: "rsync", "sftp", or "adb"
+        Returns: "rclone", "rsync", "sftp", or "adb"
         """
         from src.services.rsync_service import is_rsync_available
 
@@ -228,6 +121,10 @@ class ManualTransferController(QObject):
 
         if connection_type == "adb":
             return "adb"
+
+        rclone_config = self._build_rclone_config(connection_type, server_config)
+        if rclone_config and is_rclone_available():
+            return "rclone"
 
         rsync_config = self._build_rsync_config(connection_type, server_config)
         if rsync_config and is_rsync_available():
@@ -267,7 +164,7 @@ class ManualTransferController(QObject):
         if remote_destination:
             remote_dir = remote_destination
         else:
-            # No destination specified — use remote base dir
+            # No destination specified: use remote base dir
             remote_dir = self.settings.remote_base_dir
 
         # Add to queue
@@ -345,8 +242,9 @@ class ManualTransferController(QObject):
         try:
             self._active_thread = QThread(self)
 
-            # Build rsync config for SSH key-based connections (fast path).
-            # rsync needs a key file — skip it for password auth and ADB.
+            # Build optional SSH fast-path configurations. Password auth and
+            # encrypted keys stay on the Paramiko-backed transfer path.
+            rclone_config = self._build_rclone_config(connection_type, server_config)
             rsync_config = self._build_rsync_config(connection_type, server_config)
 
             self._active_worker = TransferWorker(
@@ -355,6 +253,7 @@ class ManualTransferController(QObject):
                 remote_root=transfer.remote_destination,
                 total_bytes=transfer.total_bytes,
                 compress_folders=self.settings.config.compress_folders_before_transfer,
+                rclone_config=rclone_config,
                 rsync_config=rsync_config,
             )
             self._active_worker.moveToThread(self._active_thread)
@@ -468,8 +367,10 @@ class ManualTransferController(QObject):
             return None
         if not self.settings.config.use_rsync:
             return None
-        if server_config and server_config.get("password"):
-            # rsync in BatchMode can't do password auth — skip
+        if self.settings.get_server_secret(
+            self.settings.config.current_server_id, "password"
+        ):
+            # rsync in BatchMode can't do password auth: skip
             return None
 
         return RsyncConfig(
@@ -477,6 +378,31 @@ class ManualTransferController(QObject):
             username=self.settings.username,
             ssh_key_path=self.settings.ssh_key_path,
             ssh_port=self.settings.ssh_port,
+        )
+
+    def _build_rclone_config(
+        self, connection_type: str, server_config: Optional[dict]
+    ) -> Optional[RcloneConfig]:
+        """Build an rclone config only for strict, file-key SSH sessions."""
+        if connection_type != "ssh" or not self.settings.config.use_rsync:
+            return None
+        server_id = self.settings.config.current_server_id
+        if self.settings.get_server_secret(server_id, "password"):
+            return None
+        if self.settings.get_server_secret(server_id, "key_passphrase"):
+            return None
+
+        key_path = os.path.expanduser(self.settings.ssh_key_path)
+        known_hosts_path = Path.home() / ".ssh" / "known_hosts"
+        if not os.path.isfile(key_path) or not known_hosts_path.is_file():
+            return None
+
+        return RcloneConfig(
+            host=self.settings.host,
+            username=self.settings.username,
+            ssh_key_path=key_path,
+            ssh_port=self.settings.ssh_port,
+            known_hosts_path=str(known_hosts_path),
         )
 
     def _on_transfer_error(self, error_msg: str) -> None:
@@ -530,7 +456,7 @@ class ManualTransferController(QObject):
         self._current_transfer = None
         self._persist_queue()
 
-        # Process next item — delay gives the main thread event loop time to
+        # Process next item: delay gives the main thread event loop time to
         # process the transfer_completed signal before transfer_started fires.
         QTimer.singleShot(250, self._process_next)
 
@@ -568,6 +494,8 @@ class ManualTransferController(QObject):
             rsync = self._active_worker._active_rsync
             if rsync:
                 rsync.cancel()
+        if self._active_worker and self._active_worker._active_rclone:
+            self._active_worker._active_rclone.cancel()
 
         # Disconnect thread.finished from _cleanup_and_next to prevent double-fire
         if self._active_thread:
@@ -580,7 +508,7 @@ class ManualTransferController(QObject):
         if self._active_thread and self._active_thread.isRunning():
             self._active_thread.quit()
             if not self._active_thread.wait(3000):  # Wait up to 3s
-                # Thread is stuck (e.g., blocked on SFTP put) — force terminate
+                # Thread is stuck (e.g., blocked on SFTP put): force terminate
                 logger.warn("Transfer: Thread did not respond to quit, terminating")
                 self._active_thread.terminate()
                 self._active_thread.wait(1000)  # Brief wait after terminate

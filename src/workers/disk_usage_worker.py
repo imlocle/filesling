@@ -1,5 +1,5 @@
 """
-Disk usage worker — runs 'df' on a background thread.
+Disk usage worker: runs 'df' on a background thread.
 
 Must be a top-level QObject class (not defined inline in a method) so that
 Qt's meta-object system properly registers the signals for cross-thread
@@ -13,6 +13,7 @@ import shlex
 
 from PySide6.QtCore import QObject, Signal
 
+from src.clients.ssh_command_client import open_ssh_session
 
 class DiskUsageWorker(QObject):
     """Background worker that queries remote filesystem disk usage via SSH."""
@@ -39,10 +40,9 @@ class DiskUsageWorker(QObject):
                 self.error.emit()
                 return
 
-            session = transport.open_session()
-            session.exec_command(f"df -B1 {shlex.quote(self._path)} | tail -1")
-            output = session.recv(1024).decode("utf-8").strip()
-            session.close()
+            command = f"df -B1 {shlex.quote(self._path)} | tail -1"
+            with open_ssh_session(transport, command) as session:
+                output = session.recv(1024).decode("utf-8").strip()
 
             if not output:
                 self.error.emit()

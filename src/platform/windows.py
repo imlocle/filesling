@@ -1,5 +1,5 @@
 """
-Platform abstraction — Windows implementation.
+Platform abstraction: Windows implementation.
 
 Uses:
 - `keyring` library for Windows Credential Manager

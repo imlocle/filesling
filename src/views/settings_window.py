@@ -72,6 +72,15 @@ class SettingsWindow(QDialog):
 
         if server_mode and server_id:
             self.server_config = settings.get_server(server_id) or {}
+            self.server_config = self.server_config.copy()
+            for secret_field in (
+                "password",
+                "key_passphrase",
+                "jellyfin_api_key",
+            ):
+                secret = settings.get_server_secret(server_id, secret_field)
+                if secret:
+                    self.server_config[secret_field] = secret
 
         self.server_name_input = None
 
@@ -123,6 +132,11 @@ class SettingsWindow(QDialog):
                 "ssh_port": self.settings.ssh_port,
                 "ssh_key_path": self.settings.ssh_key_path,
                 "remote_base_dir": self.settings.remote_base_dir,
+                "password": self.settings.get_server_secret("", "password") or "",
+                "key_passphrase": self.settings.get_server_secret(
+                    "", "key_passphrase"
+                )
+                or "",
             }
         )
         self.connection_form = ConnectionFormWidget(config=config)
@@ -171,6 +185,40 @@ class SettingsWindow(QDialog):
             row.addStretch()
             row.addWidget(self.server_delete_after_checkbox)
             layout.addLayout(row)
+
+            # Jellyfin library refresh after completed uploads
+            layout.addWidget(QLabel("Jellyfin"))
+            self.jellyfin_enabled_checkbox = ToggleSwitch()
+            self.jellyfin_enabled_checkbox.setChecked(
+                bool(self.server_config.get("jellyfin_enabled", False))
+            )
+            row = QHBoxLayout()
+            row.addWidget(QLabel("Scan libraries after uploads"))
+            row.addStretch()
+            row.addWidget(self.jellyfin_enabled_checkbox)
+            layout.addLayout(row)
+
+            self.jellyfin_url_input = QLineEdit(
+                self.server_config.get("jellyfin_url", "")
+            )
+            self.jellyfin_url_input.setPlaceholderText("http://jellyfin-host:8096")
+            layout.addWidget(QLabel("Jellyfin server URL"))
+            layout.addWidget(self.jellyfin_url_input)
+
+            self.jellyfin_api_key_input = QLineEdit(
+                self.server_config.get("jellyfin_api_key", "")
+            )
+            self.jellyfin_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.jellyfin_api_key_input.setPlaceholderText("Jellyfin API key")
+            layout.addWidget(QLabel("Jellyfin API key"))
+            layout.addWidget(self.jellyfin_api_key_input)
+
+            jellyfin_hint = QLabel(
+                "FileSling asks Jellyfin to scan its libraries after uploads finish."
+            )
+            jellyfin_hint.setObjectName("secondary_label")
+            jellyfin_hint.setWordWrap(True)
+            layout.addWidget(jellyfin_hint)
 
             # Per-server: activity history
             self.server_activity_history_checkbox = ToggleSwitch()
@@ -320,7 +368,7 @@ class SettingsWindow(QDialog):
         layout.addWidget(QLabel(""))
         layout.addWidget(QLabel("Metadata Lookup"))
 
-        self.omdb_api_key_input = QLineEdit(self.settings.config.omdb_api_key)
+        self.omdb_api_key_input = QLineEdit(self.settings.omdb_api_key)
         self.omdb_api_key_input.setPlaceholderText("OMDb API key (primary)")
         self.omdb_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.omdb_api_key_input.setToolTip(
@@ -332,7 +380,7 @@ class SettingsWindow(QDialog):
         omdb_row.addWidget(self.omdb_api_key_input, stretch=1)
         layout.addLayout(omdb_row)
 
-        self.tmdb_api_key_input = QLineEdit(self.settings.config.tmdb_api_key)
+        self.tmdb_api_key_input = QLineEdit(self.settings.tmdb_api_key)
         self.tmdb_api_key_input.setPlaceholderText("TMDB API key (fallback, optional)")
         self.tmdb_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.tmdb_api_key_input.setToolTip(
@@ -424,8 +472,6 @@ class SettingsWindow(QDialog):
 
     def _export_settings(self) -> None:
         """Export settings to a JSON file."""
-        import json
-
         from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getSaveFileName(
@@ -438,9 +484,7 @@ class SettingsWindow(QDialog):
             return
 
         try:
-            config_data = self.settings._config_to_dict()
-            with open(path, "w") as f:
-                json.dump(config_data, f, indent=2)
+            self.settings.export_config(path)
             logger.success(f"Settings exported to: {path}")
             QMessageBox.information(
                 self, "Export Complete", f"Settings exported to:\n{path}"
@@ -452,8 +496,6 @@ class SettingsWindow(QDialog):
 
     def _import_settings(self) -> None:
         """Import settings from a JSON file."""
-        import json
-
         from PySide6.QtWidgets import QFileDialog
 
         path, _ = QFileDialog.getOpenFileName(
@@ -466,8 +508,7 @@ class SettingsWindow(QDialog):
             return
 
         try:
-            with open(path, "r") as f:
-                config_data = json.load(f)
+            config_data = self.settings.read_config_file(path)
 
             # Validate before applying
             SettingsConfig.from_json(config_data)
@@ -549,6 +590,13 @@ class SettingsWindow(QDialog):
             config["bookmarks"] = existing_config.get("bookmarks", [])
             config["default_bookmark"] = existing_config.get("default_bookmark", "")
 
+            if config.get(CONN_TYPE_KEY) == CONN_TYPE_SSH:
+                config["password"] = self.connection_form.password_input.text()
+                config["key_passphrase"] = self.connection_form.passphrase_input.text()
+            else:
+                config["password"] = ""
+                config["key_passphrase"] = ""
+
             # Per-server settings
             if hasattr(self, "server_download_dir_input"):
                 dl_dir = self.server_download_dir_input.text().strip()
@@ -566,6 +614,23 @@ class SettingsWindow(QDialog):
                 config["activity_history_enabled"] = (
                     self.server_activity_history_checkbox.isChecked()
                 )
+            if hasattr(self, "jellyfin_enabled_checkbox"):
+                config["jellyfin_enabled"] = (
+                    self.jellyfin_enabled_checkbox.isChecked()
+                )
+                config["jellyfin_url"] = self.jellyfin_url_input.text().strip()
+                config["jellyfin_api_key"] = (
+                    self.jellyfin_api_key_input.text().strip()
+                )
+                if config["jellyfin_enabled"] and not (
+                    config["jellyfin_url"] and config["jellyfin_api_key"]
+                ):
+                    QMessageBox.warning(
+                        self,
+                        "Jellyfin Settings Incomplete",
+                        "Enter the Jellyfin server URL and API key, or turn off library scans.",
+                    )
+                    return
 
             # Validate SSH config
             if config.get(CONN_TYPE_KEY) == CONN_TYPE_SSH:
@@ -600,10 +665,27 @@ class SettingsWindow(QDialog):
         try:
             conn_config = self.connection_form.get_config()
 
+            self.settings.set_server_secret(
+                "", "password", self.connection_form.password_input.text()
+            )
+            self.settings.set_server_secret(
+                "", "key_passphrase", self.connection_form.passphrase_input.text()
+            )
+            self.settings.set_global_secret(
+                "omdb_api_key", self.omdb_api_key_input.text().strip()
+            )
+            self.settings.set_global_secret(
+                "tmdb_api_key", self.tmdb_api_key_input.text().strip()
+            )
+
             config_data = {
                 "servers": self.settings.config.servers,
                 "current_server_id": self.settings.config.current_server_id,
                 "default_server_id": self.settings.config.default_server_id,
+                "destination_profiles": self.settings.config.destination_profiles,
+                "active_destination_profile_id": (
+                    self.settings.config.active_destination_profile_id
+                ),
                 "username": conn_config.get("username", ""),
                 "host": conn_config.get("host", ""),
                 "ssh_key_path": conn_config.get("ssh_key_path", ""),
@@ -628,8 +710,8 @@ class SettingsWindow(QDialog):
                 ],
                 "theme_mode": self.theme_combo.currentData(),
                 "max_parallel_transfers": self.settings.config.max_parallel_transfers,
-                "omdb_api_key": self.omdb_api_key_input.text().strip(),
-                "tmdb_api_key": self.tmdb_api_key_input.text().strip(),
+                "omdb_api_key": "",
+                "tmdb_api_key": "",
                 "last_modified": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
             }
 

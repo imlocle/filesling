@@ -1,5 +1,5 @@
 """
-ServerConfig — typed model for server configurations.
+ServerConfig: typed model for server configurations.
 
 Replaces raw dict access (server_config.get("key", default)) with a
 validated dataclass that provides IDE autocomplete and prevents typo bugs.
@@ -50,6 +50,11 @@ class ServerConfig:
     delete_after_transfer: Optional[bool] = None
     activity_history_enabled: Optional[bool] = None
 
+    # Jellyfin library refresh
+    jellyfin_enabled: bool = False
+    jellyfin_url: str = ""
+    jellyfin_api_key: str = ""
+
     # Navigation state
     bookmarks: List[str] = field(default_factory=list)
     default_bookmark: str = ""
@@ -84,12 +89,15 @@ class ServerConfig:
             extension_filter=data.get("extension_filter", ""),
             delete_after_transfer=data.get("delete_after_transfer", None),
             activity_history_enabled=data.get("activity_history_enabled", None),
+            jellyfin_enabled=bool(data.get("jellyfin_enabled", False)),
+            jellyfin_url=data.get("jellyfin_url", ""),
+            jellyfin_api_key=data.get("jellyfin_api_key", ""),
             bookmarks=list(data.get("bookmarks", [])),
             default_bookmark=data.get("default_bookmark", ""),
         )
 
     def to_dict(self) -> dict:
-        """Convert back to dict for JSON serialization."""
+        """Serialize non-secret settings; credentials belong in the OS store."""
         d: dict = {
             "name": self.name,
             "connection_type": self.connection_type,
@@ -101,10 +109,6 @@ class ServerConfig:
             d["username"] = self.username
             d["ssh_key_path"] = self.ssh_key_path
             d["ssh_port"] = self.ssh_port
-            if self.password:
-                d["password"] = self.password
-            if self.key_passphrase:
-                d["key_passphrase"] = self.key_passphrase
         else:
             d["device_id"] = self.device_id
             if self.wifi_ip:
@@ -118,6 +122,10 @@ class ServerConfig:
             d["delete_after_transfer"] = self.delete_after_transfer
         if self.activity_history_enabled is not None:
             d["activity_history_enabled"] = self.activity_history_enabled
+        if self.jellyfin_enabled:
+            d["jellyfin_enabled"] = True
+        if self.jellyfin_url:
+            d["jellyfin_url"] = self.jellyfin_url
         if self.bookmarks:
             d["bookmarks"] = self.bookmarks
         if self.default_bookmark:

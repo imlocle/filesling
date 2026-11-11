@@ -1,5 +1,5 @@
 """
-Batch Metadata dialog — edit shared NFO fields for multiple files at once.
+Batch Metadata dialog: edit shared NFO fields for multiple files at once.
 
 Select multiple video files → fill in shared fields (Artist, Series, Season, etc.)
 → writes/updates .nfo sidecar files for all selected files in one pass.
@@ -11,7 +11,6 @@ Episode # supports auto-increment from a starting number.
 from __future__ import annotations
 
 import os
-import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.services.remote_media_service import RemoteMediaService
 from src.utils.constants import (
     METADATA_FIELD_HINTS,
     METADATA_KEY_TO_NFO,
@@ -64,31 +64,16 @@ def _xml_escape(text: str) -> str:
 
 def _read_existing_nfo(sftp: object, nfo_path: str) -> Dict[str, str]:
     """Read an existing NFO file and return a dict of tag → value."""
-    data: Dict[str, str] = {}
     try:
-        with sftp.open(nfo_path, "r") as f:  # type: ignore
-            content = f.read().decode("utf-8", errors="replace")
-
-        # Skip scene NFOs (plain text, not XML)
-        if not content.strip().startswith("<?xml") and "<" not in content[:50]:
-            return data
-
-        root = ET.fromstring(content)
-        for child in root:
-            tag = child.tag
-            text = (child.text or "").strip()
-            if not text or tag == "actor":
-                continue
-            # Map NFO tag to our internal key
-            key = METADATA_NFO_TO_KEY.get(tag, tag)
-            if key == "genre":
-                existing = data.get("genre", "")
-                data["genre"] = f"{existing};{text}" if existing else text
-            else:
-                data[key] = text
+        nfo_data = RemoteMediaService(sftp).read_nfo_path(nfo_path)
     except Exception:
-        pass  # File doesn't exist or can't be read — start fresh
-    return data
+        return {}
+
+    return {
+        METADATA_NFO_TO_KEY.get(tag, tag): value
+        for tag, value in nfo_data.items()
+        if tag != "actor"
+    }
 
 
 def _build_nfo_xml(metadata: Dict[str, str]) -> str:
@@ -157,7 +142,7 @@ class BatchMetadataDialog(QDialog):
         self._sftp = sftp
         self._fields: Dict[str, QLineEdit] = {}
 
-        self.setWindowTitle(f"Batch Edit Metadata — {len(remote_paths)} files")
+        self.setWindowTitle(f"Batch Edit Metadata: {len(remote_paths)} files")
         self.setMinimumSize(500, 520)
 
         self._setup_ui()
@@ -290,7 +275,7 @@ class BatchMetadataDialog(QDialog):
             try:
                 sort_title_start = int(batch_values["sort_name"])
             except ValueError:
-                # Non-numeric sort title — apply as-is (no increment)
+                # Non-numeric sort title: apply as-is (no increment)
                 sort_title_start = None
 
         success_count = 0
@@ -333,8 +318,7 @@ class BatchMetadataDialog(QDialog):
             # Build and write NFO
             nfo_content = _build_nfo_xml(merged)
             try:
-                with self._sftp.open(nfo_path, "w") as f:  # type: ignore
-                    f.write(nfo_content.encode("utf-8"))
+                RemoteMediaService(self._sftp).write_nfo_path(nfo_path, nfo_content)
                 success_count += 1
             except Exception as e:
                 logger.error(

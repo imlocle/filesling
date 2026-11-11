@@ -26,8 +26,12 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.settings import Settings
+from src.controllers.destination_profile_controller import (
+    DestinationProfileController,
+)
 from src.controllers.main_window_controller import MainWindowController
 from src.services.connection_manager_service import ConnectionManagerService
+from src.services.destination_profile_service import DestinationProfileService
 from src.services.menu_bar_service import MenuBarService
 from src.utils.constants import (
     DIALOG_FILES_ALREADY_EXIST,
@@ -42,6 +46,7 @@ from src.utils.constants import (
     SOFTWARE_NAME,
     VERSION,
 )
+from src.utils.file_size import get_local_path_size
 from src.utils.logging_signal import logger
 from src.views.settings_window import SettingsWindow
 from src.widgets.file_explorer_widget import FileExplorerWidget
@@ -49,7 +54,7 @@ from src.widgets.file_explorer_widget import FileExplorerWidget
 
 class MainWindow(QMainWindow):
     """
-    Main window for FileSling — a remote file manager.
+    Main window for FileSling: a remote file manager.
 
     Features:
     - Clean toolbar with connection controls
@@ -86,6 +91,9 @@ class MainWindow(QMainWindow):
         # Create controller
         self.connection_manager_service = ConnectionManagerService(self.settings)
         self.controller = MainWindowController(self, self.connection_manager_service)
+        self.destination_profile_controller = DestinationProfileController(
+            DestinationProfileService(self.settings)
+        )
 
         # Menu bar status item (system tray icon)
         self.menu_bar_service = MenuBarService(self)
@@ -140,6 +148,21 @@ class MainWindow(QMainWindow):
             True if server was selected/loaded successfully
         """
         servers = self.settings.get_servers()
+
+        active_profile_id = self.settings.config.active_destination_profile_id
+        if active_profile_id:
+            profile = next(
+                (
+                    item
+                    for item in self.settings.get_destination_profiles()
+                    if item.get("profile_id") == active_profile_id
+                ),
+                None,
+            )
+            profile_server_id = str(profile.get("server_id", "")) if profile else ""
+            if profile and self.settings.load_server(profile_server_id):
+                return True
+            self.settings.set_active_destination_profile("")
 
         # If no servers configured, show settings to add first server
         if not servers:
@@ -241,7 +264,7 @@ class MainWindow(QMainWindow):
         return True
 
     def handle_connection_failure(self) -> None:
-        """Handle connection failure — show server selection dialog.
+        """Handle connection failure: show server selection dialog.
 
         Only tracks retry attempts for SSH connections. ADB/iOS failures
         are typically hardware issues (unplugged cable) where "switch server"
@@ -290,6 +313,21 @@ class MainWindow(QMainWindow):
 
     def change_server(self) -> None:
         """Allow user to change to a different server."""
+        if not self.connect_btn.isEnabled():
+            QMessageBox.information(
+                self,
+                "Connection In Progress",
+                "Wait for the current connection attempt to finish before "
+                "switching connections.",
+            )
+            return
+        if self._transfers_are_pending():
+            QMessageBox.information(
+                self,
+                "Uploads In Progress",
+                "Wait for queued uploads to finish before switching connections.",
+            )
+            return
         from src.views.dialogs.server_selection_dialog import ServerSelectionDialog
 
         selection_dialog = ServerSelectionDialog(self)
@@ -332,6 +370,105 @@ class MainWindow(QMainWindow):
 
         self.server_combo.blockSignals(False)
 
+    def _populate_destination_combo(self) -> None:
+        """Show saved destination profiles and their management action."""
+        self.destination_combo.blockSignals(True)
+        self.destination_combo.clear()
+        self.destination_combo.addItem("No destination profile", "")
+        for profile in self.destination_profile_controller.list_profiles():
+            self.destination_combo.addItem(profile.name, profile.profile_id)
+        self.destination_combo.insertSeparator(self.destination_combo.count())
+        self.destination_combo.addItem("Manage Destinations", "__manage__")
+        active_id = self.settings.config.active_destination_profile_id
+        index = self.destination_combo.findData(active_id)
+        self.destination_combo.setCurrentIndex(max(index, 0))
+        self.destination_combo.blockSignals(False)
+
+    def _restore_destination_combo(self) -> None:
+        """Restore the active profile selection after a rejected action."""
+        self.destination_combo.blockSignals(True)
+        index = self.destination_combo.findData(
+            self.settings.config.active_destination_profile_id
+        )
+        self.destination_combo.setCurrentIndex(max(index, 0))
+        self.destination_combo.blockSignals(False)
+
+    def _on_destination_combo_changed(self, index: int) -> None:
+        """Activate a saved destination and navigate to its folder."""
+        if index < 0:
+            return
+        profile_id = str(self.destination_combo.itemData(index) or "")
+        if not self.connect_btn.isEnabled():
+            QMessageBox.information(
+                self,
+                "Connection In Progress",
+                "Wait for the current connection attempt to finish before "
+                "switching destinations.",
+            )
+            self._restore_destination_combo()
+            return
+        if profile_id == "__manage__":
+            self._restore_destination_combo()
+            if self._transfers_are_pending():
+                QMessageBox.information(
+                    self,
+                    "Uploads In Progress",
+                    "Wait for queued uploads to finish before editing destinations.",
+                )
+                return
+            from src.views.dialogs.destination_profiles_dialog import (
+                DestinationProfilesDialog,
+            )
+
+            dialog = DestinationProfilesDialog(
+                self.settings, self.destination_profile_controller
+            )
+            dialog.exec()
+            self._populate_destination_combo()
+            active_profile = self.destination_profile_controller.get_active_profile()
+            if active_profile:
+                self._activate_destination_profile(active_profile.profile_id)
+            return
+
+        if profile_id == self.settings.config.active_destination_profile_id:
+            return
+        if self._transfers_are_pending():
+            QMessageBox.information(
+                self,
+                "Uploads In Progress",
+                "Wait for queued uploads to finish before switching destinations.",
+            )
+            self._restore_destination_combo()
+            return
+        self._activate_destination_profile(profile_id)
+
+    def _transfers_are_pending(self) -> bool:
+        """Return whether an active or queued upload is using the connection."""
+        return self.controller.manual_transfer.is_busy() or bool(
+            self.controller.manual_transfer.queue_size()
+        )
+
+    def _activate_destination_profile(self, profile_id: str) -> None:
+        """Persist a profile, switch its connection, and open its folder."""
+        try:
+            profile = self.destination_profile_controller.activate_profile(profile_id)
+        except ValueError as error:
+            QMessageBox.warning(self, "Destination Unavailable", str(error))
+            self._populate_destination_combo()
+            return
+
+        if profile is None:
+            self._populate_destination_combo()
+            return
+        if profile.server_id != self.settings.config.current_server_id:
+            self._switch_to_server(
+                profile.server_id, destination_profile_id=profile.profile_id
+            )
+            return
+        if self.connection_manager_service.is_connected():
+            self.remote_explorer.refresh(profile.remote_path)
+        self._restore_destination_combo()
+
     def _on_server_combo_changed(self, index: int) -> None:
         """Handle server selection from the dropdown."""
         if index < 0:
@@ -353,12 +490,46 @@ class MainWindow(QMainWindow):
             return
         if server_id == self.settings.config.current_server_id:
             return
+        if not self.connect_btn.isEnabled():
+            QMessageBox.information(
+                self,
+                "Connection In Progress",
+                "Wait for the current connection attempt to finish before "
+                "switching connections.",
+            )
+            self.server_combo.blockSignals(True)
+            current_index = self.server_combo.findData(
+                self.settings.config.current_server_id
+            )
+            if current_index >= 0:
+                self.server_combo.setCurrentIndex(current_index)
+            self.server_combo.blockSignals(False)
+            return
+        if self._transfers_are_pending():
+            QMessageBox.information(
+                self,
+                "Uploads In Progress",
+                "Wait for queued uploads to finish before switching connections.",
+            )
+            self.server_combo.blockSignals(True)
+            current_index = self.server_combo.findData(
+                self.settings.config.current_server_id
+            )
+            if current_index >= 0:
+                self.server_combo.setCurrentIndex(current_index)
+            self.server_combo.blockSignals(False)
+            return
         self._switch_to_server(server_id)
 
-    def _switch_to_server(self, server_id: str) -> None:
+    def _switch_to_server(
+        self, server_id: str, destination_profile_id: Optional[str] = None
+    ) -> None:
         """Switch to a different server by ID."""
         if not self.settings.load_server(server_id):
             return
+
+        self.settings.set_active_destination_profile(destination_profile_id or "")
+        self._populate_destination_combo()
 
         # Disconnect current connection
         self.connection_manager_service.disconnect()
@@ -384,8 +555,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _setup_connections(self) -> None:
         """Wire UI signals to controller actions."""
+        self.controller.connection_ctrl.bind_remote_explorer(self.remote_explorer)
         self.connect_btn.clicked.connect(self.controller.connect)
         self.server_combo.currentIndexChanged.connect(self._on_server_combo_changed)
+        self.destination_combo.currentIndexChanged.connect(
+            self._on_destination_combo_changed
+        )
         self.refresh_btn.clicked.connect(self.controller.refresh_explorers)
         self.settings_btn.clicked.connect(self.controller.open_settings)
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
@@ -401,6 +576,9 @@ class MainWindow(QMainWindow):
         )
         self.remote_explorer.files_download_requested.connect(
             self.controller.download_items
+        )
+        self.remote_explorer.batch_rename_requested.connect(
+            self.controller.file_ops.rename_multiple_items
         )
         self.remote_explorer.folder_create_requested.connect(
             self.controller.create_folder
@@ -420,41 +598,41 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _setup_shortcuts(self) -> None:
         """Set up keyboard shortcuts."""
-        # ⌘+Backspace — Delete selected items
+        # ⌘+Backspace: Delete selected items
         QShortcut(QKeySequence("Ctrl+Backspace"), self).activated.connect(
             self.controller.delete_selected_item
         )
 
-        # ⌘+R — Refresh explorer
+        # ⌘+R: Refresh explorer
         QShortcut(QKeySequence("Ctrl+R"), self).activated.connect(
             self.controller.refresh_explorers
         )
 
-        # Enter — Navigate into selected folder (only when search bar not focused)
+        # Enter: Navigate into selected folder (only when search bar not focused)
         self._enter_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
         self._enter_shortcut.activated.connect(self._navigate_or_search)
 
-        # ⌘+Up — Go back / up one directory
+        # ⌘+Up: Go back / up one directory
         QShortcut(QKeySequence("Ctrl+Up"), self).activated.connect(
             self.remote_explorer.go_back
         )
 
-        # ⌘+N — New folder
+        # ⌘+N: New folder
         QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(
             self._create_folder_shortcut
         )
 
-        # ⌘+F — Focus search/filter
+        # ⌘+F: Focus search/filter
         QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(
             self.remote_explorer.show_search
         )
 
-        # ⌘+I — Toggle detail panel
+        # ⌘+I: Toggle detail panel
         QShortcut(QKeySequence("Ctrl+I"), self).activated.connect(
             self.remote_explorer.toggle_detail_panel
         )
 
-        # Escape — Deselect all / hide search
+        # Escape: Deselect all / hide search
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self).activated.connect(
             self._handle_escape
         )
@@ -619,13 +797,13 @@ class MainWindow(QMainWindow):
     def _show_shortcuts(self) -> None:
         """Show keyboard shortcuts dialog."""
         shortcuts = (
-            "⌘R — Refresh\n"
-            "⌘N — New Folder\n"
-            "⌘F — Search\n"
-            "⌘Delete — Delete Selected\n"
-            "⌘↑ — Go Back\n"
-            "Enter — Navigate / Search\n"
-            "Escape — Clear Search / Deselect\n"
+            "⌘R: Refresh\n"
+            "⌘N: New Folder\n"
+            "⌘F: Search\n"
+            "⌘Delete: Delete Selected\n"
+            "⌘↑: Go Back\n"
+            "Enter: Navigate / Search\n"
+            "Escape: Clear Search / Deselect\n"
         )
 
         QMessageBox.information(self, "Keyboard Shortcuts", shortcuts)
@@ -634,9 +812,9 @@ class MainWindow(QMainWindow):
         """Show transfer method indicator legend."""
         legend = (
             "Transfer queue indicators:\n\n"
-            "● Green — rsync (fast delta transfer)\n"
-            "● Blue — SFTP (standard transfer)\n"
-            "● Orange — ADB (USB transfer)\n\n"
+            "● Green: rclone or rsync (optimized SSH transfer)\n"
+            "● Blue: SFTP (standard transfer)\n"
+            "● Orange: ADB (USB transfer)\n\n"
             "The dot appears next to the status while a transfer\n"
             "is active. Hover the dot for a tooltip description."
         )
@@ -702,13 +880,24 @@ class MainWindow(QMainWindow):
         self.server_combo.setCursor(Qt.CursorShape.PointingHandCursor)
         self._populate_server_combo()
 
-        # Connection status (minimal — just latency, shown inline)
+        self.destination_combo = QComboBox()
+        self.destination_combo.setMinimumWidth(160)
+        self.destination_combo.setMaximumWidth(280)
+        self.destination_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self.destination_combo.setToolTip("Choose a saved destination folder")
+        self.destination_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._populate_destination_combo()
+
+        # Connection status (minimal: just latency, shown inline)
         self.connection_status_label = QLabel("")
         self.connection_status_label.setObjectName("connection_disconnected")
         self.connection_status_label.setStyleSheet("font-size: 11px;")
 
         toolbar_layout.addWidget(self.connect_btn)
         toolbar_layout.addWidget(self.server_combo)
+        toolbar_layout.addWidget(self.destination_combo)
         toolbar_layout.addWidget(self.connection_status_label)
         toolbar_layout.addStretch()
 
@@ -747,6 +936,7 @@ class MainWindow(QMainWindow):
             title="Remote Server",
             is_remote=True,
             sftp=None,
+            history_service=self.controller.activity_history,
         )
 
         content_layout.addWidget(self.remote_explorer)
@@ -789,11 +979,7 @@ class MainWindow(QMainWindow):
         """Show activity history in a dialog."""
         from PySide6.QtWidgets import QDialog, QPlainTextEdit, QVBoxLayout
 
-        from src.services.activity_history_service import ActivityHistoryService
-
-        # Fresh load from disk to include all recent activity
-        history = ActivityHistoryService()
-        records = history.records
+        records = self.controller.activity_history.records
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Activity History")
@@ -877,7 +1063,7 @@ class MainWindow(QMainWindow):
         self._diagnostics_log_box = None
 
     def update_progress(self, value: int) -> None:
-        """Update progress (legacy — now handled by queue widget)."""
+        """Update progress (legacy: now handled by queue widget)."""
 
     # ------------------------------------------------------------------
     # Lifecycle Events
@@ -892,7 +1078,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Called when user clicks the window's close button.
 
-        Always hides the window — the app stays alive in the menu bar.
+        Always hides the window: the app stays alive in the menu bar.
         Use Quit from the menu bar icon or ⌘Q to fully exit.
         """
         # Guard: controller may not exist if window closes during early init
@@ -939,7 +1125,7 @@ class MainWindow(QMainWindow):
                 elif clicked == quit_after_btn:
                     self._quit_after_jobs()
                     return
-                # else: quit_now — fall through
+                # else: quit_now: fall through
 
             self._save_geometry()
             self.controller.shutdown()
@@ -1030,7 +1216,16 @@ class MainWindow(QMainWindow):
                             pass
 
         if duplicates:
-            action = self._show_duplicate_dialog(duplicates)
+            duplicate_policy = (
+                self.destination_profile_controller.get_duplicate_policy(
+                    self.settings.config.current_server_id
+                )
+            )
+            action = (
+                duplicate_policy
+                if duplicate_policy in (DUP_ACTION_SKIP, DUP_ACTION_OVERWRITE)
+                else self._show_duplicate_dialog(duplicates)
+            )
             if action == DUP_ACTION_SKIP:
                 # Remove duplicates from the transfer list
                 local_paths = [
@@ -1050,21 +1245,7 @@ class MainWindow(QMainWindow):
         # Add each file/folder as its own queue row and queue individually
         for p in local_paths:
             name = os.path.basename(p.rstrip("/"))
-            # Calculate size for this item
-            item_bytes = 0
-            if os.path.isdir(p):
-                for root, _, files in os.walk(p):
-                    for f in files:
-                        if not f.startswith("."):
-                            try:
-                                item_bytes += os.path.getsize(os.path.join(root, f))
-                            except OSError:
-                                pass
-            elif os.path.isfile(p):
-                try:
-                    item_bytes = os.path.getsize(p)
-                except OSError:
-                    pass
+            item_bytes = get_local_path_size(p, include_hidden=True)
 
             self.transfer_queue.add_transfer(
                 name, item_bytes, remote_dir, transfer_method

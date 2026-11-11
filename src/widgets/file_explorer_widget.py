@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import shutil
 from stat import S_ISDIR
 from typing import List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import (
-    QMimeData,
-    QObject,
     QPoint,
-    QRectF,
     Qt,
     QThread,
     QTimer,
@@ -19,17 +17,14 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
-    QDrag,
     QDragEnterEvent,
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
     QFont,
     QIcon,
-    QMouseEvent,
     QPainter,
     QPaintEvent,
-    QPen,
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
@@ -48,11 +43,15 @@ from PySide6.QtWidgets import (
 )
 
 from src.config.settings import Settings
-from src.utils.constants import (
-    MAX_DRAG_BYTES,
-    TIMEOUT_SSH_CONNECT,
-)
+from src.controllers.media_tools_controller import MediaToolsController
+from src.services.activity_history_service import ActivityHistoryService
+from src.services.nfo_metadata_cache_service import NfoMetadataCacheService
+from src.utils.file_size import format_bytes, get_directory_size
 from src.utils.logging_signal import logger
+from src.workers.directory_loader import DirectoryLoader
+from src.workers.nfo_cache_worker import NfoCacheWorker
+from src.widgets.loading_spinner import LoadingSpinner
+from src.widgets.tree_widgets import DragDropTreeWidget, SortableTreeWidgetItem
 
 
 def _get_file_icon(is_dir: bool, filename: str = "") -> QIcon:
@@ -60,498 +59,6 @@ def _get_file_icon(is_dir: bool, filename: str = "") -> QIcon:
     from src.utils.icons import get_file_icon
 
     return get_file_icon(is_dir, filename)
-
-
-class DragDropTreeWidget(QTreeWidget):
-    """Custom QTreeWidget that supports drag-drop, multi-select, and slow-click rename."""
-
-    # Emitted when user slow-clicks to rename: (item, column)
-    slow_click_rename = Signal(QTreeWidgetItem, int)
-
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._drag_start_pos = None
-        self._drag_start_items = []
-
-        # Slow-click rename state
-        self._last_clicked_item: Optional[QTreeWidgetItem] = None
-        self._pressed_item: Optional[QTreeWidgetItem] = None
-        self._rename_timer = QTimer(self)
-        self._rename_timer.setSingleShot(True)
-        self._rename_timer.timeout.connect(self._trigger_rename)
-        self._rename_pending_item: Optional[QTreeWidgetItem] = None
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Track mouse press for potential drag or slow-click rename."""
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_start_pos = event.pos()
-            self._drag_start_items = [item.text(0) for item in self.selectedItems()]
-
-            # Cancel any pending rename immediately on new press
-            # (rename only triggers after mouse release + delay)
-            self._rename_timer.stop()
-            self._rename_pending_item = None
-
-            self._pressed_item = self.itemAt(event.pos())
-
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Start rename timer only on release (avoids conflict with drag)."""
-        if event.button() == Qt.MouseButton.LeftButton:
-            item = self.itemAt(event.pos())
-            if (
-                item
-                and item == self._pressed_item
-                and item == self._last_clicked_item
-                and len(self.selectedItems()) == 1
-                and self._drag_start_pos is not None
-                and (event.pos() - self._drag_start_pos).manhattanLength() < 4
-            ):
-                # Click-release on same item without dragging — start rename timer
-                self._rename_pending_item = item
-                self._rename_timer.start(600)
-
-            self._last_clicked_item = item
-            self._pressed_item = None
-
-        super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        """Double-click cancels rename timer and navigates."""
-        self._rename_timer.stop()
-        self._rename_pending_item = None
-        super().mouseDoubleClickEvent(event)
-
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Initiate drag when mouse moves far enough from press point."""
-        if (
-            not (event.buttons() & Qt.MouseButton.LeftButton)
-            or self._drag_start_pos is None
-        ):
-            super().mouseMoveEvent(event)
-            return
-
-        # Only start drag if moved at least 4 pixels (Qt standard)
-        distance = (event.pos() - self._drag_start_pos).manhattanLength()
-        if distance < 4:
-            super().mouseMoveEvent(event)
-            return
-
-        # Cancel rename if dragging
-        self._rename_timer.stop()
-        self._rename_pending_item = None
-
-        # Get selected items
-        selected_items = self.selectedItems()
-        if not selected_items:
-            super().mouseMoveEvent(event)
-            return
-
-        # Create MIME data with selected item names
-        mime_data = QMimeData()
-        item_names = [item.text(0) for item in selected_items]
-        mime_data.setText(" | ".join(item_names))
-        mime_data.setData("application/x-explorer-items", b"")
-
-        # For external drag (to Finder): provide file URLs if available
-        # For remote files, download small files to temp dir.
-        # Files over 10MB are skipped (user should use right-click → Download).
-        parent_widget = self.parent()
-        if parent_widget and hasattr(parent_widget, "is_remote"):
-            if parent_widget.is_remote and parent_widget.sftp:
-                import atexit
-                import tempfile
-
-                # Calculate total size to decide if we should download for drag
-                downloadable = []
-                for item_name in item_names:
-                    remote_path = os.path.join(parent_widget.current_path, item_name)
-                    try:
-                        st = parent_widget.sftp.stat(remote_path)
-                        size = st.st_size if st.st_size else 0
-                        if size <= MAX_DRAG_BYTES:
-                            downloadable.append((item_name, remote_path))
-                    except Exception:
-                        pass  # Can't stat — skip
-
-                if downloadable:
-                    temp_dir = tempfile.mkdtemp(prefix="filesling_drag_")
-                    atexit.register(
-                        lambda d=temp_dir: __import__("shutil").rmtree(
-                            d, ignore_errors=True
-                        )
-                    )
-                    urls = []
-                    for item_name, remote_path in downloadable:
-                        local_temp = os.path.join(temp_dir, item_name)
-                        try:
-                            parent_widget.sftp.get(remote_path, local_temp)
-                            urls.append(QUrl.fromLocalFile(local_temp))
-                        except Exception:
-                            pass  # Skip files that fail to download
-                    if urls:
-                        mime_data.setUrls(urls)
-            elif not parent_widget.is_remote:
-                # Local files — provide URLs directly
-                urls = []
-                for item_name in item_names:
-                    full_path = os.path.join(parent_widget.current_path, item_name)
-                    if os.path.exists(full_path):
-                        urls.append(QUrl.fromLocalFile(full_path))
-                if urls:
-                    mime_data.setUrls(urls)
-
-        # Start drag operation
-        drag = QDrag(self)
-        drag.setMimeData(mime_data)
-        drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
-
-        self._drag_start_pos = None
-        self._drag_start_items = []
-
-    def _trigger_rename(self) -> None:
-        """Trigger inline rename after slow-click delay."""
-        if self._rename_pending_item:
-            self.slow_click_rename.emit(self._rename_pending_item, 0)
-            self._rename_pending_item = None
-
-
-class SortableTreeWidgetItem(QTreeWidgetItem):
-    """QTreeWidgetItem that sorts the Size column numerically using stored byte values."""
-
-    def __lt__(self, other: QTreeWidgetItem) -> bool:
-        column = self.treeWidget().sortColumn() if self.treeWidget() else 0
-        if column == 1:
-            # Sort by raw byte value stored in UserRole
-            self_bytes = self.data(1, Qt.ItemDataRole.UserRole) or -1
-            other_bytes = other.data(1, Qt.ItemDataRole.UserRole) or -1
-            return self_bytes < other_bytes
-        # Default: case-insensitive alphabetical sort for Name column
-        return self.text(column).lower() < other.text(column).lower()
-
-
-class LoadingSpinner(QWidget):
-    """A modern spinning arc loading indicator, centered over the parent widget."""
-
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setVisible(False)
-
-        self._angle = 0
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._rotate)
-
-        # Spinner appearance
-        self._arc_length = 270  # degrees
-        self._line_width = 3
-        self._spinner_size = 32
-        self._color = QColor(0, 120, 215)  # Blue accent
-
-    def start(self) -> None:
-        """Show spinner and start animation."""
-        self._angle = 0
-        self.setVisible(True)
-        self._timer.start(16)  # ~60fps
-        self.raise_()
-
-    def stop(self) -> None:
-        """Hide spinner and stop animation."""
-        self._timer.stop()
-        self.setVisible(False)
-
-    def _rotate(self) -> None:
-        self._angle = (self._angle + 6) % 360
-        self.update()
-
-    def paintEvent(self, event: QPaintEvent) -> None:
-        if not self.isVisible():
-            return
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Center the spinner
-        cx = self.width() // 2
-        cy = self.height() // 2
-        half = self._spinner_size // 2
-
-        rect = QRectF(cx - half, cy - half, self._spinner_size, self._spinner_size)
-
-        # Draw spinning arc
-        pen = QPen(
-            self._color,
-            self._line_width,
-            Qt.PenStyle.SolidLine,
-            Qt.PenCapStyle.RoundCap,
-        )
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-
-        # Qt uses 1/16th of a degree for arc angles
-        start_angle = self._angle * 16
-        span_angle = self._arc_length * 16
-        painter.drawArc(rect, start_angle, span_angle)
-
-        painter.end()
-
-
-class DirectoryLoader(QObject):
-    """Background worker that loads directory entries via SFTP or local filesystem."""
-
-    finished = Signal(list)  # list of (entry, icon_hint, size_str, size_bytes)
-    batch_ready = Signal(list)  # partial results for progressive loading
-    error = Signal(str)
-
-    def __init__(
-        self,
-        path: str,
-        is_remote: bool,
-        sftp: Optional[SFTPClient],
-        settings: Settings,
-        parent: Optional[QObject] = None,
-    ) -> None:
-        super().__init__(parent)
-        self.path = path
-        self.is_remote = is_remote
-        self.sftp = sftp
-        self.settings = settings
-
-    def run(self) -> None:
-        """Load directory entries."""
-        try:
-            if self.is_remote:
-                if not self.sftp:
-                    self.error.emit("SFTP connection not available")
-                    return
-
-                # Use listdir_attr to get names + sizes in one call
-                # (avoids per-file stat calls, critical for ADB performance)
-                if hasattr(self.sftp, "listdir_attr"):
-                    # Check if streaming is available (ADB)
-                    if hasattr(self.sftp, "listdir_attr_stream"):
-                        all_results = []
-                        for batch in self.sftp.listdir_attr_stream(  # type: ignore
-                            self.path, batch_size=50
-                        ):
-                            batch_results = []
-                            for attr in batch:
-                                if (
-                                    attr.filename.startswith(".")
-                                    or attr.filename.startswith("._")
-                                    or attr.filename in self.settings.skip_files
-                                    or (
-                                        self.settings.config.hide_nfo_files
-                                        and attr.filename.endswith(".nfo")
-                                    )
-                                ):
-                                    continue
-                                is_dir = (
-                                    S_ISDIR(attr.st_mode) if attr.st_mode else False
-                                )
-                                size_bytes = -1 if is_dir else (attr.st_size or 0)
-                                size_str = (
-                                    self._format_size(size_bytes)
-                                    if size_bytes >= 0
-                                    else "—"
-                                )
-                                batch_results.append(
-                                    (attr.filename, is_dir, size_str, size_bytes)
-                                )
-                            if batch_results:
-                                self.batch_ready.emit(batch_results)
-                                all_results.extend(batch_results)
-
-                        # Sort final results and emit finished
-                        all_results.sort(key=lambda r: r[0].lower())
-                        self.finished.emit(all_results)
-                        return
-
-                    # Non-streaming fallback (Paramiko SFTP)
-                    attrs = self.sftp.listdir_attr(self.path)
-                    filtered = [
-                        a
-                        for a in attrs
-                        if not (
-                            a.filename.startswith(".")
-                            or a.filename.startswith("._")
-                            or a.filename in self.settings.skip_files
-                            or (
-                                self.settings.config.hide_nfo_files
-                                and a.filename.endswith(".nfo")
-                            )
-                        )
-                    ]
-                    filtered.sort(key=lambda a: a.filename.lower())
-
-                    results = []
-                    for attr in filtered:
-                        is_dir = S_ISDIR(attr.st_mode) if attr.st_mode else False
-                        size_bytes = -1 if is_dir else (attr.st_size or 0)
-                        size_str = (
-                            self._format_size(size_bytes) if size_bytes >= 0 else "—"
-                        )
-                        results.append((attr.filename, is_dir, size_str, size_bytes))
-
-                    self.finished.emit(results)
-                    return
-
-                # Fallback: listdir + individual stat calls
-                entries = self.sftp.listdir(self.path)
-            else:
-                entries = os.listdir(self.path)
-
-            filtered = [
-                e
-                for e in entries
-                if not (
-                    e.startswith(".")
-                    or e.startswith("._")
-                    or e in self.settings.skip_files
-                    or (self.settings.config.hide_nfo_files and e.endswith(".nfo"))
-                )
-            ]
-            filtered.sort(key=lambda s: s.lower())
-
-            results = []
-            for entry in filtered:
-                full_path = os.path.join(self.path, entry)
-                is_dir = self._check_is_dir(full_path)
-                size_bytes = self._get_size_bytes(full_path, is_dir)
-                size_str = self._format_size(size_bytes) if size_bytes >= 0 else "—"
-                results.append((entry, is_dir, size_str, size_bytes))
-
-            self.finished.emit(results)
-
-        except Exception as e:
-            self.error.emit(str(e))
-
-    def _check_is_dir(self, path: str) -> bool:
-        try:
-            if self.is_remote:
-                if not self.sftp:
-                    return False
-                st = self.sftp.stat(path)
-                if st.st_mode is None:
-                    return False
-                return S_ISDIR(st.st_mode)
-            return os.path.isdir(path)
-        except Exception:
-            return False
-
-    def _get_size_bytes(self, path: str, is_dir: bool) -> int:
-        try:
-            if self.is_remote:
-                if is_dir:
-                    return -1
-                if not self.sftp:
-                    return -1
-                st = self.sftp.stat(path)
-                return st.st_size if st.st_size is not None else -1
-            else:
-                if is_dir:
-                    return self._get_local_dir_size(path)
-                return os.path.getsize(path)
-        except Exception:
-            return -1
-
-    def _get_local_dir_size(self, path: str) -> int:
-        total = 0
-        try:
-            for dirpath, _, filenames in os.walk(path):
-                for filename in filenames:
-                    filepath = os.path.join(dirpath, filename)
-                    if os.path.exists(filepath):
-                        total += os.path.getsize(filepath)
-        except Exception:
-            pass
-        return total
-
-    def _format_size(self, size_bytes: int) -> str:
-        if size_bytes < 0:
-            return "—"
-        if size_bytes < 1024:
-            return f"{size_bytes} B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f} KB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f} MB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
-
-
-class _ConvertWorker(QObject):
-    """Background worker for remote ffmpeg video conversion."""
-
-    finished = Signal()
-    error = Signal(str)
-    progress = Signal(int)
-
-    def __init__(
-        self,
-        host: str,
-        username: str,
-        key_path: str,
-        port: int,
-        remote_path: str,
-        video_codec: str = "libx264",
-        preset: str = "fast",
-        crf: int = 18,
-        audio_args: str = "-c:a aac -b:a 128k",
-        container: str = "mp4",
-    ) -> None:
-        super().__init__()
-        self.host = host
-        self.username = username
-        self.key_path = key_path
-        self.port = port
-        self.remote_path = remote_path
-        self.video_codec = video_codec
-        self.preset = preset
-        self.crf = crf
-        self.audio_args = audio_args
-        self.container = container
-
-    def run(self) -> None:
-        try:
-            from paramiko import AutoAddPolicy, SSHClient
-
-            from src.services.ffmpeg_service import convert_video, replace_original
-
-            # Open a dedicated SSH connection for this conversion
-            # so it doesn't block the explorer's SFTP session
-            ssh = SSHClient()
-            ssh.set_missing_host_key_policy(AutoAddPolicy())
-            ssh.connect(
-                hostname=self.host,
-                username=self.username,
-                key_filename=self.key_path,
-                port=self.port,
-                timeout=TIMEOUT_SSH_CONNECT,
-            )
-
-            def progress_cb(pct: int) -> None:
-                self.progress.emit(pct)
-
-            try:
-                output_path = convert_video(
-                    ssh_client=ssh,
-                    remote_path=self.remote_path,
-                    preset=self.preset,
-                    crf=self.crf,
-                    video_codec=self.video_codec,
-                    audio_args=self.audio_args,
-                    container=self.container,
-                    progress_cb=progress_cb,
-                )
-                replace_original(ssh, self.remote_path, output_path)
-                self.finished.emit()
-            finally:
-                ssh.close()
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class FileExplorerWidget(QWidget):
@@ -579,6 +86,7 @@ class FileExplorerWidget(QWidget):
     files_delete_requested = Signal(list)  # [paths] for multi-delete
     file_download_requested = Signal(str)  # remote_path
     files_download_requested = Signal(list)  # [remote_paths]
+    batch_rename_requested = Signal(list)
     files_dropped = Signal(
         list, str
     )  # [local_paths], remote_dest_dir (or local dest dir)
@@ -588,6 +96,7 @@ class FileExplorerWidget(QWidget):
     items_move_requested = Signal(list)  # [(src_path, dest_path), ...]
     item_selected = Signal(str)
     remote_error = Signal(str)
+    remote_load_finished = Signal(bool)
 
     def __init__(
         self,
@@ -596,6 +105,7 @@ class FileExplorerWidget(QWidget):
         is_remote: bool = False,
         sftp: Optional[SFTPClient] = None,
         title: str = "Explorer",
+        history_service: Optional[ActivityHistoryService] = None,
     ) -> None:
         super().__init__()
 
@@ -604,25 +114,35 @@ class FileExplorerWidget(QWidget):
         self.is_remote: bool = is_remote
         self.sftp: Optional[SFTPClient] = sftp
         self.title: str = title
+        self.history: ActivityHistoryService = history_service or ActivityHistoryService(
+            settings=settings
+        )
+        self._media_tools_controller: MediaToolsController = MediaToolsController(
+            self, self.settings, self.history
+        )
 
         self.current_path: str = root_path
         self.drag_over: bool = False
         self._drop_target_item: Optional[QTreeWidgetItem] = None
 
         # Inline rename state
-        self._renaming_item: Optional[QTreeWidgetItem] = None
-        self._renaming_old_name: str = ""
         self._rename_in_progress: bool = False
-        self._rename_editor = None
 
         # Background loading state
         self._loader_thread: Optional[QThread] = None
         self._loader_worker: Optional[DirectoryLoader] = None
         self._sftp_background: Optional[SFTPClient] = None
+        self._detail_sftp: Optional[SFTPClient] = None
 
-        # Directory check cache (cleared on refresh) — reduces network calls
+        # Directory check cache (cleared on refresh): reduces network calls
         # during drag operations
         self._dir_cache: dict[str, bool] = {}
+        self._nfo_cache = NfoMetadataCacheService()
+        self._nfo_generation = 0
+        self._pending_nfo_names: list[str] = []
+        self._pending_nfo_request: Optional[tuple[str, list[str], int]] = None
+        self._nfo_thread: Optional[QThread] = None
+        self._nfo_worker: Optional[NfoCacheWorker] = None
 
         # ------------------------------------------------------------------
         # Layout
@@ -688,7 +208,7 @@ class FileExplorerWidget(QWidget):
 
         from src.widgets.detail_panel import DetailPanel
 
-        self._detail_panel = DetailPanel(self.settings)
+        self._detail_panel = DetailPanel(self)
         self._detail_visible = self.settings.config.__dict__.get(
             "show_detail_panel", False
         )
@@ -701,7 +221,7 @@ class FileExplorerWidget(QWidget):
         self._splitter.setSizes([600, 220])
         self._splitter.setHandleWidth(1)
 
-        # Hidden by default — toggle with ⌘I
+        # Hidden by default: toggle with ⌘I
         self._detail_panel.setVisible(self._detail_visible)
 
         layout.addWidget(self._splitter, stretch=1)  # stretch=1 fills available space
@@ -768,6 +288,9 @@ class FileExplorerWidget(QWidget):
             if self._disk_thread.isRunning():
                 self._disk_thread.quit()
                 self._disk_thread.wait(1000)
+        if self._nfo_thread and self._nfo_thread.isRunning():
+            self._nfo_thread.quit()
+            self._nfo_thread.wait(1000)
 
     def _update_breadcrumb(self) -> None:
         """Update bottom breadcrumb with clickable path segments."""
@@ -800,7 +323,7 @@ class FileExplorerWidget(QWidget):
         menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         if not item:
-            # No item selected — only show "New Folder"
+            # No item selected: only show "New Folder"
             new_folder_action = menu.addAction("📁 New Folder")
             action = menu.exec(self.tree_widget.mapToGlobal(position))
             if action == new_folder_action:
@@ -813,7 +336,7 @@ class FileExplorerWidget(QWidget):
 
         # Ensure the right-clicked item is part of the selection
         if item not in selected_items:
-            # User right-clicked outside selection — treat as single item
+            # User right-clicked outside selection: treat as single item
             selected_items = [item]
             is_multi = False
 
@@ -868,7 +391,7 @@ class FileExplorerWidget(QWidget):
         media_info_action = None
         edit_metadata_action = None
         quick_fix_action = None
-        if self.is_remote and self.sftp:
+        if self._supports_ssh_media_tools():
             from src.services.ffmpeg_service import is_video_file
 
             if is_video_file(entry):
@@ -930,14 +453,24 @@ class FileExplorerWidget(QWidget):
 
         # Batch metadata option (only for video files on SSH connections)
         batch_metadata_action = None
-        if self.is_remote and self.sftp:
+        batch_quick_fix_action = None
+        video_paths: list[str] = []
+        if self._supports_ssh_media_tools():
             from src.services.ffmpeg_service import is_video_file
 
-            video_paths = [p for p in paths if is_video_file(os.path.basename(p))]
+            video_paths = [
+                path
+                for item, path in zip(selected_items, paths)
+                if is_video_file(os.path.basename(path))
+                and not self._item_is_directory(item)
+            ]
             if video_paths:
                 menu.addSeparator()
                 batch_metadata_action = menu.addAction(
                     f"✏️ Edit Metadata ({len(video_paths)} videos)"
+                )
+                batch_quick_fix_action = menu.addAction(
+                    f"🔧 Quick Fix ({len(video_paths)} videos)"
                 )
 
         menu.addSeparator()
@@ -955,6 +488,8 @@ class FileExplorerWidget(QWidget):
             self.files_delete_requested.emit(paths)
         elif batch_metadata_action and action == batch_metadata_action:
             self._handle_batch_metadata(video_paths)
+        elif batch_quick_fix_action and action == batch_quick_fix_action:
+            self._quick_fix_videos(video_paths)
 
     def prompt_rename(self, old_path: str) -> Optional[str]:
         basename = os.path.basename(old_path)
@@ -1002,7 +537,7 @@ class FileExplorerWidget(QWidget):
             self.folder_create_requested.emit(new_folder_path)
 
     def _handle_move_item(self, src_path: str) -> None:
-        """Handle moving an item — show a folder picker dialog."""
+        """Handle moving an item: show a folder picker dialog."""
         from src.views.dialogs.folder_picker_dialog import show_move_dialog
 
         result = show_move_dialog(
@@ -1017,7 +552,7 @@ class FileExplorerWidget(QWidget):
             self.item_move_requested.emit(src, dest)
 
     def _handle_move_items(self, src_paths: List[str]) -> None:
-        """Handle moving multiple items — show a folder picker dialog."""
+        """Handle moving multiple items: show a folder picker dialog."""
         from src.views.dialogs.folder_picker_dialog import show_move_dialog
 
         result = show_move_dialog(
@@ -1031,21 +566,11 @@ class FileExplorerWidget(QWidget):
             self.items_move_requested.emit(result)
 
     def _handle_batch_rename(self, paths: List[str]) -> None:
-        """Handle batch rename — show find/replace dialog."""
-        from src.views.dialogs.batch_rename_dialog import execute_batch_rename
-
-        renamed = execute_batch_rename(
-            parent=self,
-            paths=paths,
-            is_remote=self.is_remote,
-            sftp=self.sftp,
-            settings=self.settings,
-        )
-        if renamed > 0:
-            self.refresh()
+        """Forward selected paths to the file operations controller."""
+        self.batch_rename_requested.emit(paths)
 
     def _handle_batch_metadata(self, video_paths: List[str]) -> None:
-        """Handle batch metadata edit — show dialog and write NFOs."""
+        """Handle batch metadata edit: show dialog and write NFOs."""
         from src.views.dialogs.batch_metadata_dialog import BatchMetadataDialog
 
         dialog = BatchMetadataDialog(
@@ -1057,353 +582,39 @@ class FileExplorerWidget(QWidget):
             self.refresh()
 
     def _handle_convert_video(self, remote_path: str, codec: str = "h264") -> None:
-        """Handle video conversion request — delegate to VideoConvertManager."""
-        if not hasattr(self, "_convert_manager"):
-            from src.widgets.video_convert_manager import VideoConvertManager
-
-            self._convert_manager = VideoConvertManager(self, self.settings)
-
-        self._convert_manager.request_conversion(remote_path, self.sftp, codec=codec)
+        """Queue a conversion through the media tools controller."""
+        self._media_tools_controller.handle_convert_video(remote_path, codec)
 
     def _show_convert_settings(self) -> None:
-        """Show the video conversion settings dialog."""
-        from src.views.dialogs.convert_settings_dialog import ConvertSettingsDialog
-
-        dialog = ConvertSettingsDialog(self)
-        dialog.exec()
+        """Show conversion preferences through the media tools controller."""
+        self._media_tools_controller.show_convert_settings()
 
     def _show_media_info(self, remote_path: str, open_tab: str = "info") -> None:
-        """Show video metadata via ffprobe and allow editing tags."""
-        import json
-        import shlex
-
-        from src.views.dialogs.media_info_dialog import MediaInfoDialog
-
-        if not self.sftp:
-            return
-
-        try:
-            channel = self.sftp.get_channel()
-            if not channel:
-                return
-            transport = channel.get_transport()
-            if not transport:
-                return
-
-            # Run ffprobe to get full metadata
-            cmd = (
-                f"ffprobe -v quiet -print_format json -show_format -show_streams "
-                f"{shlex.quote(remote_path)}"
-            )
-            session = transport.open_session()
-            session.exec_command(cmd)
-
-            output = b""
-            while True:
-                chunk = session.recv(4096)
-                if not chunk:
-                    break
-                output += chunk
-            session.close()
-
-            raw_json = output.decode("utf-8", errors="ignore").strip()
-            if not raw_json:
-                logger.warn("Media Info: ffprobe returned no output")
-                return
-
-            probe_data = json.loads(raw_json)
-
-            # Read existing NFO sidecar if it exists
-            nfo_path = os.path.splitext(remote_path)[0] + ".nfo"
-            nfo_data: dict = {}
-            try:
-                sess = transport.open_session()
-                sess.exec_command(f"cat {shlex.quote(nfo_path)} 2>/dev/null")
-                nfo_content = b""
-                while True:
-                    chunk = sess.recv(4096)
-                    if not chunk:
-                        break
-                    nfo_content += chunk
-                sess.close()
-                if nfo_content.strip():
-                    import xml.etree.ElementTree as ET
-
-                    root = ET.fromstring(nfo_content.decode("utf-8", errors="ignore"))
-                    for elem in root:
-                        if elem.text:
-                            key = elem.tag.lower()
-                            if key in nfo_data and key == "genre":
-                                nfo_data[key] += ";" + elem.text.strip()
-                            else:
-                                nfo_data[key] = elem.text.strip()
-            except Exception:
-                pass  # No NFO or can't read
-
-            # Show the dialog
-            dialog = MediaInfoDialog(
-                remote_path=remote_path,
-                probe_data=probe_data,
-                nfo_data=nfo_data,
-                sftp=self.sftp,
-                parent=self,
-                open_tab=open_tab,
-            )
-            dialog.exec()
-
-            # If dialog was accepted (NFO saved), add NFO to tree if needed
-            if dialog.result() == MediaInfoDialog.DialogCode.Accepted:
-                nfo_filename = os.path.basename(nfo_path)
-                if not self.settings.config.hide_nfo_files:
-                    exists = False
-                    for i in range(self.tree_widget.topLevelItemCount()):
-                        if self.tree_widget.topLevelItem(i).text(0) == nfo_filename:
-                            exists = True
-                            break
-                    if not exists:
-                        from src.widgets.file_explorer_widget import (
-                            SortableTreeWidgetItem,
-                            _get_file_icon,
-                        )
-
-                        item = SortableTreeWidgetItem([nfo_filename, ""])
-                        item.setIcon(0, _get_file_icon(False, nfo_filename))
-                        self.tree_widget.addTopLevelItem(item)
-
-        except Exception as e:
-            logger.error(f"Media Info: Failed to get metadata: {e}")
-
-    def _probe_subtitle_tracks(self, remote_path: str) -> list:
-        """Probe subtitle streams from a remote video file via ffprobe."""
-        import json
-        import shlex
-
-        from src.views.dialogs.quick_fix_dialog import SubtitleTrack
-
-        try:
-            channel = self.sftp.get_channel()
-            if not channel or not channel.get_transport():
-                return []
-            transport = channel.get_transport()
-
-            cmd = (
-                f"ffprobe -v quiet -print_format json -show_streams "
-                f"-select_streams s {shlex.quote(remote_path)}"
-            )
-            session = transport.open_session()
-            session.exec_command(cmd)
-
-            output = b""
-            while True:
-                chunk = session.recv(4096)
-                if not chunk:
-                    break
-                output += chunk
-            session.close()
-
-            if not output.strip():
-                return []
-
-            data = json.loads(output.decode("utf-8", errors="replace"))
-            streams = data.get("streams", [])
-
-            tracks = []
-            for i, stream in enumerate(streams):
-                lang = stream.get("tags", {}).get("language", "und")
-                codec = stream.get("codec_name", "unknown")
-                title = stream.get("tags", {}).get("title", "")
-                tracks.append(
-                    SubtitleTrack(
-                        index=i,
-                        language=lang,
-                        codec=codec,
-                        title=title,
-                    )
-                )
-            return tracks
-        except Exception:
-            return []
+        """Show metadata for a remote video."""
+        self._media_tools_controller.show_media_info(remote_path, open_tab)
 
     def _quick_fix_video(self, remote_path: str) -> None:
-        """Show Quick Fix dialog and apply selected fixes on a background thread."""
-        import shlex
+        """Show quick fix options and run the selected repair."""
+        self._media_tools_controller.quick_fix_video(remote_path)
 
-        from PySide6.QtCore import QObject, QThread, Signal
-        from PySide6.QtWidgets import QMessageBox
+    def _quick_fix_videos(self, remote_paths: list[str]) -> None:
+        """Apply shared container or timestamp fixes to selected videos."""
+        self._media_tools_controller.quick_fix_videos(remote_paths)
 
-        from src.views.dialogs.quick_fix_dialog import (
-            QuickFixDialog,
-        )
+    def _supports_ssh_media_tools(self) -> bool:
+        """Return whether the current remote connection supports SSH commands."""
+        if not self.is_remote or not self.sftp:
+            return False
+        from src.clients.adb_client import ADBClient
+        from src.clients.ios_client import IOSClient
 
-        if not self.sftp:
-            return
+        return not isinstance(self.sftp, (ADBClient, IOSClient))
 
-        filename = os.path.basename(remote_path)
-        ext = os.path.splitext(remote_path)[1]
-
-        # Probe subtitle tracks from the file
-        subtitle_tracks = self._probe_subtitle_tracks(remote_path)
-
-        dialog = QuickFixDialog(self, filename, ext, subtitle_tracks=subtitle_tracks)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        opts = dialog.options
-
-        try:
-            channel = self.sftp.get_channel()
-            if not channel or not channel.get_transport():
-                QMessageBox.warning(self, "Error", "No SSH connection available.")
-                return
-            transport = channel.get_transport()
-        except Exception:
-            return
-
-        # Determine output extension
-        base = os.path.splitext(remote_path)[0]
-        out_ext = ".mp4" if opts.to_mp4 else ext
-
-        # Build ffmpeg command
-        tmp_path = f"{base}_fixed{out_ext}"
-        cmd_parts = ["ffmpeg", "-y"]
-
-        if opts.fix_timestamps:
-            cmd_parts.extend(["-fflags", "+genpts"])
-
-        cmd_parts.extend(["-i", shlex.quote(remote_path)])
-
-        # Stream mapping for selective subtitle removal
-        if opts.keep_subtitle_indices is not None:
-            cmd_parts.extend(["-map", "0:v", "-map", "0:a"])
-            for sub_idx in opts.keep_subtitle_indices:
-                cmd_parts.extend(["-map", f"0:s:{sub_idx}"])
-            cmd_parts.extend(["-c", "copy"])
-        elif opts.strip_subtitles:
-            cmd_parts.extend(["-c", "copy", "-sn"])
-        else:
-            cmd_parts.extend(["-c", "copy"])
-
-        if opts.to_mp4:
-            cmd_parts.extend(["-movflags", "+faststart"])
-
-        cmd_parts.append(shlex.quote(tmp_path))
-        cmd_parts.append("2>/dev/null")
-
-        cmd = " ".join(cmd_parts)
-
-        # Build replace command
-        if out_ext.lower() != ext.lower():
-            final_path = f"{base}{out_ext}"
-            full_cmd = (
-                f"{cmd} && rm -f {shlex.quote(remote_path)} "
-                f"&& mv {shlex.quote(tmp_path)} {shlex.quote(final_path)}"
-            )
-        else:
-            full_cmd = f"{cmd} && mv {shlex.quote(tmp_path)} {shlex.quote(remote_path)}"
-
-        # Build action description
-        actions = []
-        if opts.to_mp4:
-            actions.append("container → MP4")
-        if opts.fix_timestamps:
-            actions.append("fix timestamps")
-        if opts.keep_subtitle_indices is not None:
-            kept = len(opts.keep_subtitle_indices)
-            total = len(subtitle_tracks)
-            actions.append(f"keep {kept}/{total} subs")
-        elif opts.strip_subtitles:
-            actions.append("remove subs")
-        actions_str = ", ".join(actions)
-
-        # Add to activity queue
-        main_window = self.window()
-        queue_index = -1
-        if hasattr(main_window, "transfer_queue"):
-            queue_index = main_window.transfer_queue.add_transfer(
-                f"🔧 {filename}", 0, os.path.dirname(remote_path)
-            )
-            main_window.transfer_queue.set_in_progress(queue_index)
-
-        logger.info(f"Quick Fix: {filename} ({actions_str})")
-
-        # Run on background thread to avoid blocking UI
-        class _QuickFixWorker(QObject):
-            done = Signal()  # Emitted when work is complete
-
-            def __init__(self, transport_ref, command):
-                super().__init__()
-                self._transport = transport_ref
-                self._command = command
-                self.exit_code = -1
-                self.error_msg = ""
-
-            def run(self):
-                try:
-                    session = self._transport.open_session()
-                    session.exec_command(self._command)
-                    self.exit_code = session.recv_exit_status()
-                    session.close()
-                except Exception as e:
-                    self.error_msg = str(e)
-                self.done.emit()
-
-        thread = QThread()
-        worker = _QuickFixWorker(transport, full_cmd)
-        worker.moveToThread(thread)
-
-        # Store references to prevent garbage collection
-        if not hasattr(self, "_quick_fix_threads"):
-            self._quick_fix_threads = []
-        self._quick_fix_threads.append((thread, worker))
-
-        def on_thread_finished():
-            """Runs on main thread after thread stops. Safe to touch UI."""
-            if worker.error_msg:
-                logger.error(f"Quick Fix error: {worker.error_msg}")
-                if hasattr(main_window, "transfer_queue") and queue_index >= 0:
-                    main_window.transfer_queue.set_failed(
-                        queue_index, worker.error_msg[:80]
-                    )
-            elif worker.exit_code == 0:
-                logger.success(f"Quick Fix complete: {filename}")
-                if hasattr(main_window, "transfer_queue") and queue_index >= 0:
-                    main_window.transfer_queue.set_completed(queue_index)
-                from src.services.activity_history_service import (
-                    ActivityHistoryService,
-                )
-
-                history = ActivityHistoryService()
-                history.add(
-                    filename=filename,
-                    action="convert",
-                    source=remote_path,
-                    destination=remote_path,
-                    server_name=self.settings.config.current_server_id,
-                )
-                self.refresh()
-            else:
-                logger.error(f"Quick Fix failed: exit code {worker.exit_code}")
-                if hasattr(main_window, "transfer_queue") and queue_index >= 0:
-                    main_window.transfer_queue.set_failed(
-                        queue_index,
-                        f"ffmpeg exit code {worker.exit_code}",
-                    )
-            # Clean up references
-            if hasattr(self, "_quick_fix_threads"):
-                try:
-                    self._quick_fix_threads.remove((thread, worker))
-                except ValueError:
-                    pass
-            worker.deleteLater()
-            thread.deleteLater()
-
-        # Signal flow: thread.started → worker.run → worker.done → thread.quit
-        # Then: thread.finished → on_thread_finished (main thread, safe for UI)
-        thread.started.connect(worker.run)
-        worker.done.connect(thread.quit)
-        thread.finished.connect(on_thread_finished)
-
-        thread.start()
+    @staticmethod
+    def _item_is_directory(item: QTreeWidgetItem) -> bool:
+        """Check the directory marker stored on a remote tree entry."""
+        size_bytes = item.data(1, Qt.ItemDataRole.UserRole)
+        return size_bytes is not None and size_bytes < 0
 
     # ------------------------------------------------------------------
     #  Core Refresh / Navigation
@@ -1411,6 +622,11 @@ class FileExplorerWidget(QWidget):
     def refresh(self, path: Optional[str] = None) -> None:
         if path is not None:
             self.current_path = path
+
+        if self.is_remote:
+            self._nfo_generation += 1
+            self._pending_nfo_names = []
+            self._nfo_cache.begin_directory(self.current_path)
 
         self.tree_widget.clear()
         self._dir_cache.clear()
@@ -1432,22 +648,23 @@ class FileExplorerWidget(QWidget):
         if not self.sftp:
             return
 
-        # Cancel any existing load — wait for it to finish to avoid
+        # Cancel any existing load: wait for it to finish to avoid
         # overlapping SFTP calls on the same channel (causes freezes)
         if self._loader_thread is not None:
             if self._loader_thread.isRunning():
                 try:
                     self._loader_worker.finished.disconnect()  # type: ignore
                     self._loader_worker.error.disconnect()  # type: ignore
+                    self._loader_worker.nfo_files_found.disconnect()  # type: ignore
                     if hasattr(self._loader_worker, "batch_ready"):
                         self._loader_worker.batch_ready.disconnect()  # type: ignore
                 except (RuntimeError, TypeError):
                     pass
                 self._loader_thread.quit()
-                # Wait briefly — if SFTP call is in-flight, let it finish
+                # Wait briefly: if SFTP call is in-flight, let it finish
                 self._loader_thread.wait(500)
                 if self._loader_thread.isRunning():
-                    # Still running — detach and let it die on its own
+                    # Still running: detach and let it die on its own
                     self._loader_thread.finished.connect(
                         self._loader_thread.deleteLater
                     )
@@ -1476,12 +693,14 @@ class FileExplorerWidget(QWidget):
             sftp=self._sftp_background
             or self.sftp,  # Use dedicated channel if available
             settings=self.settings,
+            generation=self._nfo_generation,
         )
         self._loader_worker.moveToThread(self._loader_thread)
 
         # Connect signals
         self._loader_thread.started.connect(self._loader_worker.run)
         self._loader_worker.batch_ready.connect(self._on_batch_ready)
+        self._loader_worker.nfo_files_found.connect(self._on_nfo_files_found)
         self._loader_worker.finished.connect(self._on_load_finished)
         self._loader_worker.error.connect(self._on_load_error)
         self._loader_worker.finished.connect(self._loader_thread.quit)
@@ -1507,6 +726,16 @@ class FileExplorerWidget(QWidget):
             item.setToolTip(1, tooltip)
             self.tree_widget.addTopLevelItem(item)
 
+    def _on_nfo_files_found(
+        self, directory: str, generation: int, names: list[str]
+    ) -> None:
+        """Keep the sidecar names from the current directory listing."""
+        if generation != self._nfo_generation or directory != self.current_path:
+            return
+        self._pending_nfo_names = [
+            name for name in names if name.lower().endswith(".nfo")
+        ]
+
     def _on_load_finished(self, results: list) -> None:
         """Handle background load completion."""
         self._spinner.stop()
@@ -1515,7 +744,7 @@ class FileExplorerWidget(QWidget):
         # Re-enable sorting now that all items are loaded
         self.tree_widget.setSortingEnabled(True)
 
-        # If batches were used, tree is already populated — just sort and update
+        # If batches were used, tree is already populated: just sort and update
         if self.tree_widget.topLevelItemCount() > 0 and results:
             # Re-sort after all items are in
             self.tree_widget.sortItems(
@@ -1528,9 +757,12 @@ class FileExplorerWidget(QWidget):
                     self._get_disk_usage()
                 except Exception:
                     pass
+            if self.is_remote:
+                self._start_nfo_cache_prefetch()
+                self.remote_load_finished.emit(True)
             return
 
-        # Non-streaming path (SSH/local) — clear and rebuild
+        # Non-streaming path (SSH/local): clear and rebuild
         self.tree_widget.clear()
 
         self._update_breadcrumb()
@@ -1555,6 +787,103 @@ class FileExplorerWidget(QWidget):
             item.setToolTip(1, tooltip)
             self.tree_widget.addTopLevelItem(item)
 
+        if self.is_remote:
+            self._start_nfo_cache_prefetch()
+            self.remote_load_finished.emit(True)
+
+    def _start_nfo_cache_prefetch(self) -> None:
+        """Load all listed sidecars in the background after a folder opens."""
+        directory = self.current_path
+        names = list(self._pending_nfo_names)
+        generation = self._nfo_generation
+        if (
+            not names
+            or not self._detail_sftp
+            or not callable(getattr(self._detail_sftp, "open", None))
+        ):
+            self._pending_nfo_request = None
+            self._nfo_cache.replace_directory(directory, {})
+            self._refresh_selected_detail_from_cache(directory)
+            return
+
+        request = (directory, names, generation)
+        if self._nfo_thread and self._nfo_thread.isRunning():
+            self._pending_nfo_request = request
+            return
+        self._launch_nfo_cache_worker(*request)
+
+    def _launch_nfo_cache_worker(
+        self, directory: str, names: list[str], generation: int
+    ) -> None:
+        """Start the serialized NFO reader on the dedicated metadata channel."""
+        if not self._detail_sftp:
+            self._nfo_cache.replace_directory(directory, {})
+            return
+
+        self._nfo_thread = QThread(self)
+        self._nfo_worker = NfoCacheWorker(
+            self._detail_sftp, directory, names, generation
+        )
+        self._nfo_worker.moveToThread(self._nfo_thread)
+        self._nfo_thread.started.connect(self._nfo_worker.run)
+        self._nfo_worker.loaded.connect(self._on_nfo_cache_loaded)
+        self._nfo_worker.loaded.connect(self._nfo_thread.quit)
+        self._nfo_thread.finished.connect(self._nfo_worker.deleteLater)
+        self._nfo_thread.finished.connect(self._on_nfo_cache_thread_finished)
+        self._nfo_thread.start()
+
+    def _on_nfo_cache_loaded(
+        self, directory: str, generation: int, metadata_by_path: dict
+    ) -> None:
+        """Publish preloaded values and update the selected detail panel."""
+        if generation != self._nfo_generation:
+            return
+        self._nfo_cache.replace_directory(directory, metadata_by_path)
+        self._refresh_selected_detail_from_cache(directory)
+
+    def _on_nfo_cache_thread_finished(self) -> None:
+        """Clean up the reader thread and start the newest pending folder load."""
+        if self._nfo_thread:
+            self._nfo_thread.deleteLater()
+        self._nfo_worker = None
+        self._nfo_thread = None
+        request = self._pending_nfo_request
+        self._pending_nfo_request = None
+        if request and request[2] == self._nfo_generation:
+            self._launch_nfo_cache_worker(*request)
+
+    def _refresh_selected_detail_from_cache(self, directory: str) -> None:
+        """Render cached metadata for the selected file once the folder is ready."""
+        path = getattr(self, "_pending_detail_path", "")
+        if (
+            not self._detail_visible
+            or not path
+            or getattr(self, "_pending_detail_is_dir", False)
+            or posixpath.dirname(posixpath.normpath(path.replace("\\", "/")))
+            != posixpath.normpath(directory.replace("\\", "/"))
+        ):
+            return
+        metadata = self._nfo_cache.get_for_video(path)
+        if metadata is None:
+            return
+        size_str = getattr(self, "_pending_detail_size", "")
+        if self._detail_panel.show_file(path, size_str) and self._detail_sftp:
+            self._media_tools_controller.load_detail_info(
+                self._detail_panel, self._detail_sftp, path, metadata
+            )
+        else:
+            self._detail_panel.show_metadata(metadata)
+
+    def invalidate_nfo_cache(self, nfo_path: str) -> None:
+        """Reload sidecars after an NFO is written by a metadata dialog."""
+        if not self.is_remote or not self._nfo_cache.invalidate_file(nfo_path):
+            return
+        name = os.path.basename(nfo_path)
+        if name not in self._pending_nfo_names:
+            self._pending_nfo_names.append(name)
+        self._nfo_generation += 1
+        self._start_nfo_cache_prefetch()
+
     def _on_load_error(self, error_msg: str) -> None:
         """Handle background load error."""
         self._spinner.stop()
@@ -1565,10 +894,12 @@ class FileExplorerWidget(QWidget):
         self.tree_widget.addTopLevelItem(error_item)
 
         if self.is_remote:
+            self.remote_load_finished.emit(False)
             self._reset_remote_state_after_failure(error_msg)
 
     def _load_local(self) -> None:
         """Load local directory synchronously (fast)."""
+        self.back_btn.setEnabled(True)
         try:
             entries = os.listdir(self.current_path)
 
@@ -1587,8 +918,8 @@ class FileExplorerWidget(QWidget):
             for entry in filtered_entries:
                 full_path = os.path.join(self.current_path, entry)
                 icon = self._get_icon(full_path)
-                size_str = self._get_size_string(full_path)
                 size_bytes = self._get_size_bytes(full_path)
+                size_str = format_bytes(size_bytes)
 
                 item = SortableTreeWidgetItem([entry, size_str])
                 item.setIcon(0, icon)
@@ -1612,6 +943,10 @@ class FileExplorerWidget(QWidget):
         """
         # Reset UI path to root (don't call listdir again here)
         self.current_path = self.root_path
+        self._nfo_generation += 1
+        self._nfo_cache.clear()
+        self._pending_nfo_names = []
+        self._pending_nfo_request = None
         self._update_breadcrumb()
 
         # Drop the dead client (important: prevents repeated "Socket is closed")
@@ -1655,9 +990,15 @@ class FileExplorerWidget(QWidget):
 
     def set_sftp(self, sftp: Optional[SFTPClient]) -> None:
         self.sftp = sftp
-        # Detail panel gets the metadata channel if available (from connection manager)
-        # Falls back to the main sftp if not (ADB/iOS connections)
-        self._detail_panel.set_sftp(sftp)
+        self._detail_sftp = sftp
+        self._nfo_generation += 1
+        self._nfo_cache.clear()
+        self._pending_nfo_names = []
+        self._pending_nfo_request = None
+
+    def set_sftp_metadata(self, sftp: Optional[SFTPClient]) -> None:
+        """Set the dedicated SFTP channel used for detail metadata."""
+        self._detail_sftp = sftp
 
     def set_sftp_background(self, sftp: Optional[SFTPClient]) -> None:
         """Set dedicated SFTP channel for background operations (dir loading, disk usage)."""
@@ -1666,6 +1007,9 @@ class FileExplorerWidget(QWidget):
     def _on_item_selected(self) -> None:
         items = self.tree_widget.selectedItems()
         if not items:
+            self._pending_detail_path = ""
+            if hasattr(self, "_detail_timer"):
+                self._detail_timer.stop()
             self.item_selected.emit("")
             self._detail_panel.clear()
             return
@@ -1674,6 +1018,11 @@ class FileExplorerWidget(QWidget):
         entry = item.text(0)  # Get name from first column
         full_path = os.path.join(self.current_path, entry)
         self.item_selected.emit(full_path)
+        if self.is_remote:
+            size_data = item.data(1, Qt.ItemDataRole.UserRole)
+            self._pending_detail_is_dir = size_data is not None and size_data < 0
+        else:
+            self._pending_detail_is_dir = os.path.isdir(full_path)
 
         # Debounce detail panel: wait 300ms before fetching
         # (avoids wasting network calls when scrolling through files)
@@ -1690,7 +1039,7 @@ class FileExplorerWidget(QWidget):
             self._detail_timer.start(300)
 
     def _update_detail_panel(self) -> None:
-        """Called after 300ms debounce — show detail panel for selected file."""
+        """Called after 300ms debounce: show detail panel for selected file."""
         path = getattr(self, "_pending_detail_path", "")
         size_str = getattr(self, "_pending_detail_size", "")
         if not path:
@@ -1698,25 +1047,20 @@ class FileExplorerWidget(QWidget):
 
         entry = os.path.basename(path)
 
-        # Skip folders entirely (no network calls)
-        is_dir = False
-        if self.is_remote:
-            # Check from tree item data or cache
-            size_data = None
-            for i in range(self.tree_widget.topLevelItemCount()):
-                it = self.tree_widget.topLevelItem(i)
-                if it and it.text(0) == entry:
-                    size_data = it.data(1, Qt.ItemDataRole.UserRole)
-                    break
-            is_dir = size_data is not None and size_data < 0
-        else:
-            is_dir = os.path.isdir(path)
-
-        if is_dir:
+        if getattr(self, "_pending_detail_is_dir", False):
             # Just show folder name, no network calls
             self._detail_panel.show_folder(entry)
         else:
-            self._detail_panel.show_file(path, size_str)
+            if self._detail_panel.show_file(path, size_str):
+                metadata = self._nfo_cache.get_for_video(path)
+                if metadata is None:
+                    self._detail_panel.clear_metadata()
+                elif self._detail_sftp:
+                    self._media_tools_controller.load_detail_info(
+                        self._detail_panel, self._detail_sftp, path, metadata
+                    )
+                else:
+                    self._detail_panel.show_metadata(metadata)
 
     def show_search(self) -> None:
         """Focus the search bar."""
@@ -1762,7 +1106,7 @@ class FileExplorerWidget(QWidget):
         query = text.lower().strip()
 
         if not query:
-            # No filter — show normal directory listing
+            # No filter: show normal directory listing
             for i in range(self.tree_widget.topLevelItemCount()):
                 self.tree_widget.topLevelItem(i).setHidden(False)  # type: ignore
             # If we were showing search results, refresh to restore normal view
@@ -1771,7 +1115,7 @@ class FileExplorerWidget(QWidget):
                 self.refresh()
             return
 
-        # Recursive search — run in background for remote
+        # Recursive search: run in background for remote
         self._is_searching = True
         if self.is_remote and self.sftp:
             self._run_recursive_search(query)
@@ -1859,11 +1203,9 @@ class FileExplorerWidget(QWidget):
                     rel = os.path.relpath(full_path, self.current_path)
                     is_dir = os.path.isdir(full_path)
                     size_str = (
-                        "—" if is_dir else self._format_size(os.path.getsize(full_path))
+                        format_bytes(-1 if is_dir else os.path.getsize(full_path))
                     )
                     results.append((rel, is_dir, size_str))
-
-        from src.widgets.file_explorer_widget import SortableTreeWidgetItem
 
         for rel_path, is_dir, size_str in results:
             icon = _get_file_icon(is_dir, rel_path)
@@ -1887,6 +1229,7 @@ class FileExplorerWidget(QWidget):
                 is_remote=self.is_remote,
                 sftp=self.sftp,
                 get_current_path=lambda: self.current_path,
+                history_service=self.history,
             )
 
         self._rename_editor_widget._is_remote = self.is_remote
@@ -1923,35 +1266,6 @@ class FileExplorerWidget(QWidget):
         except Exception:
             return _get_file_icon(False, os.path.basename(path))
 
-    def _get_size_string(self, path: str) -> str:
-        """
-        Get human-readable size string for a file or directory.
-        For remote: only show file sizes (directories show "—" for speed)
-        For local: calculate directory sizes
-        """
-        try:
-            if self.is_remote:
-                if not self.sftp:
-                    return "—"
-
-                # For remote, only show file sizes (not directory sizes for performance)
-                if self._is_remote_directory(path):
-                    return "—"  # Skip directory size calculation for speed
-                else:
-                    st = self.sftp.stat(path)
-                    if st.st_size is None:
-                        return "—"
-                    return self._format_size(st.st_size)
-            else:
-                # Local: show both file and directory sizes
-                if os.path.isdir(path):
-                    size_bytes = self._get_local_dir_size(path)
-                else:
-                    size_bytes = os.path.getsize(path)
-                return self._format_size(size_bytes)
-        except Exception:
-            return "—"
-
     def _get_size_bytes(self, path: str) -> int:
         """
         Get raw size in bytes for sorting purposes.
@@ -1961,40 +1275,15 @@ class FileExplorerWidget(QWidget):
             if self.is_remote:
                 if not self.sftp:
                     return -1
-                if self._is_remote_directory(path):
+                stat_result = self.sftp.stat(path)
+                if stat_result.st_mode is not None and S_ISDIR(stat_result.st_mode):
                     return -1
-                st = self.sftp.stat(path)
-                return st.st_size if st.st_size is not None else -1
-            else:
-                if os.path.isdir(path):
-                    return self._get_local_dir_size(path)
-                return os.path.getsize(path)
+                return stat_result.st_size if stat_result.st_size is not None else -1
+            if os.path.isdir(path):
+                return get_directory_size(path)
+            return os.path.getsize(path)
         except Exception:
             return -1
-
-    def _format_size(self, size_bytes: int) -> str:
-        """Format bytes into human-readable string."""
-        if size_bytes < 1024:
-            return f"{size_bytes} B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f} KB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f} MB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
-
-    def _get_local_dir_size(self, path: str) -> int:
-        """Calculate total size of a local directory."""
-        total = 0
-        try:
-            for dirpath, dirnames, filenames in os.walk(path):
-                for filename in filenames:
-                    filepath = os.path.join(dirpath, filename)
-                    if os.path.exists(filepath):
-                        total += os.path.getsize(filepath)
-        except Exception:
-            pass
-        return total
 
     def _get_disk_usage(self) -> Optional[str]:
         """
@@ -2044,7 +1333,7 @@ class FileExplorerWidget(QWidget):
         percent = int(used_bytes * 100 / total_bytes)
         self._disk_bar.setValue(percent)
         self._disk_label.setText(
-            f"{self._format_size(used_bytes)} / {self._format_size(total_bytes)}"
+            f"{format_bytes(used_bytes)} / {format_bytes(total_bytes)}"
         )
         self._disk_bar_container.setVisible(True)
 
@@ -2204,7 +1493,7 @@ class FileExplorerWidget(QWidget):
             self.update()
             return
 
-        # External drop (from Finder/desktop) — always drop into current directory
+        # External drop (from Finder/desktop): always drop into current directory
         if not event.mimeData().hasUrls():
             self.drag_over = False
             self._clear_drop_highlight()
@@ -2230,7 +1519,7 @@ class FileExplorerWidget(QWidget):
         if self.is_remote:
             dest_dir = self.current_path
             # Use the highlighted drop target (set during dragMoveEvent)
-            # rather than recalculating — this matches what the user sees
+            # rather than recalculating: this matches what the user sees
             if self._drop_target_item:
                 entry = self._drop_target_item.text(0)
                 target_path = os.path.join(self.current_path, entry)

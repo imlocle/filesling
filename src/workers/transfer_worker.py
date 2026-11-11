@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+import hashlib
 import os
-from typing import List, Optional
+import posixpath
+import shlex
+import tempfile
+import uuid
+from typing import BinaryIO, List, Optional
 
 from paramiko import SFTPClient
 from PySide6.QtCore import QObject, Signal
 
+from src.clients.ssh_command_client import open_ssh_session
 from src.models.errors import (
     ConnectionLostError,
     FileUploadError,
     RemoteDirectoryError,
     TransferVerificationError,
 )
+from src.services.rclone_service import RcloneConfig, RcloneTransfer, is_rclone_available
 from src.services.rsync_service import RsyncConfig, RsyncTransfer, is_rsync_available
+from src.utils.file_size import get_local_path_size
 from src.utils.logging_signal import logger
 
 
@@ -39,6 +47,7 @@ class TransferWorker(QObject):
         remote_root: str,
         total_bytes: int = 0,
         compress_folders: bool = False,
+        rclone_config: Optional[RcloneConfig] = None,
         rsync_config: Optional[RsyncConfig] = None,
         parent: Optional[QObject] = None,
     ) -> None:
@@ -49,7 +58,9 @@ class TransferWorker(QObject):
         self._total_bytes = total_bytes
         self._cumulative_bytes = 0
         self._compress_folders = compress_folders
+        self._rclone_config = rclone_config
         self._rsync_config = rsync_config
+        self._active_rclone: Optional[RcloneTransfer] = None
         self._active_rsync: Optional[RsyncTransfer] = None
 
     # ----------------------------
@@ -89,10 +100,78 @@ class TransferWorker(QObject):
                         )
                     raise
 
+    @staticmethod
+    def _hash_stream(stream: BinaryIO) -> str:
+        digest = hashlib.sha256()
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        return digest.hexdigest()
+
+    def _remote_sha256(self, remote_path: str) -> str:
+        """Hash a remote file without loading it all into memory."""
+        # Ask SSH servers and Android devices to hash the file in place. This
+        # avoids downloading large media files a second time just for verification.
+        try:
+            if callable(getattr(self.sftp, "get_channel", None)):
+                channel = self.sftp.get_channel()
+                transport = channel.get_transport() if channel else None
+                if transport and transport.is_active():
+                    for command in (
+                        f"sha256sum -- {shlex.quote(remote_path)}",
+                        f"shasum -a 256 -- {shlex.quote(remote_path)}",
+                    ):
+                        with open_ssh_session(transport, command) as session:
+                            output = session.makefile("r").read().strip()
+                            exit_code = session.recv_exit_status()
+                        if exit_code == 0:
+                            digest = output.split(maxsplit=1)[0].lower()
+                            if len(digest) == 64 and all(
+                                char in "0123456789abcdef" for char in digest
+                            ):
+                                return digest
+
+            from src.clients.adb_client import ADBClient
+
+            if isinstance(self.sftp, ADBClient):
+                return self.sftp.sha256(remote_path)
+        except Exception:
+            # Fall back to reading the file through its native client API.
+            pass
+
+        remote_open = getattr(self.sftp, "open", None)
+        remote_mode = "rb"
+        if not callable(remote_open):
+            afc = getattr(self.sftp, "_afc", None)
+            remote_open = getattr(afc, "open", None)
+            remote_mode = "r"
+
+        if callable(remote_open):
+            with remote_open(remote_path, remote_mode) as remote_file:
+                return self._hash_stream(remote_file)
+
+        # ADB exposes pull/get but no file stream API, so stage the read locally.
+        temp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix="filesling_verify_", delete=False
+            ) as f:
+                temp_path = f.name
+            self.sftp.get(remote_path, temp_path)
+            with open(temp_path, "rb") as remote_file:
+                return self._hash_stream(remote_file)
+        finally:
+            if temp_path:
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
     def _verify_upload(self, local_path: str, remote_path: str) -> bool:
         """
-        Verify file was uploaded successfully by comparing sizes.
-        Skipped for ADB connections (adb push handles its own verification).
+        Verify an upload by comparing SHA-256 content hashes.
 
         Args:
             local_path: Local file path
@@ -104,23 +183,15 @@ class TransferWorker(QObject):
         Raises:
             TransferVerificationError: If verification fails
         """
-        # Skip verification for ADB — adb push validates internally
-        # and stat() may return 0 before filesystem syncs
-        from src.clients.adb_client import ADBClient
-
-        if isinstance(self.sftp, ADBClient):
-            return True
-
         try:
-            local_size = os.path.getsize(local_path)
-            remote_stat = self.sftp.stat(remote_path)
-            remote_size = remote_stat.st_size
-
-            if local_size != remote_size:
+            with open(local_path, "rb") as local_file:
+                local_hash = self._hash_stream(local_file)
+            remote_hash = self._remote_sha256(remote_path)
+            if local_hash != remote_hash:
                 raise TransferVerificationError(
-                    "File size mismatch after upload",
+                    "File contents differ after upload",
                     file_path=local_path,
-                    details=f"Local: {local_size} bytes, Remote: {remote_size} bytes",
+                    details=f"Local SHA-256: {local_hash}, Remote SHA-256: {remote_hash}",
                 )
 
             return True
@@ -135,8 +206,9 @@ class TransferWorker(QObject):
         """
         Upload a single file with verification and resume support.
 
-        If a partial file exists on the remote with the same size, skip it.
-        This enables effective resume after interrupted transfers.
+        Upload to a temporary remote file, verify its contents, then replace the
+        destination. A same-sized destination is skipped only when its checksum
+        matches the local file.
 
         Args:
             local_path: Local file path
@@ -163,19 +235,23 @@ class TransferWorker(QObject):
                 "Cannot access local file", file_path=local_path, details=str(e)
             )
 
-        # Resume support: check if file already exists with correct size
+        # Skip only an exact content match, never a same-size file alone.
         try:
-            remote_stat = self.sftp.stat(remote_file)
-            if remote_stat.st_size == size_bytes:
-                # File already fully uploaded — skip
+            self.sftp.stat(remote_file)
+            if self._verify_upload(local_path, remote_file):
                 self._cumulative_bytes += size_bytes
                 if self._total_bytes > 0:
                     overall_pct = int(self._cumulative_bytes * 100 / self._total_bytes)
                     self.progress.emit(min(overall_pct, 100))
                 logger.info(f"Skipped (already uploaded): {filename}")
                 return
-        except (IOError, OSError):
-            pass  # File doesn't exist — proceed with upload
+        except (IOError, OSError, TransferVerificationError):
+            pass  # File doesn't exist: proceed with upload
+
+        temp_file = os.path.join(
+            target_dir,
+            f".filesling-{uuid.uuid4().hex}.part",
+        ).replace("\\", "/")
 
         # progress callback
         def progress_callback(transferred: int, total: int) -> None:
@@ -194,10 +270,55 @@ class TransferWorker(QObject):
         logger.progress_signal.emit(0)
 
         try:
-            self.sftp.put(local_path, remote_file, callback=progress_callback)
+            self.sftp.put(local_path, temp_file, callback=progress_callback)
 
             # Verify upload
-            self._verify_upload(local_path, remote_file)
+            self._verify_upload(local_path, temp_file)
+
+            # Install only after verification. Keep the prior destination as a
+            # rollback file on clients without the SFTP posix-rename extension.
+            try:
+                self.sftp.stat(remote_file)
+                target_exists = True
+            except (IOError, OSError):
+                target_exists = False
+
+            committed = False
+            if target_exists and callable(getattr(self.sftp, "posix_rename", None)):
+                try:
+                    self.sftp.posix_rename(temp_file, remote_file)
+                    committed = True
+                except Exception as rename_error:
+                    logger.info(
+                        f"Transfer: Atomic SFTP replace unavailable for {filename}: "
+                        f"{rename_error}"
+                    )
+
+            if target_exists and not committed:
+                backup_file = os.path.join(
+                    target_dir, f".filesling-{uuid.uuid4().hex}.backup"
+                ).replace("\\", "/")
+                self.sftp.rename(remote_file, backup_file)
+                try:
+                    self.sftp.rename(temp_file, remote_file)
+                except Exception:
+                    try:
+                        self.sftp.rename(backup_file, remote_file)
+                    except Exception as rollback_error:
+                        logger.error(
+                            f"Transfer: Could not restore previous {filename}: "
+                            f"{rollback_error}"
+                        )
+                    raise
+                try:
+                    self.sftp.remove(backup_file)
+                except Exception as cleanup_error:
+                    logger.warn(
+                        f"Transfer: Replaced {filename}, but could not remove "
+                        f"its backup: {cleanup_error}"
+                    )
+            elif not target_exists:
+                self.sftp.rename(temp_file, remote_file)
 
             # Add this file's size to cumulative total
             self._cumulative_bytes += size_bytes
@@ -208,13 +329,17 @@ class TransferWorker(QObject):
             logger.error(f"Manual: {filename}: Verification failed")
             # Try to remove incomplete file
             try:
-                self.sftp.remove(remote_file)
+                self.sftp.remove(temp_file)
             except Exception:
                 pass
             raise FileUploadError(
                 "Upload verification failed", file_path=local_path, details=str(e)
             )
         except IOError as e:
+            try:
+                self.sftp.remove(temp_file)
+            except Exception:
+                pass
             error_str = str(e).lower()
             if "socket is closed" in error_str or "not open" in error_str:
                 raise ConnectionLostError(
@@ -230,6 +355,10 @@ class TransferWorker(QObject):
                 "Failed to upload file", file_path=local_path, details=str(e)
             )
         except Exception as e:
+            try:
+                self.sftp.remove(temp_file)
+            except Exception:
+                pass
             raise FileUploadError(
                 "Unexpected error during upload", file_path=local_path, details=str(e)
             )
@@ -253,8 +382,6 @@ class TransferWorker(QObject):
 
         for root, _, files in os.walk(local_folder):
             for f in files:
-                if f.startswith(".") or f.startswith("._"):
-                    continue
                 local_file = os.path.join(root, f)
                 rel = os.path.relpath(local_file, local_folder)
                 remote_dir = os.path.dirname(
@@ -280,7 +407,7 @@ class TransferWorker(QObject):
         try:
             # Create zip archive
             archive_path = shutil.make_archive(zip_path, "zip", local_folder)
-            # Use local variable for zip progress — don't overwrite _total_bytes
+            # Use local variable for zip progress: don't overwrite _total_bytes
             # which tracks the overall transfer across all items.
             zip_size = os.path.getsize(archive_path)
             original_total = self._total_bytes
@@ -332,11 +459,78 @@ class TransferWorker(QObject):
         self._active_rsync = transfer
         transfer.run(progress_cb=progress_cb)
 
+    def _verify_rclone_upload(self, local_path: str, remote_path: str) -> None:
+        """Verify rclone output through the existing SHA-256 upload checks."""
+        if os.path.isdir(local_path):
+            for root, _, filenames in os.walk(local_path):
+                relative_root = os.path.relpath(root, local_path)
+                remote_dir = (
+                    remote_path
+                    if relative_root == "."
+                    else posixpath.join(remote_path, relative_root.replace("\\", "/"))
+                )
+                for filename in filenames:
+                    source = os.path.join(root, filename)
+                    destination = posixpath.join(remote_dir, filename)
+                    self._verify_upload(source, destination)
+            return
+
+        self._verify_upload(local_path, remote_path)
+
+    def _upload_via_rclone(self) -> None:
+        """Upload each selected path with rclone, then verify every file."""
+        assert self._rclone_config is not None
+        total_bytes = self._total_bytes or sum(
+            get_local_path_size(path, include_hidden=True) for path in self.local_paths
+        )
+
+        for local_path in self.local_paths:
+            filename = os.path.basename(local_path.rstrip("/\\"))
+            remote_path = posixpath.join(self.remote_root, filename)
+            item_bytes = get_local_path_size(local_path, include_hidden=True)
+            transfer = RcloneTransfer(self._rclone_config)
+            self._active_rclone = transfer
+
+            def progress_callback(percent: int) -> None:
+                if total_bytes > 0:
+                    completed = self._cumulative_bytes + int(item_bytes * percent / 100)
+                    self.progress.emit(min(int(completed * 100 / total_bytes), 100))
+                else:
+                    self.progress.emit(percent)
+
+            transfer.run(local_path, remote_path, progress_callback)
+            self._verify_rclone_upload(local_path, remote_path)
+            self._cumulative_bytes += item_bytes
+            self._active_rclone = None
+
+        self.progress.emit(100)
+
     # ----------------------------
     #  Public entrypoint for QThread
     # ----------------------------
     def run(self) -> None:
         """Execute the transfer operation."""
+        use_rclone = (
+            self._rclone_config is not None
+            and not self._compress_folders
+            and is_rclone_available()
+        )
+        if use_rclone:
+            try:
+                self._upload_via_rclone()
+                self.finished.emit()
+                return
+            except Exception as error:
+                if self._active_rclone and self._active_rclone.cancelled:
+                    self.error.emit("Transfer cancelled by user")
+                    return
+                logger.warn(f"rclone failed, falling back to rsync or SFTP: {error}")
+                self._active_rclone = None
+                self._cumulative_bytes = 0
+                self.method_changed.emit(
+                    "rsync" if self._rsync_config and is_rsync_available() else "sftp"
+                )
+
         # Fast path: rsync for SSH key-based connections when available.
         # Compression-to-zip is a separate, mutually exclusive feature, so we
         # only use rsync when the user hasn't asked to zip folders first.
@@ -352,7 +546,7 @@ class TransferWorker(QObject):
                 self.finished.emit()
                 return
             except Exception as e:
-                # rsync failed — log and fall back to SFTP rather than failing
+                # rsync failed: log and fall back to SFTP rather than failing
                 logger.warn(f"rsync failed, falling back to SFTP: {e}")
                 self._cumulative_bytes = 0
                 self.method_changed.emit("sftp")

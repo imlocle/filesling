@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, List, Optional
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QThread, QTimer
 from PySide6.QtWidgets import QApplication, QDialog
 
 from src.config.settings import Settings
 from src.controllers.transfer_controller import ManualTransferController
+from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
 from src.services.sleep_inhibitor_service import SleepInhibitorService
 from src.utils.theme import apply_theme
@@ -39,10 +40,14 @@ class MainWindowController:
         self.view = view
         self.settings: Settings = view.settings
         self.connection_manager = connection_manager
+        self.activity_history = ActivityHistoryService(settings=self.settings)
 
         # Create specialized controllers
         self.manual_transfer = ManualTransferController(
-            self.settings, self.connection_manager, parent=view
+            self.settings,
+            self.connection_manager,
+            parent=view,
+            history_service=self.activity_history,
         )
 
         from src.controllers.connection_controller import ConnectionController
@@ -66,12 +71,21 @@ class MainWindowController:
         self.file_ops = FileOperationsController(
             view=view,
             settings=self.settings,
-            history=self.manual_transfer.history,
+            history=self.activity_history,
         )
 
         self._queue_signals_connected = False
+        self._jellyfin_refresh_timer = QTimer(view)
+        self._jellyfin_refresh_timer.setSingleShot(True)
+        self._jellyfin_refresh_timer.setInterval(2000)
+        self._jellyfin_refresh_timer.timeout.connect(self._start_jellyfin_refresh)
+        self._jellyfin_thread: Optional[QThread] = None
+        self._jellyfin_worker = None
+        self._jellyfin_refresh_pending = False
+        self._pending_jellyfin_server_id = ""
+        self._pending_jellyfin_override: Optional[bool] = None
 
-        # Sleep inhibitor — prevents macOS idle sleep during active work
+        # Sleep inhibitor: prevents macOS idle sleep during active work
         self._sleep_inhibitor = SleepInhibitorService()
 
         # Connect controller signals to UI updates
@@ -131,7 +145,7 @@ class MainWindowController:
     #  SIGNAL HANDLERS
     # --------------------------------------------------------------
     def _on_manual_transfer_started(self, path: str) -> None:
-        """Handle manual transfer started — mark current item as in-progress."""
+        """Handle manual transfer started: mark current item as in-progress."""
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
 
@@ -156,11 +170,11 @@ class MainWindowController:
         self._update_sleep_inhibitor()
 
     def _on_manual_transfer_completed(self, path: str) -> None:
-        """Handle manual transfer completed — mark item as done."""
+        """Handle manual transfer completed: mark item as done."""
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
             # Find the in-progress item and mark it complete.
-            # Don't rely solely on _current_queue_index — it can be stale.
+            # Don't rely solely on _current_queue_index: it can be stale.
             if self._current_queue_index >= 0:
                 if self._current_queue_index < len(queue._items):
                     queue.set_completed(self._current_queue_index)
@@ -172,6 +186,7 @@ class MainWindowController:
                         break
             self._current_queue_index = -1
         self.refresh_explorers()
+        self._queue_jellyfin_refresh()
 
         # Update dock badge
         self._update_dock_badge()
@@ -188,8 +203,111 @@ class MainWindowController:
                 sound=self.settings.config.notify_sound,
             )
 
+    def _queue_jellyfin_refresh(self) -> None:
+        """Debounce library scans while a batch of uploads is finishing."""
+        server_id = self.settings.config.current_server_id
+        server = self.settings.get_server(server_id) or {}
+        override = self._profile_jellyfin_override(server_id)
+        if not self._jellyfin_refresh_enabled(server, override):
+            return
+        self._pending_jellyfin_server_id = server_id
+        self._pending_jellyfin_override = override
+        if self._has_pending_transfers():
+            self._jellyfin_refresh_pending = True
+            return
+        if self._jellyfin_thread and self._jellyfin_thread.isRunning():
+            self._jellyfin_refresh_pending = True
+            return
+        self._jellyfin_refresh_pending = False
+        self._jellyfin_refresh_timer.start()
+
+    def _has_pending_transfers(self) -> bool:
+        queue = getattr(self.view, "transfer_queue", None)
+        return bool(
+            queue
+            and any(
+                item.status in (TransferStatus.PENDING, TransferStatus.IN_PROGRESS)
+                for item in queue._items
+            )
+        )
+
+    def _profile_jellyfin_override(self, server_id: str) -> Optional[bool]:
+        """Return an active profile override for this connection, if configured."""
+        profile_controller = getattr(self.view, "destination_profile_controller", None)
+        profile = (
+            profile_controller.get_active_profile() if profile_controller else None
+        )
+        if profile and profile.server_id == server_id:
+            return profile.refresh_jellyfin
+        return None
+
+    @staticmethod
+    def _jellyfin_refresh_enabled(
+        server: dict, override: Optional[bool]
+    ) -> bool:
+        """Resolve a profile override or fall back to the connection setting."""
+        if override is not None:
+            return override
+        return bool(server.get("jellyfin_enabled"))
+
+    def _start_jellyfin_refresh(self) -> None:
+        if self._has_pending_transfers():
+            self._jellyfin_refresh_pending = True
+            return
+        if self._jellyfin_thread and self._jellyfin_thread.isRunning():
+            self._jellyfin_refresh_pending = True
+            return
+
+        server_id = (
+            self._pending_jellyfin_server_id
+            or self.settings.config.current_server_id
+        )
+        server = self.settings.get_server(server_id) or {}
+        override = self._pending_jellyfin_override
+        self._pending_jellyfin_server_id = ""
+        self._pending_jellyfin_override = None
+        if not self._jellyfin_refresh_enabled(server, override):
+            return
+
+        server_url = str(server.get("jellyfin_url", "")).strip()
+        api_key = self.settings.get_server_secret(server_id, "jellyfin_api_key") or ""
+        if not server_url or not api_key:
+            logger.warn(
+                "Jellyfin: Add the server URL and API key in server settings to "
+                "enable library scans"
+            )
+            return
+
+        from src.workers.jellyfin_refresh_worker import JellyfinRefreshWorker
+
+        self._jellyfin_thread = QThread(self.view)
+        self._jellyfin_worker = JellyfinRefreshWorker(server_url, api_key)
+        self._jellyfin_worker.moveToThread(self._jellyfin_thread)
+        self._jellyfin_thread.started.connect(self._jellyfin_worker.run)
+        self._jellyfin_worker.error.connect(self._on_jellyfin_refresh_error)
+        self._jellyfin_worker.requested.connect(self._on_jellyfin_refresh_requested)
+        self._jellyfin_worker.done.connect(self._jellyfin_thread.quit)
+        self._jellyfin_thread.finished.connect(self._jellyfin_worker.deleteLater)
+        self._jellyfin_thread.finished.connect(self._on_jellyfin_refresh_finished)
+        self._jellyfin_thread.start()
+
+    def _on_jellyfin_refresh_requested(self) -> None:
+        logger.info("Jellyfin: Library scan requested")
+
+    def _on_jellyfin_refresh_error(self, message: str) -> None:
+        logger.warn(f"Jellyfin: {message}")
+
+    def _on_jellyfin_refresh_finished(self) -> None:
+        if self._jellyfin_thread:
+            self._jellyfin_thread.deleteLater()
+        self._jellyfin_worker = None
+        self._jellyfin_thread = None
+        if self._jellyfin_refresh_pending and not self._has_pending_transfers():
+            self._jellyfin_refresh_pending = False
+            self._jellyfin_refresh_timer.start(200)
+
     def _on_manual_transfer_failed(self, path: str, error: str) -> None:
-        """Handle manual transfer failed — mark item as failed."""
+        """Handle manual transfer failed: mark item as failed."""
         if hasattr(self.view, "transfer_queue"):
             queue = self.view.transfer_queue
             short_error = error.split("\n")[0][:80]
@@ -234,7 +352,7 @@ class MainWindowController:
                 queue._item_widgets[self._current_queue_index]._update_method_dot()
 
     def _on_queue_changed(self, total: int) -> None:
-        """Handle transfer queue size change — update dock badge."""
+        """Handle transfer queue size change: update dock badge."""
         self._update_dock_badge()
 
     def _on_cancel_transfer(self, pending_index: int) -> None:
@@ -376,7 +494,7 @@ class MainWindowController:
     def open_settings(self) -> None:
         settings_window = SettingsWindow(self.settings)
         if settings_window.exec() == QDialog.DialogCode.Accepted:
-            # Config is reloaded in-place by SettingsWindow — all references
+            # Config is reloaded in-place by SettingsWindow: all references
             # already point to the updated singleton. Just apply theme and refresh.
             app = QApplication.instance()
             if app:
@@ -390,3 +508,9 @@ class MainWindowController:
         """Clean shutdown of connections."""
         self._sleep_inhibitor.release()
         self.connection_ctrl.shutdown()
+        if self._jellyfin_thread and self._jellyfin_thread.isRunning():
+            self._jellyfin_thread.quit()
+            if not self._jellyfin_thread.wait(6000):
+                logger.warn("Jellyfin: Stopping background refresh during shutdown")
+                self._jellyfin_thread.terminate()
+                self._jellyfin_thread.wait(500)

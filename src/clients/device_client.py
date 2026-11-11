@@ -1,5 +1,5 @@
 """
-DeviceClient protocol — defines the interface for all device backends.
+DeviceClient protocol: defines the interface for all device backends.
 
 SFTPClient (Paramiko), ADBClient, and IOSClient all implement this interface.
 Using a Protocol allows type-safe duck typing without requiring inheritance.

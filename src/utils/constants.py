@@ -52,9 +52,12 @@ TIMEOUT_FFMPEG_INSTALL = 120
 MAX_CONNECTION_RETRIES = 3
 MAX_DOWNLOAD_RETRIES = 3
 MAX_UPLOAD_RETRIES = 3
+# Max consecutive auto-reconnect attempts before giving up (prevents an
+# endless reconnect/refresh loop when the server keeps dropping the socket).
+MAX_AUTO_RECONNECT_ATTEMPTS = 3
 MAX_PARALLEL_DOWNLOADS = 3
-MAX_DRAG_BYTES = 10 * 1024 * 1024  # 10 MB — files larger than this skip drag-to-Finder
-IOS_CHUNK_SIZE = 1024 * 1024  # 1 MB — iOS file streaming chunk size
+MAX_DRAG_BYTES = 10 * 1024 * 1024  # 10 MB: files larger than this skip drag-to-Finder
+IOS_CHUNK_SIZE = 1024 * 1024  # 1 MB: iOS file streaming chunk size
 
 # =============================================================================
 # Health Check
@@ -85,7 +88,7 @@ PLACEHOLDER_HOST = "192.168.1.100"
 PLACEHOLDER_USERNAME = "user"
 PLACEHOLDER_SSH_KEY = "~/.ssh/id_rsa"
 PLACEHOLDER_BASE_DIR = "/"
-PLACEHOLDER_NO_DEVICES = "No devices — plug in via USB"
+PLACEHOLDER_NO_DEVICES = "No devices: plug in via USB"
 
 # =============================================================================
 # Dialog Titles

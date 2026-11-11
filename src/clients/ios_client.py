@@ -5,18 +5,18 @@ Provides access to iPhone/iPad camera roll and media files over USB using
 Apple's AFC (Apple File Conduit) protocol via pymobiledevice3.
 
 This client mimics the SFTPClient interface so the file explorer, transfer
-workers, and download workers can use it without modification — same pattern
+workers, and download workers can use it without modification: same pattern
 as ADBClient.
 
 Requirements:
     pip install pymobiledevice3
 
 The AFC service exposes the device's Media folder (jailed), which includes:
-    /DCIM/          — Camera roll (all photos and videos)
-    /PhotoData/     — Photo library metadata
-    /Photos/        — Synced photos
-    /Downloads/     — Safari downloads
-    /iTunes_Control/ — Music (if synced via iTunes/Finder)
+    /DCIM/         : Camera roll (all photos and videos)
+    /PhotoData/    : Photo library metadata
+    /Photos/       : Synced photos
+    /Downloads/    : Safari downloads
+    /iTunes_Control/: Music (if synced via iTunes/Finder)
 
 The user must unlock the device and tap "Trust This Computer" on first connect.
 """

@@ -1,5 +1,5 @@
 """
-Search worker — recursively searches remote directories in the background.
+Search worker: recursively searches remote directories in the background.
 
 Extracted from FileExplorerWidget's inline class definition for testability.
 """
@@ -10,6 +10,8 @@ import os
 from stat import S_ISDIR
 
 from PySide6.QtCore import QObject, Signal
+
+from src.utils.file_size import format_bytes
 
 
 class SearchWorker(QObject):
@@ -55,22 +57,10 @@ class SearchWorker(QObject):
 
                 if self.query in name.lower():
                     rel = os.path.relpath(full_path, self.base_path)
-                    size_str = "—" if is_dir else self._fmt_size(attr.st_size or 0)
+                    size_str = format_bytes(-1 if is_dir else (attr.st_size or 0))
                     results.append((rel, is_dir, size_str))
 
                 if is_dir:
                     self._search_dir(full_path, results, depth + 1)
         except Exception:
             pass
-
-    @staticmethod
-    def _fmt_size(size_bytes: int) -> str:
-        """Format file size for display."""
-        if size_bytes < 1024:
-            return f"{size_bytes} B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f} KB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f} MB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"

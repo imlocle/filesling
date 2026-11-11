@@ -7,12 +7,12 @@ written as a Jellyfin-compatible .nfo file.
 
 Data sources (both accept IMDb IDs directly and require a free API key stored in
 settings, never in code):
-  - OMDb API (https://www.omdbapi.com/) — primary provider.
-  - TMDB API (https://www.themoviedb.org/) — fallback, used when OMDb has no
+  - OMDb API (https://www.omdbapi.com/): primary provider.
+  - TMDB API (https://www.themoviedb.org/): fallback, used when OMDb has no
     record for the ID (common for brand-new episodes). TMDB's community adds new
     titles quickly and its terms permit API use.
 
-We deliberately do NOT scrape imdb.com — that violates IMDb's terms of service,
+We deliberately do NOT scrape imdb.com: that violates IMDb's terms of service,
 is fragile, and the data is copyrighted.
 
 The fetch uses the standard-library urllib so no extra HTTP dependency is added
@@ -410,7 +410,7 @@ _TMDB_GENRE_CACHE: Dict[str, Dict[int, str]] = {}
 
 
 def _tmdb_genre_names(genre_ids: list, media_type: str, api_key: str) -> list:
-    """Resolve TMDB numeric genre ids to names (cached). Best-effort — [] on error."""
+    """Resolve TMDB numeric genre ids to names (cached). Best-effort: [] on error."""
     if not genre_ids:
         return []
     cache = _TMDB_GENRE_CACHE.get(media_type)
@@ -425,7 +425,7 @@ def _tmdb_genre_names(genre_ids: list, media_type: str, api_key: str) -> list:
 
 
 # =============================================================================
-# Orchestration — OMDb primary, TMDB fallback
+# Orchestration: OMDb primary, TMDB fallback
 # =============================================================================
 
 

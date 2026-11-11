@@ -6,7 +6,8 @@ from typing import Optional
 
 from paramiko import (
     AuthenticationException,
-    AutoAddPolicy,
+    BadHostKeyException,
+    RejectPolicy,
     SFTPClient,
     SSHClient,
     SSHException,
@@ -38,10 +39,17 @@ class ConnectionManagerService:
         self.sftp_background: Optional[SFTPClient] = (
             None  # Dedicated: dir listing, disk usage
         )
+        self.last_test_error: str = ""
 
-    def connect(self) -> bool:
+    def connect(self, should_cancel=None) -> bool:
         """
         Establishes SSH connection with retry logic.
+
+        Args:
+            should_cancel: Optional zero-arg callable returning True when the
+                caller (e.g. a worker thread being shut down) wants to abort.
+                Checked between retries so shutdown isn't blocked for the full
+                retry window.
 
         Returns:
             True if connection successful, False otherwise
@@ -54,9 +62,16 @@ class ConnectionManagerService:
         if self.ssh_client and self.sftp_client:
             return True
 
-        # Check auth method — password auth doesn't need SSH key
-        server_config = self.settings.get_server(self.settings.config.current_server_id)
-        use_password = bool(server_config and server_config.get("password"))
+        def _cancelled() -> bool:
+            try:
+                return bool(should_cancel and should_cancel())
+            except Exception:
+                return False
+
+        # Check auth method: password auth doesn't need SSH key
+        server_id = self.settings.config.current_server_id
+        password = self.settings.get_server_secret(server_id, "password")
+        use_password = bool(password)
 
         # Validate SSH key exists before attempting connection (key auth only)
         if not use_password and not os.path.exists(self.settings.ssh_key_path):
@@ -81,27 +96,40 @@ class ConnectionManagerService:
             except OSError as e:
                 logger.warn(f"Connection: Could not check SSH key permissions: {e}")
 
+        def _interruptible_sleep(seconds: float) -> None:
+            """Sleep in short slices so a cancel request is honored quickly."""
+            slept = 0.0
+            while slept < seconds:
+                if _cancelled():
+                    return
+                step = min(0.25, seconds - slept)
+                sleep(step)
+                slept += step
+
         retries = 0
         max_retries = MAX_CONNECTION_RETRIES
         last_error: Optional[Exception] = None
 
         while retries < max_retries:
+            # Bail out promptly if the caller (e.g. shutdown) requested cancel.
+            if _cancelled():
+                logger.info("Connection: Connect cancelled")
+                return False
             try:
                 self.ssh_client = SSHClient()
-                self.ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+                self.ssh_client.load_system_host_keys()
+                self.ssh_client.set_missing_host_key_policy(RejectPolicy())
 
                 # Determine auth method
-                server_config = self.settings.get_server(
-                    self.settings.config.current_server_id
-                )
-                password = server_config.get("password") if server_config else None
-                passphrase = (
-                    server_config.get("key_passphrase") if server_config else None
+                password = self.settings.get_server_secret(server_id, "password")
+                passphrase = self.settings.get_server_secret(
+                    server_id, "key_passphrase"
                 )
 
                 connect_kwargs = {
                     "hostname": self.settings.host,
                     "username": self.settings.username,
+                    "port": self.settings.ssh_port,
                     "timeout": TIMEOUT_SSH_CONNECT,
                 }
 
@@ -136,6 +164,22 @@ class ConnectionManagerService:
                 logger.success(f"Connected: {self.settings.host}")
                 return True
 
+            except BadHostKeyException as e:
+                if self.ssh_client:
+                    self.ssh_client.close()
+                self.ssh_client = None
+                self.sftp_client = None
+                self.sftp_metadata = None
+                self.sftp_background = None
+                raise SSHConnectionError(
+                    "SSH server identity changed",
+                    details=(
+                        f"The host key for {self.settings.host} does not match the "
+                        "saved key. Verify the server fingerprint before updating "
+                        "your known_hosts entry."
+                    ),
+                ) from e
+
             except AuthenticationException as e:
                 last_error = e
                 logger.error(
@@ -153,6 +197,20 @@ class ConnectionManagerService:
                 )
 
             except SSHException as e:
+                if "not found in known_hosts" in str(e).lower():
+                    if self.ssh_client:
+                        self.ssh_client.close()
+                    self.ssh_client = None
+                    self.sftp_client = None
+                    self.sftp_metadata = None
+                    self.sftp_background = None
+                    raise SSHConnectionError(
+                        "SSH server is not trusted",
+                        details=(
+                            f"Verify the fingerprint for {self.settings.host}, then "
+                            "add it to ~/.ssh/known_hosts with your system SSH client."
+                        ),
+                    ) from e
                 last_error = e
                 retries += 1
                 logger.error(
@@ -164,7 +222,7 @@ class ConnectionManagerService:
                 self.sftp_background = None
 
                 if retries < max_retries:
-                    sleep(TIMEOUT_SSH_RETRY_DELAY)
+                    _interruptible_sleep(TIMEOUT_SSH_RETRY_DELAY)
 
             except TimeoutError as e:
                 last_error = e
@@ -179,7 +237,7 @@ class ConnectionManagerService:
                 self.sftp_background = None
 
                 if retries < max_retries:
-                    sleep(TIMEOUT_SSH_RETRY_DELAY)
+                    _interruptible_sleep(TIMEOUT_SSH_RETRY_DELAY)
 
             except Exception as e:
                 last_error = e
@@ -191,7 +249,7 @@ class ConnectionManagerService:
                 self.sftp_background = None
 
                 if retries < max_retries:
-                    sleep(TIMEOUT_SSH_RETRY_DELAY)
+                    _interruptible_sleep(TIMEOUT_SSH_RETRY_DELAY)
 
         # All retries exhausted
         error_msg = (
@@ -275,16 +333,19 @@ class ConnectionManagerService:
         except Exception:
             return -1.0
 
-    def reconnect(self) -> bool:
+    def reconnect(self, should_cancel=None) -> bool:
         """
         Attempt to reconnect after a dropped connection.
+
+        Args:
+            should_cancel: Optional zero-arg callable to abort between retries.
 
         Returns:
             True if reconnection successful
         """
         self.disconnect()
         try:
-            return self.connect()
+            return self.connect(should_cancel=should_cancel)
         except Exception as e:
             logger.error(f"Connection: Reconnect failed: {e}")
             return False
@@ -319,12 +380,11 @@ class ConnectionManagerService:
             True if connection succeeds, False otherwise
         """
         test_ssh = None
+        self.last_test_error = ""
         try:
             # Determine auth method
-            server_config = self.settings.get_server(
-                self.settings.config.current_server_id
-            )
-            password = server_config.get("password") if server_config else None
+            server_id = self.settings.config.current_server_id
+            password = self.settings.get_server_secret(server_id, "password")
 
             # Validate SSH key exists (key auth only)
             if not password and not os.path.exists(self.settings.ssh_key_path):
@@ -332,19 +392,21 @@ class ConnectionManagerService:
                 return False
 
             test_ssh = SSHClient()
-            test_ssh.set_missing_host_key_policy(AutoAddPolicy())
+            test_ssh.load_system_host_keys()
+            test_ssh.set_missing_host_key_policy(RejectPolicy())
 
             connect_kwargs = {
                 "hostname": self.settings.host,
                 "username": self.settings.username,
+                "port": self.settings.ssh_port,
                 "timeout": TIMEOUT_SSH_CONNECT,
             }
             if password:
                 connect_kwargs["password"] = password
             else:
                 connect_kwargs["key_filename"] = self.settings.ssh_key_path
-                passphrase = (
-                    server_config.get("key_passphrase") if server_config else None
+                passphrase = self.settings.get_server_secret(
+                    server_id, "key_passphrase"
                 )
                 if passphrase:
                     connect_kwargs["passphrase"] = passphrase
@@ -353,14 +415,25 @@ class ConnectionManagerService:
             logger.success("Test: Connection successful")
             return True
         except AuthenticationException as e:
+            self.last_test_error = str(e)
             logger.error(f"Test: Authentication failed: {e}")
             return False
+        except BadHostKeyException as e:
+            self.last_test_error = str(e)
+            logger.error(f"Test: SSH server identity changed: {e}")
+            return False
+        except SSHException as e:
+            self.last_test_error = str(e)
+            logger.error(f"Test: SSH failed: {e}")
+            return False
         except TimeoutError:
+            self.last_test_error = "Connection timed out"
             logger.error(
                 f"Test: Connection timeout - server not reachable at {self.settings.host}"
             )
             return False
         except Exception as e:
+            self.last_test_error = str(e)
             logger.error(f"Test: Connection failed: {e}")
             return False
         finally:

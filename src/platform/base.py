@@ -1,5 +1,5 @@
 """
-Platform abstraction — base (no-op stubs).
+Platform abstraction: base (no-op stubs).
 
 Used as fallback on unsupported platforms (e.g., Linux without desktop integration).
 All functions are safe to call but do nothing.

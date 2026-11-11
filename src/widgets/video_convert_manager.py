@@ -1,5 +1,5 @@
 """
-Video convert manager — handles queuing and execution of remote ffmpeg conversions.
+Video convert manager: handles queuing and execution of remote ffmpeg conversions.
 
 Manages a sequential queue of video conversion jobs, each running on its own
 SSH connection to avoid blocking the explorer's SFTP session.
@@ -11,15 +11,19 @@ Inherits QObject so Qt can properly auto-detect cross-thread signal connections
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import QObject, QThread
 from PySide6.QtWidgets import QMessageBox, QWidget
 
 from src.config.settings import Settings
+from src.services.activity_history_service import ActivityHistoryService
 from src.utils.logging_signal import logger
-from src.widgets.file_explorer_widget import _ConvertWorker
+from src.workers.convert_worker import ConvertWorker
 from src.widgets.transfer_queue_widget import TransferStatus
+
+if TYPE_CHECKING:
+    from src.views.dialogs.convert_settings_dialog import ConvertSettings
 
 
 class VideoConvertManager(QObject):
@@ -30,15 +34,21 @@ class VideoConvertManager(QObject):
     Jobs are processed sequentially; the queue updates the transfer panel.
     """
 
-    def __init__(self, parent_widget: QWidget, settings: Settings) -> None:
+    def __init__(
+        self,
+        parent_widget: QWidget,
+        settings: Settings,
+        history_service: Optional[ActivityHistoryService] = None,
+    ) -> None:
         super().__init__(parent_widget)  # QObject parent = main thread affinity
         self._parent = parent_widget
         self._settings = settings
-        self._queue: list = []
+        self._history = history_service or ActivityHistoryService(settings=settings)
+        self._queue: list[tuple[str, int, ConvertSettings]] = []
         self._running = False
         self._current_index: int = -1
         self._thread: Optional[QThread] = None
-        self._worker: Optional[_ConvertWorker] = None
+        self._worker: Optional[ConvertWorker] = None
 
         # Listen for queue index shifts (when user clears completed items)
         main_window = parent_widget.window()
@@ -145,12 +155,20 @@ class VideoConvertManager(QObject):
         self._current_index = queue_index
 
         self._thread = QThread(self._parent)
-        self._worker = _ConvertWorker(
+        self._worker = ConvertWorker(
             host=self._settings.host,
             username=self._settings.username,
             key_path=self._settings.ssh_key_path,
             port=self._settings.ssh_port,
             remote_path=remote_path,
+            password=self._settings.get_server_secret(
+                self._settings.config.current_server_id, "password"
+            )
+            or "",
+            key_passphrase=self._settings.get_server_secret(
+                self._settings.config.current_server_id, "key_passphrase"
+            )
+            or "",
             video_codec=settings.ffmpeg_video_codec,
             preset=settings.preset,
             crf=settings.crf,
@@ -159,7 +177,7 @@ class VideoConvertManager(QObject):
         )
         self._worker.moveToThread(self._thread)
 
-        # No explicit QueuedConnection needed — Qt auto-detects because:
+        # No explicit QueuedConnection needed: Qt auto-detects because:
         # - self (receiver) is a QObject living on the main thread
         # - self._worker (sender) is a QObject on the worker thread
         # Qt uses AutoConnection which becomes QueuedConnection across threads.
@@ -202,10 +220,7 @@ class VideoConvertManager(QObject):
 
         if self._worker:
             remote_path = self._worker.remote_path
-            from src.services.activity_history_service import ActivityHistoryService
-
-            history = ActivityHistoryService()
-            history.add(
+            self._history.add(
                 filename=os.path.basename(remote_path),
                 action="convert",
                 source=remote_path,
@@ -258,5 +273,5 @@ class VideoConvertManager(QObject):
             ):
                 self._current_index = i
                 return
-        # Not found — item was somehow removed; reset
+        # Not found: item was somehow removed; reset
         self._current_index = -1

@@ -1,5 +1,5 @@
 """
-File operations controller — handles remote/local CRUD operations.
+File operations controller: handles remote/local CRUD operations.
 
 Handles:
 - Delete (single and batch, remote and local)
@@ -15,11 +15,12 @@ import shutil
 from typing import TYPE_CHECKING, List
 
 from paramiko import SFTPClient
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from src.config.settings import Settings
 from src.models.errors import ConnectionLostError, FileDeletionError
 from src.services.activity_history_service import ActivityHistoryService
+from src.services.batch_rename_service import BatchRenameService
 from src.utils.constants import (
     DIALOG_CONNECTION_LOST,
     DIALOG_CREATION_FAILED,
@@ -288,6 +289,39 @@ class FileOperationsController:
             if item and item.text(0) == basename:
                 explorer._start_inline_rename(item, 0)
                 return
+
+    def rename_multiple_items(self, paths: list[str]) -> None:
+        """Show batch rename options, delegate file changes to the service."""
+        if not paths:
+            return
+
+        from src.views.dialogs.batch_rename_dialog import BatchRenameDialog
+
+        explorer = self.view.remote_explorer
+        dialog = BatchRenameDialog(explorer, paths)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.find_text:
+            return
+
+        if explorer.is_remote and explorer.sftp is None:
+            QMessageBox.warning(
+                explorer,
+                "Rename Failed",
+                "Connection lost: no files were renamed.",
+                QMessageBox.StandardButton.Ok,
+            )
+            return
+
+        result = BatchRenameService(self.history).rename_paths(
+            paths,
+            dialog.find_text,
+            dialog.replace_text,
+            is_remote=explorer.is_remote,
+            sftp=explorer.sftp,
+            server_name=self.settings.config.current_server_id,
+        )
+        if result.renamed_count:
+            logger.success(f"Batch rename: {result.renamed_count} files renamed")
+            explorer.refresh()
 
     # ------------------------------------------------------------------
     # MOVE

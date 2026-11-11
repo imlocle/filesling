@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# Default settings — H.264, fast preset, CRF 22 (good quality, reasonable size),
+# Default settings: H.264, fast preset, CRF 22 (good quality, reasonable size),
 # copy audio (fastest, keeps original quality). This works for everything:
 # Jellyfin/Plex streaming, web playback, mobile devices, NAS storage.
 DEFAULT_SETTINGS = {
@@ -95,11 +95,11 @@ class ConvertSettingsDialog(QDialog):
         codec_label = QLabel("Video Codec")
         codec_label.setToolTip(
             "The compression format used to encode the video.\n\n"
-            "• H.264 — Plays everywhere (TVs, phones, browsers, Plex/Jellyfin).\n"
+            "• H.264: Plays everywhere (TVs, phones, browsers, Plex/Jellyfin).\n"
             "  Best choice if you're unsure.\n\n"
-            "• H.265 — Same quality at ~40% smaller file size, but slower to encode.\n"
+            "• H.265: Same quality at ~40% smaller file size, but slower to encode.\n"
             "  Some older devices can't play it.\n\n"
-            "• VP9 — Open-source alternative. Good for web hosting (YouTube uses it).\n"
+            "• VP9: Open-source alternative. Good for web hosting (YouTube uses it).\n"
             "  Not great for TV/media server playback."
         )
         layout.addWidget(codec_label)
@@ -123,9 +123,9 @@ class ConvertSettingsDialog(QDialog):
             "The video QUALITY stays the same (controlled by CRF below).\n"
             "This only affects how long encoding takes and how efficiently\n"
             "the file is compressed.\n\n"
-            "• Fast — Good default. ~2x realtime on modern hardware.\n"
-            "• Medium — ~30% smaller file than Fast, takes 2-3x longer.\n"
-            "• Slow — Diminishing returns. Only worth it for archival."
+            "• Fast: Good default. ~2x realtime on modern hardware.\n"
+            "• Medium: ~30% smaller file than Fast, takes 2-3x longer.\n"
+            "• Slow: Diminishing returns. Only worth it for archival."
         )
         layout.addWidget(preset_label)
         self._preset_combo = QComboBox()
@@ -143,13 +143,13 @@ class ConvertSettingsDialog(QDialog):
         # --- CRF (quality) ---
         crf_label = QLabel("Quality (CRF)")
         crf_label.setToolTip(
-            "Constant Rate Factor — controls visual quality.\n\n"
+            "Constant Rate Factor: controls visual quality.\n\n"
             "Lower number = better quality, bigger file.\n"
             "Higher number = worse quality, smaller file.\n\n"
-            "• 18 — Visually lossless. Can't tell from original.\n"
-            "• 22 — Excellent quality. Recommended default.\n"
-            "• 26 — Good quality. Noticeable on close inspection.\n"
-            "• 30+ — Visible compression artifacts.\n\n"
+            "• 18: Visually lossless. Can't tell from original.\n"
+            "• 22: Excellent quality. Recommended default.\n"
+            "• 26: Good quality. Noticeable on close inspection.\n"
+            "• 30+: Visible compression artifacts.\n\n"
             "For H.265, the same CRF gives better quality than H.264\n"
             "(so CRF 28 in H.265 ≈ CRF 22 in H.264)."
         )
@@ -174,12 +174,12 @@ class ConvertSettingsDialog(QDialog):
         audio_label = QLabel("Audio")
         audio_label.setToolTip(
             "How to handle the audio track.\n\n"
-            "• Copy — Keeps the original audio untouched (fastest).\n"
+            "• Copy: Keeps the original audio untouched (fastest).\n"
             "  Use this unless you have a reason to re-encode.\n\n"
-            "• AAC — Re-encodes audio to AAC format.\n"
+            "• AAC: Re-encodes audio to AAC format.\n"
             "  Useful if the original uses an uncommon codec (DTS, FLAC)\n"
             "  that your player doesn't support.\n\n"
-            "• No audio — Strips the audio track entirely."
+            "• No audio: Strips the audio track entirely."
         )
         layout.addWidget(audio_label)
         self._audio_combo = QComboBox()
@@ -196,9 +196,9 @@ class ConvertSettingsDialog(QDialog):
         self._bitrate_label = QLabel("Audio Bitrate")
         self._bitrate_label.setToolTip(
             "The bitrate for re-encoded audio (AAC).\n\n"
-            "• 128k — Standard quality. Fine for most content.\n"
-            "• 192k — High quality. Good for music-heavy content.\n"
-            "• 256k+ — Overkill for most video, but sounds great."
+            "• 128k: Standard quality. Fine for most content.\n"
+            "• 192k: High quality. Good for music-heavy content.\n"
+            "• 256k+: Overkill for most video, but sounds great."
         )
         layout.addWidget(self._bitrate_label)
         self._bitrate_combo = QComboBox()
@@ -216,10 +216,10 @@ class ConvertSettingsDialog(QDialog):
         container_label = QLabel("Output Container")
         container_label.setToolTip(
             "The file format that wraps the video and audio streams.\n\n"
-            "• MP4 — Universal. Plays on everything.\n"
-            "• MKV — Supports more codecs and subtitle formats.\n"
+            "• MP4: Universal. Plays on everything.\n"
+            "• MKV: Supports more codecs and subtitle formats.\n"
             "  Great for media servers, but some TVs can't play it directly.\n"
-            "• WebM — For VP9 codec. Used on the web."
+            "• WebM: For VP9 codec. Used on the web."
         )
         layout.addWidget(container_label)
         self._container_combo = QComboBox()

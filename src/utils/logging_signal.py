@@ -12,7 +12,7 @@ from src.utils.constants import (
     MAX_ERROR_LOG_ENTRIES,
 )
 
-# Logs directory — stored alongside config in the app data directory
+# Logs directory: stored alongside config in the app data directory
 _LOGS_DIR = str(APP_DATA_DIR / LOGS_DIR_NAME)
 
 

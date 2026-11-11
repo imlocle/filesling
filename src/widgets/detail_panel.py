@@ -1,14 +1,13 @@
 """
-Detail panel — shows file metadata when a file is selected in the explorer.
+Detail panel: shows file metadata when a file is selected in the explorer.
 
-Reads .nfo sidecar files (instant) and optionally runs ffprobe for
-video stream info. Designed to be fast — no image previews or downloads.
+Reads .nfo sidecar files and requests ffprobe stream info. Designed to be fast:
+no image previews or downloads.
 """
 
 from __future__ import annotations
 
 import os
-import shlex
 from typing import Optional
 
 from PySide6.QtCore import Qt
@@ -20,7 +19,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.config.settings import Settings
 
 
 class DetailPanel(QWidget):
@@ -29,15 +27,12 @@ class DetailPanel(QWidget):
 
     Shows:
     - File name, size, type
-    - NFO metadata (title, show, season, genre) — instant from .nfo file
-    - Video/audio stream info — from ffprobe (background thread)
+    - NFO metadata (title, show, season, genre): loaded from the .nfo sidecar
+    - Video/audio stream info: from ffprobe on the metadata channel
     """
 
-    def __init__(self, settings: Settings, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self._settings = settings
-        self._sftp: object = None
-        self._current_path: str = ""
 
         self.setMinimumWidth(180)
         self.setMaximumWidth(280)
@@ -67,7 +62,7 @@ class DetailPanel(QWidget):
         sep1.setObjectName("separator")
         layout.addWidget(sep1)
 
-        # Metadata (from NFO) — shown first since it's instant
+        # Metadata (from NFO): shown first since it's instant
         self._meta_header = QLabel("Metadata")
         meta_font = QFont()
         meta_font.setWeight(QFont.Weight.Medium)
@@ -86,7 +81,7 @@ class DetailPanel(QWidget):
         layout.addWidget(sep2)
         self._sep2 = sep2
 
-        # Stream info (from ffprobe) — loads async, appears after metadata
+        # Stream info (from ffprobe): appears after metadata
         self._stream_label = QLabel("")
         self._stream_label.setWordWrap(True)
         self._stream_label.setStyleSheet("font-size: 11px;")
@@ -102,19 +97,13 @@ class DetailPanel(QWidget):
 
         self._show_empty()
 
-    def set_sftp(self, sftp: object) -> None:
-        """Update the SFTP client reference."""
-        self._sftp = sftp
-
-    def show_file(self, remote_path: str, file_size_str: str = "") -> None:
-        """Show details for the selected file."""
+    def show_file(self, remote_path: str, file_size_str: str = "") -> bool:
+        """Show basic file details and return whether it is a video."""
         from src.services.ffmpeg_service import is_video_file
 
-        self._current_path = remote_path
         filename = os.path.basename(remote_path)
         ext = os.path.splitext(filename)[1].lower()
 
-        # Show name and basic info
         self._name_label.setText(filename)
         self._name_label.setVisible(True)
 
@@ -122,31 +111,13 @@ class DetailPanel(QWidget):
         if file_size_str:
             info_parts.append(file_size_str)
         if ext:
-            type_name = ext.lstrip(".").upper()
-            info_parts.append(f"{type_name} file")
+            info_parts.append(f"{ext.lstrip('.').upper()} file")
         self._info_label.setText("  •  ".join(info_parts))
         self._info_label.setVisible(True)
-
         self._empty_label.setVisible(False)
-
-        is_video = is_video_file(filename)
-
-        # Stream info — only for video files
-        if is_video and self._sftp:
-            self._stream_label.setText("Loading...")
-            self._stream_label.setVisible(True)
-            self._sep2.setVisible(True)
-            self._fetch_probe(remote_path)
-        else:
-            self._stream_label.setVisible(False)
-            self._sep2.setVisible(False)
-
-        # Metadata from NFO — only for video files (NFOs are video sidecar files)
-        if is_video and self._sftp:
-            self._load_nfo_metadata(remote_path)
-        else:
-            self._meta_header.setVisible(False)
-            self._meta_label.setVisible(False)
+        self.clear_stream_info()
+        self.clear_metadata()
+        return is_video_file(filename)
 
     def show_folder(self, folder_name: str) -> None:
         """Show minimal info for a folder (no network calls)."""
@@ -173,133 +144,48 @@ class DetailPanel(QWidget):
         self._meta_label.setVisible(False)
         self._empty_label.setVisible(True)
 
-    def _load_nfo_metadata(self, remote_path: str) -> None:
-        """Read .nfo sidecar file for metadata via SFTP (fast)."""
-        nfo_path = os.path.splitext(remote_path)[0] + ".nfo"
+    def show_metadata(self, metadata: dict[str, str]) -> None:
+        """Render parsed NFO values or hide the metadata section when empty."""
+        field_map = [
+            ("title", "Title"),
+            ("sorttitle", "Sort"),
+            ("showtitle", "Show"),
+            ("season", "Season"),
+            ("episode", "Episode"),
+            ("year", "Year"),
+            ("plot", "Plot"),
+            ("director", "Director"),
+            ("artist", "Artist"),
+            ("studio", "Studio"),
+        ]
+        lines = []
+        for tag, label in field_map:
+            value = metadata.get(tag, "")
+            if value:
+                if len(value) > 60:
+                    value = value[:57] + "..."
+                lines.append(f"<b>{label}:</b> {value}")
 
-        if not self._sftp:
-            self._meta_header.setVisible(False)
-            self._meta_label.setVisible(False)
+        genres = metadata.get("genre", "").replace(";", ", ")
+        if genres:
+            lines.append(f"<b>Genre:</b> {genres}")
+
+        if not lines:
+            self.clear_metadata()
             return
 
-        try:
-            # Use SFTP open() — much faster than SSH exec cat
-            with self._sftp.open(nfo_path, "r") as f:
-                content = f.read().decode("utf-8", errors="ignore").strip()
+        self._meta_header.setVisible(True)
+        self._meta_label.setVisible(True)
+        self._meta_label.setTextFormat(Qt.TextFormat.RichText)
+        self._meta_label.setText("<br>".join(lines))
 
-            if not content:
-                self._meta_header.setVisible(False)
-                self._meta_label.setVisible(False)
-                return
+    def clear_metadata(self) -> None:
+        """Hide the metadata section."""
+        self._meta_header.setVisible(False)
+        self._meta_label.setVisible(False)
 
-            # Scene NFOs are often ASCII art, not XML — skip those
-            if not content.lstrip().startswith("<"):
-                self._meta_header.setVisible(False)
-                self._meta_label.setVisible(False)
-                return
-
-            import xml.etree.ElementTree as ET
-
-            root = ET.fromstring(content)
-            lines = []
-
-            field_map = [
-                ("title", "Title"),
-                ("sorttitle", "Sort"),
-                ("showtitle", "Show"),
-                ("season", "Season"),
-                ("episode", "Episode"),
-                ("year", "Year"),
-                ("genre", "Genre"),
-                ("plot", "Plot"),
-                ("director", "Director"),
-                ("artist", "Artist"),
-                ("studio", "Studio"),
-            ]
-
-            genres = []
-            for elem in root:
-                if elem.tag == "genre" and elem.text:
-                    genres.append(elem.text.strip())
-
-            for tag, label in field_map:
-                if tag == "genre":
-                    continue
-                elem = root.find(tag)
-                if elem is not None and elem.text and elem.text.strip():
-                    val = elem.text.strip()
-                    if len(val) > 60:
-                        val = val[:57] + "..."
-                    lines.append(f"<b>{label}:</b> {val}")
-
-            if genres:
-                lines.append(f"<b>Genre:</b> {', '.join(genres)}")
-
-            if lines:
-                self._meta_header.setVisible(True)
-                self._meta_label.setVisible(True)
-                self._meta_label.setTextFormat(Qt.TextFormat.RichText)
-                self._meta_label.setText("<br>".join(lines))
-            else:
-                self._meta_header.setVisible(False)
-                self._meta_label.setVisible(False)
-
-        except (IOError, OSError):
-            # NFO file doesn't exist — that's fine, just hide metadata
-            self._meta_header.setVisible(False)
-            self._meta_label.setVisible(False)
-        except Exception as e:
-            # Parse error — log it so we can debug
-            from src.utils.logging_signal import logger
-
-            logger.warn(f"Detail panel: NFO parse error: {e}")
-            self._meta_header.setVisible(False)
-            self._meta_label.setVisible(False)
-
-    def _fetch_probe(self, remote_path: str) -> None:
-        """Run ffprobe synchronously on the metadata channel.
-
-        This is fast (~200ms) and safe — uses its own dedicated SFTP channel
-        that doesn't conflict with the explorer or transfers. Running synchronously
-        eliminates the QThread destruction crash that occurred when the thread
-        couldn't be stopped in time.
-        """
-        try:
-            channel = self._sftp.get_channel()
-            if not channel:
-                self._on_probe_error()
-                return
-            transport = channel.get_transport()
-            if not transport:
-                self._on_probe_error()
-                return
-
-            cmd = (
-                f"ffprobe -v quiet -print_format json "
-                f"-show_format -show_streams "
-                f"{shlex.quote(remote_path)}"
-            )
-            session = transport.open_session()
-            session.exec_command(cmd)
-
-            output = b""
-            while True:
-                chunk = session.recv(4096)
-                if not chunk:
-                    break
-                output += chunk
-            session.close()
-
-            import json
-
-            data = json.loads(output.decode("utf-8", errors="ignore"))
-            self._on_probe_done(data)
-        except Exception:
-            self._on_probe_error()
-
-    def _on_probe_done(self, data: dict) -> None:
+    def show_stream_info(self, data: dict) -> None:
         """Display ffprobe results."""
-        # Check we're still showing the same file
         lines = []
 
         fmt = data.get("format", {})
@@ -353,6 +239,6 @@ class DetailPanel(QWidget):
         self._stream_label.setText("\n".join(lines) if lines else "")
         self._stream_label.setVisible(bool(lines))
 
-    def _on_probe_error(self) -> None:
+    def clear_stream_info(self) -> None:
         self._stream_label.setText("")
         self._stream_label.setVisible(False)

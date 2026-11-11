@@ -1,5 +1,5 @@
 """
-Toggle switch widget — macOS-style on/off switch.
+Toggle switch widget: macOS-style on/off switch.
 
 A custom QCheckBox replacement that renders as a pill-shaped toggle
 with a sliding circular knob, matching the macOS System Settings style.

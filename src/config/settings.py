@@ -1,9 +1,8 @@
 import ipaddress
-import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -14,6 +13,13 @@ from src.models.errors import (
     IPAddressValidationError,
     PathValidationError,
     SSHKeyValidationError,
+)
+from src.repositories.settings_repository import SettingsRepository
+from src.services.keychain_service import (
+    delete_password,
+    has_stored_password,
+    retrieve_password,
+    store_password,
 )
 from src.utils.constants import (
     APP_DATA_DIR,
@@ -32,6 +38,8 @@ class SettingsConfig(BaseModel):
     servers: dict[str, dict] = Field(default_factory=dict)
     current_server_id: str = ""
     default_server_id: str = ""
+    destination_profiles: list[dict] = Field(default_factory=list)
+    active_destination_profile_id: str = ""
 
     # Connection Settings
     username: str = ""
@@ -64,15 +72,15 @@ class SettingsConfig(BaseModel):
     max_parallel_transfers: int = 1
 
     # IMDb metadata lookup
-    # OMDb (primary) — https://www.omdbapi.com/apikey.aspx
-    # TMDB (fallback) — https://www.themoviedb.org/settings/api
+    # OMDb (primary): https://www.omdbapi.com/apikey.aspx
+    # TMDB (fallback): https://www.themoviedb.org/settings/api
     omdb_api_key: str = ""
     tmdb_api_key: str = ""
 
     @field_validator("host")
     @classmethod
     def validate_host(cls, v: str) -> str:
-        """Validate host — accepts IP addresses and hostnames."""
+        """Validate host: accepts IP addresses and hostnames."""
         if v and v.strip():
             host = v.strip()
             # Accept valid IP addresses
@@ -163,38 +171,125 @@ class Settings:
             cls._instance = super(Settings, cls).__new__(cls)
             local_config_path = APP_DATA_DIR / CONFIG_JSON
             if local_config_path.exists() and local_config_path.is_file():
-                config_data = cls._load_config(local_config_path)
+                config_repository = SettingsRepository(local_config_path)
             else:
                 if getattr(sys, "_MEIPASS", None):
                     base_path = Path(sys._MEIPASS)  # type: ignore
                     config_path = base_path / f"src/config/{CONFIG_JSON}"
                 else:
                     config_path = Path(__file__).parent / CONFIG_JSON
-                config_data = cls._load_config(config_path)
+                config_repository = SettingsRepository(config_path)
+            cls._instance._repository = SettingsRepository(local_config_path)
+            config_data = config_repository.load()
             cls._instance.config = SettingsConfig.from_json(config_data)
+            cls._instance._migrate_legacy_secrets()
         return cls._instance
+
+    @staticmethod
+    def _server_secret_account(server_id: str, field: str) -> str:
+        scope = server_id or "global"
+        return f"server:{scope}:{field}"
+
+    @staticmethod
+    def _global_secret_account(field: str) -> str:
+        return f"global:{field}"
+
+    def _migrate_legacy_secrets(self) -> None:
+        """Move legacy plaintext credentials into the platform credential store."""
+        changed = False
+        server_fields = ("password", "key_passphrase", "jellyfin_api_key")
+        for server_id, server in self.config.servers.items():
+            for field in server_fields:
+                value = server.get(field)
+                if value and store_password(
+                    self._server_secret_account(server_id, field), str(value)
+                ):
+                    server.pop(field, None)
+                    changed = True
+
+        for field in ("omdb_api_key", "tmdb_api_key"):
+            value = getattr(self.config, field)
+            if value and store_password(self._global_secret_account(field), value):
+                setattr(self.config, field, "")
+                changed = True
+
+        if changed:
+            try:
+                self.save_config(self._config_to_dict())
+                logger.info("Settings: Migrated saved credentials to secure storage")
+            except ConfigurationSaveError as e:
+                logger.warn(f"Settings: Could not save credential migration: {e}")
+
+    def get_server_secret(self, server_id: str, field: str) -> Optional[str]:
+        """Read a server credential, including legacy plaintext values."""
+        account = self._server_secret_account(server_id, field)
+        stored = retrieve_password(account)
+        if stored is not None:
+            return stored
+        server = self.get_server(server_id) or {}
+        legacy = server.get(field)
+        if legacy:
+            return str(legacy)
+        if server_id:
+            global_value = retrieve_password(
+                self._server_secret_account("", field)
+            )
+            if global_value is not None:
+                return global_value
+        return None
+
+    def set_server_secret(self, server_id: str, field: str, value: str) -> None:
+        """Store a server credential without writing it into config.json."""
+        account = self._server_secret_account(server_id, field)
+        if value:
+            if not store_password(account, value):
+                raise ConfigurationSaveError(
+                    "Cannot store credential securely",
+                    details="The platform credential store is unavailable.",
+                )
+        elif has_stored_password(account) and not delete_password(account):
+            raise ConfigurationSaveError(
+                "Cannot remove saved credential",
+                details="The platform credential store could not delete the credential.",
+            )
+
+    def get_global_secret(self, field: str) -> str:
+        """Read a global API token, including legacy plaintext values."""
+        stored = retrieve_password(self._global_secret_account(field))
+        return stored if stored is not None else str(getattr(self.config, field, ""))
+
+    def set_global_secret(self, field: str, value: str) -> None:
+        """Store a global API token without writing it into config.json."""
+        account = self._global_secret_account(field)
+        if value:
+            if not store_password(account, value):
+                raise ConfigurationSaveError(
+                    "Cannot store API key securely",
+                    details="The platform credential store is unavailable.",
+                )
+        elif has_stored_password(account) and not delete_password(account):
+            raise ConfigurationSaveError(
+                "Cannot remove saved API key",
+                details="The platform credential store could not delete the key.",
+            )
 
     @staticmethod
     def _load_config(config_path: Path) -> dict:
         """Load configuration from JSON file."""
-        try:
-            if config_path.exists() and config_path.is_file():
-                with open(config_path, "r") as f:
-                    return json.load(f)
-            else:
-                return {}
-        except json.JSONDecodeError as e:
+        return SettingsRepository(config_path).load()
+
+    def read_config_file(self, path: Union[str, Path]) -> dict:
+        """Read an external configuration document through the repository."""
+        config_path = Path(path)
+        if not config_path.is_file():
             raise ConfigurationLoadError(
-                "Invalid JSON in configuration file",
-                details=f"File: {config_path}, Error: {str(e)}",
+                "Configuration file does not exist", details=f"Path: {config_path}"
             )
-        except PermissionError:
-            raise ConfigurationLoadError(
-                "Cannot read configuration file",
-                details=f"Permission denied: {config_path}",
-            )
-        except Exception:
-            return {}
+        return SettingsRepository(config_path).load()
+
+    def export_config(self, path: Union[str, Path]) -> None:
+        """Export the active settings through the repository's atomic writer."""
+        SettingsRepository(Path(path)).save(self._config_to_dict())
 
     def reload_config(self, config_data: dict) -> None:
         """
@@ -204,6 +299,7 @@ class Settings:
         see the updated config without needing to re-acquire the singleton.
         """
         self.config = SettingsConfig.from_json(config_data)
+        self._migrate_legacy_secrets()
 
     # Properties
     @property
@@ -269,42 +365,19 @@ class Settings:
 
     @property
     def omdb_api_key(self) -> str:
-        return self.config.omdb_api_key
+        return self.get_global_secret("omdb_api_key")
 
     @property
     def tmdb_api_key(self) -> str:
-        return self.config.tmdb_api_key
+        return self.get_global_secret("tmdb_api_key")
 
     def save_config(self, config_data: dict) -> None:
         """Save configuration to JSON file."""
-        save_dir = APP_DATA_DIR
-
-        try:
-            save_dir.mkdir(exist_ok=True)
-        except Exception as e:
-            raise ConfigurationSaveError(
-                f"Cannot create config directory: {save_dir}", details=str(e)
-            )
-
-        config_path = save_dir / CONFIG_JSON
-        save_data = config_data.copy()
-
-        # Convert sets to lists for JSON
-        if "skip_patterns" in save_data and isinstance(save_data["skip_patterns"], set):
-            save_data["skip_patterns"] = list(save_data["skip_patterns"])
-
-        try:
-            with open(config_path, "w") as f:
-                json.dump(save_data, f, indent=4)
-        except PermissionError:
-            raise ConfigurationSaveError(
-                "Permission denied writing config", details=f"Path: {config_path}"
-            )
-        except Exception as e:
-            raise ConfigurationSaveError(
-                "Failed to save configuration",
-                details=f"Path: {config_path}, Error: {str(e)}",
-            )
+        repository = getattr(self, "_repository", None)
+        if repository is None:
+            repository = SettingsRepository(APP_DATA_DIR / CONFIG_JSON)
+            self._repository = repository
+        repository.save(config_data)
 
     def is_valid(self) -> bool:
         """Check if critical settings are configured."""
@@ -333,23 +406,81 @@ class Settings:
         raw = self.config.servers.get(sid)
         if raw is None:
             return None
-        return ServerConfig.from_dict(raw)
+        server = ServerConfig.from_dict(raw)
+        server.password = self.get_server_secret(sid, "password") or ""
+        server.key_passphrase = self.get_server_secret(sid, "key_passphrase") or ""
+        server.jellyfin_api_key = self.get_server_secret(sid, "jellyfin_api_key") or ""
+        return server
 
     def add_server(self, server_id: str, server_config: dict) -> None:
-        self.config.servers[server_id] = server_config
+        safe_config = server_config.copy()
+        for field in ("password", "key_passphrase", "jellyfin_api_key"):
+            if field in safe_config:
+                self.set_server_secret(server_id, field, str(safe_config.pop(field)))
+        self.config.servers[server_id] = safe_config
         self.save_config(self._config_to_dict())
 
     def delete_server(self, server_id: str) -> None:
         if server_id in self.config.servers:
+            for field in ("password", "key_passphrase", "jellyfin_api_key"):
+                account = self._server_secret_account(server_id, field)
+                if has_stored_password(account):
+                    delete_password(account)
             del self.config.servers[server_id]
             if self.config.current_server_id == server_id:
                 self.config.current_server_id = ""
             if self.config.default_server_id == server_id:
                 self.config.default_server_id = ""
+            removed_profile_ids = {
+                str(profile.get("profile_id", ""))
+                for profile in self.config.destination_profiles
+                if profile.get("server_id") == server_id
+            }
+            self.config.destination_profiles = [
+                profile
+                for profile in self.config.destination_profiles
+                if profile.get("server_id") != server_id
+            ]
+            if self.config.active_destination_profile_id in removed_profile_ids:
+                self.config.active_destination_profile_id = ""
             self.save_config(self._config_to_dict())
 
     def set_default_server(self, server_id: str) -> None:
         self.config.default_server_id = server_id
+        self.save_config(self._config_to_dict())
+
+    def get_destination_profiles(self) -> list[dict]:
+        """Return a copy of saved destination profile records."""
+        return [profile.copy() for profile in self.config.destination_profiles]
+
+    def save_destination_profile(self, profile: dict) -> None:
+        """Create or replace one destination profile in user settings."""
+        profile_id = str(profile.get("profile_id", "")).strip()
+        if not profile_id:
+            raise ValueError("A destination profile ID is required")
+        profiles = [
+            item
+            for item in self.config.destination_profiles
+            if item.get("profile_id") != profile_id
+        ]
+        profiles.append(profile.copy())
+        self.config.destination_profiles = profiles
+        self.save_config(self._config_to_dict())
+
+    def delete_destination_profile(self, profile_id: str) -> None:
+        """Delete a profile and clear it when it is currently active."""
+        self.config.destination_profiles = [
+            profile
+            for profile in self.config.destination_profiles
+            if profile.get("profile_id") != profile_id
+        ]
+        if self.config.active_destination_profile_id == profile_id:
+            self.config.active_destination_profile_id = ""
+        self.save_config(self._config_to_dict())
+
+    def set_active_destination_profile(self, profile_id: str) -> None:
+        """Persist the profile selected for the next session."""
+        self.config.active_destination_profile_id = profile_id
         self.save_config(self._config_to_dict())
 
     def load_server(self, server_id: str) -> bool:
@@ -413,6 +544,10 @@ class Settings:
             "servers": self.config.servers,
             "current_server_id": self.config.current_server_id,
             "default_server_id": self.config.default_server_id,
+            "destination_profiles": self.config.destination_profiles,
+            "active_destination_profile_id": (
+                self.config.active_destination_profile_id
+            ),
             "username": self.config.username,
             "host": self.config.host,
             "ssh_key_path": self.config.ssh_key_path,

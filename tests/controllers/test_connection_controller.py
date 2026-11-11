@@ -133,24 +133,33 @@ class TestHealthCheck:
     def test_health_check_triggers_reconnect_on_failure(
         self, controller, mock_connection_manager, mock_view
     ):
-        """Health check should attempt reconnect when connection is dead."""
+        """Health check should start an async reconnect when connection is dead."""
         mock_connection_manager.check_alive.return_value = False
-        mock_connection_manager.reconnect.return_value = True
 
-        controller.check_health()
+        with patch.object(
+            controller, "_start_async_connect", return_value=True
+        ) as mock_start:
+            controller.check_health()
 
-        mock_connection_manager.reconnect.assert_called_once()
+        # Dead session is dropped locally, then reconnect runs off the UI thread
+        mock_connection_manager.disconnect.assert_called_once()
+        mock_start.assert_called_once()
+        assert controller._reconnecting is True
 
     def test_health_check_emits_disconnected_on_reconnect_failure(
         self, controller, mock_connection_manager
     ):
-        """Should emit disconnected signal if reconnect fails."""
+        """A failed async reconnect (below cap) emits disconnected."""
         mock_connection_manager.check_alive.return_value = False
-        mock_connection_manager.reconnect.return_value = False
 
-        with patch.object(controller, "disconnected") as mock_signal:
+        with patch.object(controller, "_start_async_connect", return_value=True):
             controller.check_health()
+
+        # Simulate the worker reporting failure back on the main thread
+        with patch.object(controller, "disconnected") as mock_signal:
+            controller._on_reconnect_failed("SSHConnectionError", "boom", "")
             mock_signal.emit.assert_called_once()
+        assert controller._reconnecting is False
 
     def test_health_check_skips_adb_connections(self, controller, mock_view):
         """Health check should skip ADB connections (stateless USB)."""
@@ -281,15 +290,38 @@ class TestShutdown:
         mock_connection_manager.disconnect.assert_called_once()
 
     def test_shutdown_stops_connect_thread(self, controller):
-        """Shutdown should stop the connection thread if running."""
+        """Shutdown should interrupt and stop the connection thread if running."""
         thread = MagicMock()
         thread.isRunning.return_value = True
+        thread.wait.return_value = True  # thread stops cleanly within timeout
         controller._connect_thread = thread
 
         controller.shutdown()
 
+        # Interruption is requested so the worker's retry loop bails promptly,
+        # then the thread is asked to quit and waited on.
+        thread.requestInterruption.assert_called_once()
         thread.quit.assert_called_once()
-        thread.wait.assert_called_once_with(2000)
+        thread.wait.assert_called_once_with(5000)
+        # Clean stop → no forced terminate
+        thread.terminate.assert_not_called()
+
+    def test_shutdown_terminates_stuck_connect_thread(self, controller):
+        """If the thread won't stop within the timeout, it is force-terminated."""
+        thread = MagicMock()
+        thread.isRunning.return_value = True
+        thread.wait.return_value = False  # never stops in time
+        controller._connect_thread = thread
+
+        controller.shutdown()
+
+        thread.requestInterruption.assert_called_once()
+        thread.terminate.assert_called_once()
+
+    def test_shutdown_disables_auto_reconnect(self, controller):
+        """Shutdown must disable auto-reconnect so nothing reconnects mid-teardown."""
+        controller.shutdown()
+        assert controller._reconnect_disabled is True
 
 
 # ---------------------------------------------------------------------------
@@ -309,3 +341,198 @@ class TestInitialPath:
         mock_settings.get_default_bookmark.return_value = None
         result = controller._get_initial_path("/mnt/external")
         assert result == "/mnt/external"
+
+
+# ---------------------------------------------------------------------------
+# Auto-reconnect loop guard (regression: endless socket-lost loop)
+# ---------------------------------------------------------------------------
+
+
+class TestReconnectGuard:
+    def test_connection_lost_starts_async_reconnect(
+        self, controller, mock_connection_manager
+    ):
+        """Connection loss drops the dead session and starts an async reconnect."""
+        with patch.object(
+            controller, "_start_async_connect", return_value=True
+        ) as mock_start:
+            controller._handle_connection_lost()
+
+        mock_connection_manager.disconnect.assert_called_once()
+        mock_start.assert_called_once()
+        assert controller._reconnecting is True
+        assert controller._reconnect_attempts == 1
+
+    def test_reconnect_success_resets_attempts(
+        self, controller, mock_connection_manager
+    ):
+        """The async success slot clears the counter and rebinds the client."""
+        controller._reconnecting = True
+        controller._reconnect_attempts = 2
+        mock_connection_manager.sftp_client = MagicMock()
+
+        controller._on_reconnect_succeeded()
+
+        assert controller._reconnect_attempts == 0
+        assert controller._reconnecting is False
+        controller.view.remote_explorer.set_sftp.assert_called()
+
+    def test_connection_lost_gives_up_after_max_attempts(
+        self, controller, mock_connection_manager
+    ):
+        """After MAX failed async reconnects, auto-reconnect disables itself."""
+        from src.utils.constants import MAX_AUTO_RECONNECT_ATTEMPTS
+
+        with patch.object(controller, "_start_async_connect", return_value=True):
+            for _ in range(MAX_AUTO_RECONNECT_ATTEMPTS + 2):
+                controller._handle_connection_lost()
+                # Simulate the worker failing each time
+                controller._on_reconnect_failed("SSHConnectionError", "boom", "")
+
+        assert controller._reconnect_disabled is True
+        assert controller._reconnect_attempts == MAX_AUTO_RECONNECT_ATTEMPTS
+
+    def test_disabled_reconnect_skips_further_attempts(
+        self, controller, mock_connection_manager
+    ):
+        """Once disabled, _handle_connection_lost starts no reconnect."""
+        controller._reconnect_disabled = True
+        with patch.object(controller, "_start_async_connect") as mock_start:
+            controller._handle_connection_lost()
+        mock_start.assert_not_called()
+
+    def test_reentrancy_guard_blocks_nested_reconnect(
+        self, controller, mock_connection_manager
+    ):
+        """A reconnect already in progress is not re-entered."""
+        controller._reconnecting = True
+        with patch.object(controller, "_start_async_connect") as mock_start:
+            controller._handle_connection_lost()
+        mock_start.assert_not_called()
+
+    def test_check_health_skips_reconnect_when_disabled(
+        self, controller, mock_connection_manager
+    ):
+        """Health check must not trigger reconnect once auto-reconnect gave up."""
+        controller._reconnect_disabled = True
+        mock_connection_manager.check_alive.return_value = False
+        with patch.object(controller, "_start_async_connect") as mock_start:
+            controller.check_health()
+        mock_start.assert_not_called()
+
+    def test_healthy_check_resets_attempts(
+        self, controller, mock_connection_manager
+    ):
+        """A healthy check clears any accumulated reconnect attempts."""
+        controller._reconnect_attempts = 2
+        mock_connection_manager.check_alive.return_value = True
+        controller.check_health()
+        assert controller._reconnect_attempts == 0
+
+    def test_explorer_failure_gives_up_after_max_attempts(
+        self, controller, mock_connection_manager
+    ):
+        """handle_explorer_failure (SSH) is bounded and disables after MAX failures."""
+        from src.utils.constants import MAX_AUTO_RECONNECT_ATTEMPTS
+
+        with patch.object(controller, "_start_async_connect", return_value=True):
+            for _ in range(MAX_AUTO_RECONNECT_ATTEMPTS + 2):
+                controller.handle_explorer_failure("Socket is closed")
+                controller._on_reconnect_failed("SSHConnectionError", "boom", "")
+
+        assert controller._reconnect_disabled is True
+        assert controller._reconnect_attempts == MAX_AUTO_RECONNECT_ATTEMPTS
+
+    def test_explorer_failure_ssh_uses_async_path(
+        self, controller, mock_connection_manager
+    ):
+        """SSH explorer failure reconnects off the UI thread (no blocking connect)."""
+        with patch.object(
+            controller, "_start_async_connect", return_value=True
+        ) as mock_start:
+            controller.handle_explorer_failure("Socket is closed")
+
+        # Must not block the UI thread with a synchronous connect()
+        mock_connection_manager.connect.assert_not_called()
+        mock_start.assert_called_once()
+
+    def test_manual_connect_resets_guard(self, controller, mock_connection_manager):
+        """A user-initiated connect() re-enables auto-reconnect."""
+        controller._reconnect_disabled = True
+        controller._reconnect_attempts = 5
+        # SSH path spins a thread; patch it out so we only test the guard reset.
+        with patch.object(controller, "_connect_ssh"):
+            controller.connect()
+        assert controller._reconnect_disabled is False
+        assert controller._reconnect_attempts == 0
+
+
+# ---------------------------------------------------------------------------
+# Local (ADB/iOS) bounded reconnect + async-success re-entrancy guard
+# ---------------------------------------------------------------------------
+
+
+class TestLocalReconnect:
+    def _make_adb_server(self, mock_settings):
+        mock_settings.get_server.return_value = {
+            "connection_type": "adb",
+            "name": "Test Phone",
+            "device_id": "ABC123",
+        }
+
+    def test_adb_reconnect_success_resets_attempts(
+        self, controller, mock_settings, mock_view
+    ):
+        """A recovered ADB explorer failure clears the attempt counter."""
+        self._make_adb_server(mock_settings)
+        mock_view.remote_explorer.sftp = MagicMock()  # live client after reconnect
+        with patch.object(controller, "_connect_adb"):
+            controller.handle_explorer_failure("Socket is closed")
+        assert controller._reconnect_attempts == 0
+        assert controller._reconnecting is False
+
+    def test_adb_reconnect_gives_up_after_max(
+        self, controller, mock_settings, mock_view
+    ):
+        """A flapping ADB device disables auto-reconnect after MAX attempts."""
+        from src.utils.constants import MAX_AUTO_RECONNECT_ATTEMPTS
+
+        self._make_adb_server(mock_settings)
+        # Reconnect never establishes a client → each attempt "fails"
+        mock_view.remote_explorer.sftp = None
+        with patch.object(controller, "_connect_adb"):
+            for _ in range(MAX_AUTO_RECONNECT_ATTEMPTS + 2):
+                controller.handle_explorer_failure("Socket is closed")
+
+        assert controller._reconnect_disabled is True
+        # Bounded: never exceeds the cap
+        assert controller._reconnect_attempts == MAX_AUTO_RECONNECT_ATTEMPTS
+
+    def test_reconnect_success_refresh_reentrancy_is_guarded(
+        self, controller, mock_connection_manager
+    ):
+        """
+        If refresh() inside the success slot re-enters handle_explorer_failure,
+        the guard must suppress a fresh reconnect (no renewed loop).
+        """
+        mock_connection_manager.sftp_client = MagicMock()
+        controller._reconnecting = True
+
+        started = []
+
+        def _refresh_reenters(*args, **kwargs):
+            # Simulate a failing listing re-triggering the failure handler
+            with patch.object(
+                controller, "_start_async_connect", return_value=True
+            ) as m:
+                controller.handle_explorer_failure("Socket is closed")
+                started.append(m.called)
+
+        controller.view.remote_explorer.refresh.side_effect = _refresh_reenters
+
+        controller._on_reconnect_succeeded()
+
+        # The re-entrant call happened while _reconnecting was still True,
+        # so no new async reconnect was started.
+        assert started == [False]
+        assert controller._reconnecting is False

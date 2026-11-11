@@ -1,5 +1,5 @@
 """
-Transfer queue widget — shows pending, in-progress, and completed transfers.
+Transfer queue widget: shows pending, in-progress, and completed transfers.
 """
 
 import os
@@ -47,7 +47,7 @@ class TransferItem:
     total_bytes: int = 0
     transferred_bytes: int = 0
     destination: str = ""
-    transfer_method: str = ""  # "rsync", "sftp", "adb", or ""
+    transfer_method: str = ""  # "rclone", "rsync", "sftp", "adb", or ""
     status: TransferStatus = TransferStatus.PENDING
     error_message: str = ""
     start_time: float = 0.0
@@ -123,7 +123,7 @@ class TransferItemWidget(QFrame):
         self.status_label = QLabel()
         self.status_label.setStyleSheet("font-size: 11px;")
 
-        # Transfer method indicator dot (green=rsync, blue=sftp, orange=adb)
+        # Transfer method indicator dot (green=rclone/rsync, blue=sftp, orange=adb)
         self.method_dot = QLabel("●")
         self.method_dot.setFixedWidth(12)
         self.method_dot.setStyleSheet("font-size: 8px;")
@@ -232,7 +232,7 @@ class TransferItemWidget(QFrame):
                 # Speed/ETA calculations are meaningless for remote ffmpeg jobs
                 self.detail_label.setText(f"{item.progress_percent}%")
             elif is_quick_fix:
-                # Quick Fix has no progress data — just show "Processing..."
+                # Quick Fix has no progress data: just show "Processing..."
                 self.detail_label.setText("Processing...")
             else:
                 speed = item.speed_bytes_per_sec
@@ -300,9 +300,14 @@ class TransferItemWidget(QFrame):
 
         # Dot is visible during pending and in-progress states
         self.method_dot.setVisible(True)
-        if method == "rsync":
+        if method in ("rclone", "rsync"):
             self.method_dot.setStyleSheet("font-size: 8px; color: #22c55e;")
-            self.method_dot.setToolTip("rsync (fast delta transfer)")
+            label = (
+                "rclone (parallel SFTP transfer)"
+                if method == "rclone"
+                else "rsync (fast delta transfer)"
+            )
+            self.method_dot.setToolTip(label)
         elif method == "adb":
             self.method_dot.setStyleSheet("font-size: 8px; color: #f59e0b;")
             self.method_dot.setToolTip("ADB (USB transfer)")
@@ -331,7 +336,7 @@ class TransferItemWidget(QFrame):
         if os.path.exists(path):
             reveal_in_file_manager(path)
         else:
-            # File might have been moved — just open the directory
+            # File might have been moved: just open the directory
             reveal_in_file_manager(download_dir)
 
 
@@ -447,7 +452,7 @@ class TransferQueueWidget(QWidget):
             self._items[index].transferred_bytes = transferred
             if total > 0:
                 self._items[index].total_bytes = total
-            # Don't update widget here — timer handles it
+            # Don't update widget here: timer handles it
 
     def set_completed(self, index: int) -> None:
         """Mark a transfer as completed and reorder the list."""
@@ -499,7 +504,7 @@ class TransferQueueWidget(QWidget):
         if 0 <= index < len(self._items):
             item = self._items[index]
             if item.status == TransferStatus.IN_PROGRESS:
-                # Cancel the active transfer — emit special signal
+                # Cancel the active transfer: emit special signal
                 self.cancel_active.emit()
                 return
             if item.status != TransferStatus.PENDING:

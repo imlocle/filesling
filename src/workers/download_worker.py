@@ -1,5 +1,5 @@
 """
-Download worker — pulls files from remote to local on a background thread.
+Download worker: pulls files from remote to local on a background thread.
 
 Mirrors TransferWorker but in reverse (sftp.get / adb pull).
 """
@@ -80,7 +80,7 @@ class DownloadWorker(QObject):
                     os.path.getsize(local_path) if os.path.exists(local_path) else 0
                 )
                 if local_size != file_size:
-                    # Partial download — remove the truncated file
+                    # Partial download: remove the truncated file
                     try:
                         os.remove(local_path)
                     except OSError:

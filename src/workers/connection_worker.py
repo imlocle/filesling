@@ -1,5 +1,5 @@
 """
-Connection worker — runs SSH connection attempts on a background thread.
+Connection worker: runs SSH connection attempts on a background thread.
 
 Emits success/failure signals so the UI thread stays responsive during
 the potentially slow SSH handshake + retry loop.
@@ -30,8 +30,14 @@ class ConnectionWorker(QObject):
 
     def run(self) -> None:
         """Attempt connection. Emits connected or failed."""
+        from PySide6.QtCore import QThread
+
+        def _should_cancel() -> bool:
+            thread = QThread.currentThread()
+            return bool(thread and thread.isInterruptionRequested())
+
         try:
-            result = self.connection_manager.connect()
+            result = self.connection_manager.connect(should_cancel=_should_cancel)
             if result:
                 self.connected.emit()
             else:

@@ -1,5 +1,5 @@
 """
-IMDb metadata worker — fetches OMDb metadata on a background thread.
+IMDb metadata worker: fetches OMDb metadata on a background thread.
 
 Keeps the UI responsive while the OMDb HTTP round-trip (and optional second
 series lookup for episodes) runs. Emits the mapped field dict on success or an

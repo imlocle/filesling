@@ -1,5 +1,5 @@
 """
-Sleep inhibitor service — prevents the system from sleeping during active transfers.
+Sleep inhibitor service: prevents the system from sleeping during active transfers.
 
 Uses the src.platform abstraction for cross-platform support:
 - macOS: caffeinate subprocess
@@ -20,8 +20,8 @@ class SleepInhibitorService:
         inhibitor.acquire()   # Prevent sleep
         inhibitor.release()   # Allow sleep again
 
-    Safe to call acquire() multiple times — only acquires once.
-    Safe to call release() when not acquired — no-op.
+    Safe to call acquire() multiple times: only acquires once.
+    Safe to call release() when not acquired: no-op.
     """
 
     @property

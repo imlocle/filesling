@@ -1,5 +1,5 @@
 """
-Connection controller — owns the SSH/ADB/iOS connection lifecycle.
+Connection controller: owns the SSH/ADB/iOS connection lifecycle.
 
 Handles:
 - Initial connection (async for SSH, sync for ADB/iOS)
@@ -26,12 +26,14 @@ from src.utils.constants import (
     DIALOG_CONNECTION_ERROR,
     DIALOG_CONNECTION_FAILED,
     HEALTH_CHECK_INTERVAL_MS,
+    MAX_AUTO_RECONNECT_ATTEMPTS,
     TIMEOUT_FFMPEG_INSTALL,
 )
 from src.utils.logging_signal import logger
 
 if TYPE_CHECKING:
     from src.views.main_window import MainWindow
+    from src.widgets.file_explorer_widget import FileExplorerWidget
 
 
 class ConnectionController(QObject):
@@ -68,12 +70,38 @@ class ConnectionController(QObject):
         self._connect_thread = None
         self._connect_worker = None
 
+        # Auto-reconnect loop guard. Prevents an endless reconnect/refresh loop
+        # when the server keeps dropping the socket. Shared by check_health,
+        # _handle_connection_lost, and handle_explorer_failure.
+        self._reconnecting = False
+        self._reconnect_attempts = 0
+        self._reconnect_disabled = False
+        self._refresh_after_reconnect = False
+        self._remote_explorer: Optional[FileExplorerWidget] = None
+
+    def bind_remote_explorer(self, explorer: "FileExplorerWidget") -> None:
+        """Connect explorer load results after the main window creates it."""
+        if self._remote_explorer is explorer:
+            return
+        if self._remote_explorer is not None:
+            try:
+                self._remote_explorer.remote_load_finished.disconnect(
+                    self._on_remote_load_finished
+                )
+            except (RuntimeError, TypeError):
+                pass
+        explorer.remote_load_finished.connect(self._on_remote_load_finished)
+        self._remote_explorer = explorer
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def connect(self) -> None:
         """Establish connection based on current server's connection type."""
+        # A user-initiated connect re-enables auto-reconnect.
+        self.reset_reconnect_guard()
+
         server_config = self.settings.get_server(self.settings.config.current_server_id)
         connection_type = (
             server_config.get(CONN_TYPE_KEY, CONN_TYPE_SSH)
@@ -92,10 +120,23 @@ class ConnectionController(QObject):
         """Stop health timer, kill any running threads, and disconnect."""
         self._health_timer.stop()
 
-        # Stop connection thread if running
+        # Prevent any further auto-reconnect from starting during teardown
+        self._reconnect_disabled = True
+
+        # Stop connection thread if running. Request interruption first so the
+        # worker's connect() retry loop bails out promptly (instead of blocking
+        # for the full retry window and being destroyed while still running).
         if self._connect_thread and self._connect_thread.isRunning():
+            self._connect_thread.requestInterruption()
             self._connect_thread.quit()
-            self._connect_thread.wait(2000)
+            if not self._connect_thread.wait(5000):
+                logger.warn("Connection: Connect thread did not stop; terminating")
+                self._connect_thread.terminate()
+                self._connect_thread.wait(1000)
+
+        # A terminated thread never emits connected/failed, so clear the flag
+        # explicitly rather than relying on a slot that may never fire.
+        self._reconnecting = False
 
         try:
             self.connection_manager.disconnect()
@@ -115,6 +156,15 @@ class ConnectionController(QObject):
 
         # Skip if not connected
         if not self.connection_manager.is_connected():
+            return
+
+        # Skip if auto-reconnect gave up, or a reconnect is already running
+        if self._reconnect_disabled or self._reconnecting:
+            return
+
+        # Skip while any connect worker is running (initial connect or reconnect)
+        # so the health probe doesn't read client state the worker is mutating.
+        if self._connect_thread is not None and self._connect_thread.isRunning():
             return
 
         # Skip reconnect if a transfer is in progress
@@ -140,6 +190,8 @@ class ConnectionController(QObject):
 
         # Check if connection is alive
         if self.connection_manager.check_alive():
+            # Healthy: clear any prior reconnect attempt count
+            self._reconnect_attempts = 0
             latency = self.connection_manager.measure_latency()
             self._last_latency = latency
             self._update_status_with_latency(latency)
@@ -154,27 +206,51 @@ class ConnectionController(QObject):
     # SSH (async via ConnectionWorker)
     # ------------------------------------------------------------------
 
-    def _connect_ssh(self) -> None:
-        """Establish SSH/SFTP connection on a background thread."""
+    def _start_async_connect(self, on_connected, on_failed) -> bool:
+        """
+        Spin up a ConnectionWorker on a background QThread.
+
+        Centralizes the thread/worker wiring so initial connects and
+        auto-reconnects never block the UI thread. The success/failure slots
+        are the caller's responsibility (they differ between an initial connect
+        and a background reconnect).
+
+        Returns:
+            True if a worker was started, False if one was already running.
+        """
         from PySide6.QtCore import QThread
 
         from src.workers.connection_worker import ConnectionWorker
 
-        self._set_status("● Connecting...", "connection_warning")
-        self.view.connect_btn.setEnabled(False)
+        # Guard: never overwrite a running connect thread (would orphan it and
+        # crash on shutdown with "QThread destroyed while still running").
+        if self._connect_thread is not None and self._connect_thread.isRunning():
+            logger.warn("Connection: Connect already in progress: ignoring")
+            return False
 
         self._connect_thread = QThread(self.view)
         self._connect_worker = ConnectionWorker(self.connection_manager)
         self._connect_worker.moveToThread(self._connect_thread)
 
         self._connect_thread.started.connect(self._connect_worker.run)
-        self._connect_worker.connected.connect(self._on_ssh_connected)
-        self._connect_worker.failed.connect(self._on_ssh_failed)
+        self._connect_worker.connected.connect(on_connected)
+        self._connect_worker.failed.connect(on_failed)
         self._connect_worker.connected.connect(self._connect_thread.quit)
         self._connect_worker.failed.connect(self._connect_thread.quit)
         self._connect_thread.finished.connect(self._cleanup_connect_thread)
 
         self._connect_thread.start()
+        return True
+
+    def _connect_ssh(self) -> None:
+        """Establish SSH/SFTP connection on a background thread."""
+        if self._connect_thread is not None and self._connect_thread.isRunning():
+            logger.warn("Connection: Connect already in progress: ignoring")
+            return
+
+        self._set_status("● Connecting...", "connection_warning")
+        self.view.connect_btn.setEnabled(False)
+        self._start_async_connect(self._on_ssh_connected, self._on_ssh_failed)
 
     def _on_ssh_connected(self) -> None:
         """Handle successful SSH connection."""
@@ -183,12 +259,12 @@ class ConnectionController(QObject):
         self._set_status("", "connection_connected")
 
         if self.connection_manager.sftp_client:
-            start_path = self._get_initial_path(self.settings.remote_base_dir)
+            start_path = self._get_connection_start_path(self.settings.remote_base_dir)
             self.view.remote_explorer.root_path = self.settings.remote_base_dir
             self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
-            # Give detail panel its own dedicated channel (no contention)
+            # Give detail metadata its own dedicated channel.
             if self.connection_manager.sftp_metadata:
-                self.view.remote_explorer._detail_panel.set_sftp(
+                self.view.remote_explorer.set_sftp_metadata(
                     self.connection_manager.sftp_metadata
                 )
             # Give background workers their own channel
@@ -296,7 +372,7 @@ class ConnectionController(QObject):
             client.listdir(root_path)
 
             self._set_status("", "connection_connected")
-            start_path = self._get_initial_path(root_path)
+            start_path = self._get_connection_start_path(root_path)
             self.view.remote_explorer.root_path = root_path
             # Clear stale SSH background channel before setting ADB client
             self.view.remote_explorer.set_sftp_background(None)
@@ -351,7 +427,7 @@ class ConnectionController(QObject):
             client.listdir(root_path)
 
             self._set_status("", "connection_connected")
-            start_path = self._get_initial_path(root_path)
+            start_path = self._get_connection_start_path(root_path)
             self.view.remote_explorer.root_path = root_path
             # Clear stale SSH background channel before setting iOS client
             self.view.remote_explorer.set_sftp_background(None)
@@ -378,6 +454,19 @@ class ConnectionController(QObject):
     def _get_initial_path(self, root_path: str) -> str:
         """Choose the first path shown after connecting."""
         return self.settings.get_default_bookmark() or root_path
+
+    def _get_connection_start_path(self, root_path: str) -> str:
+        """Prefer the active destination folder over the server bookmark."""
+        active_id = self.settings.config.active_destination_profile_id
+        for profile in self.settings.get_destination_profiles():
+            if (
+                profile.get("profile_id") == active_id
+                and profile.get("server_id") == self.settings.config.current_server_id
+            ):
+                remote_path = str(profile.get("remote_path", "")).strip()
+                if remote_path.startswith("/"):
+                    return remote_path
+        return self._get_initial_path(root_path)
 
     def _set_status(self, text: str, object_name: str) -> None:
         """Update connection status label text and style."""
@@ -410,34 +499,127 @@ class ConnectionController(QObject):
         else:
             btn.setStyleSheet("")
 
-    def _handle_connection_lost(self) -> None:
-        """Handle detected connection loss — attempt auto-reconnect."""
-        logger.warn("Connection: Lost — attempting reconnect...")
+    def _begin_reconnect(self) -> bool:
+        """
+        Common entry for auto-reconnect. Applies the loop guard and, if allowed,
+        starts an async SSH reconnect on a background thread (no UI freeze).
+
+        Returns:
+            True if a reconnect was started, False if it was suppressed by the
+            guard (already reconnecting, disabled, or cap reached).
+        """
+        if self._reconnecting or self._reconnect_disabled:
+            return False
+        if self._reconnect_attempts >= MAX_AUTO_RECONNECT_ATTEMPTS:
+            self._give_up_reconnect()
+            return False
+
+        # If a connect/reconnect thread is already running, don't start another
+        # (and don't inflate the attempt counter for work that never happened).
+        if self._connect_thread is not None and self._connect_thread.isRunning():
+            logger.warn("Connection: Reconnect already in progress: ignoring")
+            return False
+
+        self._reconnecting = True
+        self._reconnect_attempts += 1
+        logger.warn(
+            "Connection: Lost: attempting reconnect "
+            f"({self._reconnect_attempts}/{MAX_AUTO_RECONNECT_ATTEMPTS})..."
+        )
         self._set_status("● Reconnecting...", "connection_warning")
 
-        if self.connection_manager.reconnect():
+        # Drop the dead session locally (fast) so the worker's connect() opens
+        # a fresh one. Then reconnect off the UI thread.
+        try:
+            self.connection_manager.disconnect()
+        except Exception:
+            pass
+
+        started = self._start_async_connect(
+            self._on_reconnect_succeeded, self._on_reconnect_failed
+        )
+        if not started:
+            # Shouldn't happen (we checked above), but stay consistent.
+            self._reconnecting = False
+            self._reconnect_attempts -= 1
+        return started
+
+    def _handle_connection_lost(self) -> None:
+        """Handle detected connection loss: attempt bounded async reconnect."""
+        self._begin_reconnect()
+
+    def _on_reconnect_succeeded(self) -> None:
+        """Async reconnect succeeded: rebind channels and refresh."""
+        # Keep the attempt count until the asynchronous directory load succeeds.
+        # A live SSH socket alone does not prove the file service recovered.
+        try:
             if self.connection_manager.sftp_client:
-                self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
+                self.view.remote_explorer.set_sftp(
+                    self.connection_manager.sftp_client
+                )
                 if self.connection_manager.sftp_metadata:
-                    self.view.remote_explorer._detail_panel.set_sftp(
+                    self.view.remote_explorer.set_sftp_metadata(
                         self.connection_manager.sftp_metadata
                     )
                 if self.connection_manager.sftp_background:
                     self.view.remote_explorer.set_sftp_background(
                         self.connection_manager.sftp_background
                     )
+                self._refresh_after_reconnect = True
                 self.view.remote_explorer.refresh()
             self._set_status("", "connection_connected")
             logger.success("Connection: Reconnected")
             self.connected.emit()
+        finally:
+            self._reconnecting = False
+
+    def _on_remote_load_finished(self, succeeded: bool) -> None:
+        """Count a reconnect as recovered only after its first directory load."""
+        if not self._refresh_after_reconnect:
+            return
+        self._refresh_after_reconnect = False
+        if succeeded:
+            self._reconnect_attempts = 0
+
+    def _on_reconnect_failed(self, error_type: str, message: str, details: str) -> None:
+        """Async reconnect failed: give up if capped, else mark disconnected."""
+        self._reconnecting = False
+        self._refresh_after_reconnect = False
+        logger.error(f"Connection: Reconnect failed: {message}")
+        if self._reconnect_attempts >= MAX_AUTO_RECONNECT_ATTEMPTS:
+            self._give_up_reconnect()
         else:
             self._set_status("● Disconnected", "connection_disconnected")
-            logger.error("Connection: Reconnect failed")
             self.disconnected.emit()
 
+    def _give_up_reconnect(self) -> None:
+        """Stop auto-reconnecting after too many consecutive failures."""
+        self._reconnect_disabled = True
+        self._set_status("● Disconnected", "connection_disconnected")
+        logger.error(
+            "Connection: Auto-reconnect gave up after "
+            f"{MAX_AUTO_RECONNECT_ATTEMPTS} attempts. "
+            "Use the connect button to retry."
+        )
+        self.disconnected.emit()
+
+    def reset_reconnect_guard(self) -> None:
+        """Re-enable auto-reconnect (call on a manual, user-initiated connect)."""
+        self._reconnecting = False
+        self._reconnect_attempts = 0
+        self._reconnect_disabled = False
+        self._refresh_after_reconnect = False
+
     def handle_explorer_failure(self, error_msg: str) -> None:
-        """Handle remote explorer errors by attempting to reconnect."""
+        """Handle remote explorer errors by attempting to reconnect (bounded)."""
         logger.error(f"Explorer Error: {error_msg}")
+
+        # Guard: don't stack reconnects or loop forever on a flapping socket
+        if self._reconnecting or self._reconnect_disabled:
+            return
+        if self._reconnect_attempts >= MAX_AUTO_RECONNECT_ATTEMPTS:
+            self._give_up_reconnect()
+            return
 
         # Determine connection type so we use the correct reconnect path
         server_config = self.settings.get_server(self.settings.config.current_server_id)
@@ -447,18 +629,38 @@ class ConnectionController(QObject):
             else CONN_TYPE_SSH
         )
 
-        if connection_type == CONN_TYPE_ADB:
-            self._connect_adb(server_config)  # type: ignore
-        elif connection_type == CONN_TYPE_IOS:
-            self._connect_ios(server_config)  # type: ignore
-        else:
-            ok = self.connection_manager.connect()
-            if ok and self.connection_manager.sftp_client:
-                self.view.remote_explorer.set_sftp(self.connection_manager.sftp_client)
-                self.view.remote_explorer.refresh(self.settings.remote_base_dir)
+        # ADB/iOS are local USB: reconnect is fast and safe on the UI thread.
+        if connection_type in (CONN_TYPE_ADB, CONN_TYPE_IOS):
+            self._reconnect_local(connection_type, server_config)
+            return
+
+        # SSH: reconnect on a background thread so the UI never freezes.
+        self._begin_reconnect()
+
+    def _reconnect_local(self, connection_type: str, server_config: dict) -> None:
+        """
+        Bounded synchronous reconnect for local USB backends (ADB/iOS).
+
+        Fast enough to run on the UI thread. Shares the same attempt cap and
+        give-up behavior as the SSH path so a flapping device can't loop forever.
+        """
+        self._reconnecting = True
+        self._reconnect_attempts += 1
+        try:
+            self._refresh_after_reconnect = True
+            if connection_type == CONN_TYPE_ADB:
+                self._connect_adb(server_config)  # type: ignore
             else:
-                self._set_status("● Disconnected", "connection_disconnected")
-                logger.error("Cannot recover connection.")
+                self._connect_ios(server_config)  # type: ignore
+
+            # _connect_adb/_connect_ios swallow their own errors; success is
+            # reflected by a live client bound to the explorer.
+            if self.view.remote_explorer.sftp is None:
+                self._refresh_after_reconnect = False
+                if self._reconnect_attempts >= MAX_AUTO_RECONNECT_ATTEMPTS:
+                    self._give_up_reconnect()
+        finally:
+            self._reconnecting = False
 
     def _prompt_install_adb(self) -> None:
         """Show dialog to help user install ADB."""

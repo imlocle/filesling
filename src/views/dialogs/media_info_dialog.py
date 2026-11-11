@@ -1,5 +1,5 @@
 """
-Media Info dialog — displays video stream info and editable NFO metadata tags.
+Media Info dialog: displays video stream info and editable NFO metadata tags.
 
 This dialog has two tabs:
 - Info: Read-only stream details from ffprobe (codec, resolution, bitrate, etc.)
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.services.remote_media_service import RemoteMediaService
 from src.utils.constants import (
     METADATA_ADVANCED_TAGS,
     METADATA_COMMON_TAGS,
@@ -34,6 +35,7 @@ from src.utils.constants import (
     METADATA_NFO_TO_KEY,
     METADATA_PEOPLE_ROLES,
 )
+from src.utils.media_path import infer_tv_metadata_from_path
 from src.utils.logging_signal import logger
 
 
@@ -69,7 +71,7 @@ class MediaInfoDialog(QDialog):
         self._imdb_worker: Optional[Any] = None
 
         filename = os.path.basename(remote_path)
-        self.setWindowTitle(f"Media Info — {filename}")
+        self.setWindowTitle(f"Media Info: {filename}")
         self.setMinimumSize(550, 500)
 
         layout = QVBoxLayout(self)
@@ -237,6 +239,7 @@ class MediaInfoDialog(QDialog):
         # Get embedded tags from ffprobe
         fmt = self._probe_data.get("format", {})
         tags = fmt.get("tags", {})
+        path_metadata = infer_tv_metadata_from_path(self._remote_path)
 
         # Value resolver: NFO takes priority, then embedded tags
         def _get_value(key: str) -> str:
@@ -250,7 +253,8 @@ class MediaInfoDialog(QDialog):
             )
             if val:
                 return val
-            return tags.get(key, "") or tags.get(key.upper(), "") or ""
+            embedded_value = tags.get(key, "") or tags.get(key.upper(), "") or ""
+            return embedded_value or path_metadata.get(key, "")
 
         # Auto-populate title with filename if no title exists
         auto_title = _get_value("title")
@@ -399,9 +403,9 @@ class MediaInfoDialog(QDialog):
 
         from src.config.settings import Settings
 
-        config = Settings().config
-        omdb_key = config.omdb_api_key
-        tmdb_key = config.tmdb_api_key
+        settings = Settings()
+        omdb_key = settings.omdb_api_key
+        tmdb_key = settings.tmdb_api_key
         if not omdb_key.strip() and not tmdb_key.strip():
             self._set_imdb_status(
                 "No metadata API key set. Add an OMDb or TMDB key in "
@@ -458,7 +462,7 @@ class MediaInfoDialog(QDialog):
                 continue
             field = self._tag_fields.get(key)
             if field is None:
-                # Field not in the standard list — add it as a custom row is
+                # Field not in the standard list: add it as a custom row is
                 # overkill here; skip silently. Common keys are already present.
                 continue
             field.setText(value)
@@ -554,10 +558,9 @@ class MediaInfoDialog(QDialog):
         lines.append(f"</{root_tag}>")
         nfo_content = "\n".join(lines) + "\n"
 
-        # Write NFO file via SFTP
+        # Write NFO file through the remote media service
         try:
-            with self._sftp.open(nfo_path, "w") as f:
-                f.write(nfo_content.encode("utf-8"))
+            RemoteMediaService(self._sftp).write_nfo_path(nfo_path, nfo_content)
 
             logger.success(f"NFO saved: {os.path.basename(nfo_path)}")
             self.accept()
