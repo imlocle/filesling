@@ -16,6 +16,7 @@ src/
 │   ├── adb_client.py                  ADB client (Android via USB/WiFi)
 │   ├── device_client.py               DeviceClient Protocol (duck-typed interface)
 │   ├── ios_client.py                  iOS AFC client (iPhone/iPad via USB)
+│   ├── qbittorrent_client.py          qBittorrent Web API through SSH channel
 │   └── ssh_command_client.py          Shared Paramiko session lifecycle helper
 ├── config/
 │   └── settings.py                    Pydantic config model + singleton
@@ -26,6 +27,7 @@ src/
 │   ├── file_operations_controller.py  Rename, move, delete, create folder
 │   ├── media_tools_controller.py      Media dialogs and repair workflows
 │   ├── main_window_controller.py      Routes UI events → services
+│   ├── torrent_download_controller.py qBittorrent window and worker coordination
 │   └── transfer_controller.py         Upload queue coordination
 ├── models/
 │   ├── activity.py                    Activity history record
@@ -33,6 +35,7 @@ src/
 │   ├── errors.py                      Custom exception hierarchy
 │   ├── media.py                       Media inspection and repair options
 │   ├── server_config.py               Typed server settings model
+│   ├── torrent.py                     qBittorrent job status model
 │   └── transfer.py                    Queued upload model
 ├── repositories/
 │   ├── activity_history_repository.py Activity JSON persistence
@@ -60,6 +63,7 @@ src/
 │   ├── rsync_service.py              rsync fast-path transfers over SSH
 │   ├── sleep_inhibitor_service.py     Prevents macOS sleep during transfers
 │   ├── transfer_queue_service.py      Queue serialization and recovery rules
+│   ├── torrent_download_service.py    qBittorrent download operations
 │   └── menu_bar_service.py            macOS menu bar icon + activity dropdown
 ├── utils/
 │   ├── constants.py                   App-wide constants and defaults
@@ -81,6 +85,7 @@ src/
 │   │   ├── media_info_dialog.py       Stream info viewer + tag editor
 │   │   ├── quick_fix_dialog.py        Container change, timestamps, audio/subtitle selection
 │   │   ├── track_selection_widget.py  Shared audio and subtitle track picker
+│   │   ├── torrent_downloads_dialog.py qBittorrent job list and controls
 │   │   └── server_selection_dialog.py Server picker on launch / server switch
 │   ├── main_window.py                 Main app window (toolbar, explorer, queue)
 │   └── settings_window.py             Settings editor (connection, files, appearance)
@@ -106,7 +111,8 @@ src/
     ├── nfo_cache_worker.py            Background NFO sidecar prefetch and parsing
     ├── quick_fix_worker.py            Background remote ffmpeg repair
     ├── search_worker.py               Background recursive file search
-    └── transfer_worker.py             Background SFTP/ADB upload
+    ├── transfer_worker.py             Background SFTP/ADB upload
+    └── torrent_operation_worker.py    Background qBittorrent API request
 ```
 
 ## Layer Responsibilities
@@ -118,6 +124,9 @@ src/
   transfer recovery follow `controller/service → repository` boundaries.
 - Clients contain SFTP, ADB, and iOS protocol details. Workers run blocking operations
   away from the UI thread.
+- qBittorrent API requests run through a Paramiko `direct-tcpip` channel to
+  `127.0.0.1` on the SSH server. The Web UI password remains in the OS credential
+  store. The qBittorrent service owns download and seed data.
 
 The main persistence paths are `Settings → SettingsRepository`,
 `ActivityHistoryService → ActivityHistoryRepository`, and
@@ -364,6 +373,7 @@ This eliminates thread contention: Paramiko SFTP is NOT thread-safe, so each con
 | SearchWorker     | Background recursive search                   | sftp_background    |
 | IMDbWorker       | OMDb/TMDB metadata fetch over HTTP            | (none: HTTP)      |
 | JellyfinRefreshWorker | Debounced library refresh request over HTTP | (none: HTTP)      |
+| TorrentOperationWorker | qBittorrent Web API request | SSH direct-tcpip channel |
 | ConvertWorker    | Remote ffmpeg execution                       | own SSH connection |
 | QuickFixWorker   | Quick Fix ffmpeg execution                    | own SSH session    |
 | HealthTimer      | Connection keepalive + latency (15s interval) | sftp_client        |
@@ -428,7 +438,8 @@ This avoids cross-thread violations (no `self.thread().quit()` from within the w
 - Theme dropdown applies immediately (live preview)
 - "Test Connection" button in footer alongside Cancel/Save
 - Per-server settings: download directory, extension filter
-- Per-server Jellyfin URL and API key can trigger a debounced library scan after uploads
+- Per-server Jellyfin URL and API key can trigger a debounced scan after uploads and monitored torrents
+- Per-server qBittorrent Web UI credentials and port control remote downloads over SSH
 - Metadata Lookup section (Files tab): OMDb key (primary) + TMDB key (fallback), password-masked
 
 ## Theming

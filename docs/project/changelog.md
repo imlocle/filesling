@@ -9,6 +9,19 @@
 
 ## 3.8.0 (November 2026)
 
+### Remote Torrent Downloads
+
+- [x] Added qBittorrent Web UI settings for each SSH server, with the password stored in the OS credential store
+- [x] Added a Settings button to the remote downloads window to edit the active server and reload qBittorrent credentials
+- [x] Keep torrent submission available during status polling, queue submitted actions, and coalesce redundant refreshes
+- [x] Set a predictable 10-second auto-refresh interval for torrent status
+- [x] Added a remote download window for magnet links, `.torrent` files, job status, pause, resume, move, and removal
+- [x] Move a torrent through qBittorrent and optionally delete its downloaded data
+- [x] Routed qBittorrent API traffic through the verified SSH connection to the server's local Web UI
+- [x] Use the active destination profile as the initial torrent download folder
+- [x] Removing a job keeps downloaded files so qBittorrent can continue seeding
+- [x] Request a Jellyfin scan when FileSling observes a torrent complete while the window is open
+
 ### Destination Profiles
 
 - [x] Added saved upload targets that reference existing server or device connections

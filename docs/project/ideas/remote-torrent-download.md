@@ -1,11 +1,11 @@
 # Feature Idea: Download Torrents Directly to the Raspberry Pi
 
-**Status:** Brainstorming, not scheduled or implemented
+**Status:** Initial qBittorrent integration implemented for FileSling 3.8.0
 **User workflow:** Torrent locally, then use FileSling to transfer the media to a Raspberry Pi running Jellyfin.
 
 ## Current Raspberry Pi setup
 
-Checked on November 11, 2026: `qbittorrent-nox` is installed and running as the enabled `qbittorrent-nox.service`. The service has been active since November 5, 2026, and its process was started with `--webui-port=8080`. The Web UI is listening on a wildcard address at port 8080, so it is not limited to loopback. This makes the existing qBittorrent service the natural first integration target. The listener output alone does not show whether a firewall or router permits access from outside the Pi's network. FileSling still needs to verify Web UI reachability and authentication before submitting jobs.
+Checked on November 11, 2026: `qbittorrent-nox` is installed and running as the enabled `qbittorrent-nox.service`. The service has been active since November 5, 2026, and its process was started with `--webui-port=8080`. The Web UI is listening on a wildcard address at port 8080, so it is not limited to loopback. FileSling checks Web UI reachability and authentication when opening remote downloads. Keep the port blocked from the public internet; FileSling's SSH tunnel does not change qBittorrent's listener or firewall settings.
 
 ## The idea
 
@@ -22,39 +22,46 @@ FileSling would send the torrent job and monitor it. The Raspberry Pi would rece
 
 There is an important network detail: when the computer and Pi are on the same home network, FileSling's current transfer normally travels over the local network, not the internet. In that setup, the torrent consumes internet data once; the extra computer-to-Pi transfer consumes local network bandwidth. Direct-to-Pi downloading still saves local storage and effort. If the Pi is off-site, the current workflow can also send the media over the internet from the computer to the Pi.
 
-## Possible user flow
+## Current user flow
 
 1. Choose a destination profile for the Raspberry Pi.
 2. Paste a `magnet:` link or add a `.torrent` file.
-3. Choose a category or destination folder.
-4. FileSling submits the job to the torrent client on the Pi and shows its status in a download queue.
-5. The Pi downloads the data directly to its configured incomplete or completed location.
-6. When complete, FileSling can request a Jellyfin library refresh. The torrent client should retain control of the file if it is still seeding.
+3. Choose a server-side folder, optionally using the selected destination profile.
+4. FileSling submits the job to qBittorrent on the Pi and shows its status in a download window.
+5. The Pi downloads the data directly to the chosen folder.
+6. When complete, FileSling can request a Jellyfin library refresh if it observes completion while the window is open. qBittorrent retains control of the file if it is still seeding.
 
-## Possible implementation shape
+## Implemented in FileSling 3.8.0
 
-The Pi would run a torrent client as a persistent service. FileSling would connect to that service through an authenticated API, preferably over the home network or a private VPN. The service would keep downloading if FileSling closes, and FileSling could reconnect later to recover job status.
+- FileSling connects to qBittorrent's Web UI API on the SSH server through an SSH direct channel to `127.0.0.1`.
+- The server-specific settings store the Web UI port, username, and download folder. The password is stored in the OS credential store.
+- A Settings button in the remote downloads window opens the active SSH server's settings and reloads qBittorrent credentials after saving.
+- Users can add a magnet link or a local `.torrent` file, view the qBittorrent job list, pause, resume, relocate, and remove jobs.
+- Removing a job can keep its downloaded data or delete it after confirmation.
+- A selected destination profile provides the initial server-side download folder.
+- When a job completes while the remote downloads window is open, FileSling can request a Jellyfin refresh using the existing server or profile setting.
+- The qBittorrent service owns download and seed work, so jobs continue if FileSling closes.
 
-This separates control from payload: FileSling sends a small torrent job and receives status updates, while the torrent data travels directly between peers and the Pi. A persistent torrent daemon is a better fit than starting a long-running download as a child process of the desktop app.
+This separates control from payload: FileSling sends a small torrent job and receives status updates, while the torrent data travels directly between peers and the Pi. FileSling currently detects completion for Jellyfin refreshes only while its remote downloads window is open.
 
-FileSling should not need to install or configure a torrent client automatically for an initial version. It could guide the user through configuring an already-running supported client, then test the connection and destination permissions.
+The first integration targets an already running qBittorrent Web UI. FileSling does not install or configure a torrent client or verify the server-side destination before adding the job.
 
-## Questions to decide before implementation
+## Follow-up ideas
 
-- Should FileSling support the existing qBittorrent-nox instance first, then consider an adapter boundary for other clients?
 - Should downloads go into a staging folder and move after completion, or should the torrent client manage the completed path so seeding continues?
-- Should choosing a destination profile also select a torrent category and trigger a Jellyfin scan after completion?
-- Which controls belong in FileSling for the first version: pause, resume, cancel, and remove, or status monitoring only?
+- Should destination profiles also select a qBittorrent category?
+- Should FileSling keep monitoring completion when the downloads window is closed, and request scans for jobs that finish while FileSling is not open?
+- Should the status view include remaining size, ETA, seeders, and peers?
 
 ## Security and reliability considerations
 
-- Keep the torrent client's API private to the LAN or VPN. Do not expose an unauthenticated control interface to the public internet.
+- FileSling's qBittorrent API calls go through the verified SSH connection. Keep qBittorrent's Web UI port blocked from the public internet.
 - Store API credentials in the operating system credential store, consistent with FileSling's existing SSH and Jellyfin secrets handling.
 - Validate magnet links and torrent files as data. Do not interpolate user-provided links into remote shell commands.
 - Show whether a job is downloading, paused, complete, seeding, or failed, and allow FileSling to reconnect to jobs that continue on the Pi.
 - Make destination permissions and available disk space clear before submission where the client API supports those checks.
 - Avoid moving or renaming a completed file behind the torrent client's back while it is seeding.
 
-## Suggested first milestone
+## Milestone status
 
-Connect to one torrent client already installed on the Pi, submit magnet links and `.torrent` files, show persistent job status, and optionally request a Jellyfin scan when a download completes. Keep the existing FileSling upload and download workflows unchanged.
+The initial qBittorrent milestone is implemented. Keep the existing FileSling upload and download workflows unchanged while considering the follow-up ideas above.

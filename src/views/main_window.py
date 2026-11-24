@@ -562,6 +562,7 @@ class MainWindow(QMainWindow):
             self._on_destination_combo_changed
         )
         self.refresh_btn.clicked.connect(self.controller.refresh_explorers)
+        self.torrent_btn.clicked.connect(self.controller.torrent_downloads.open_dialog)
         self.settings_btn.clicked.connect(self.controller.open_settings)
         self.delete_btn.clicked.connect(self.controller.delete_selected_item)
 
@@ -655,6 +656,10 @@ class MainWindow(QMainWindow):
         change_server_action = QAction("Change Server...", self)
         change_server_action.triggered.connect(self.change_server)
         file_menu.addAction(change_server_action)
+
+        torrent_action = QAction("Remote Torrent Downloads...", self)
+        torrent_action.triggered.connect(self.controller.torrent_downloads.open_dialog)
+        file_menu.addAction(torrent_action)
 
         file_menu.addSeparator()
 
@@ -918,7 +923,14 @@ class MainWindow(QMainWindow):
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
+        self.torrent_btn = QPushButton("↓")
+        self.torrent_btn.setObjectName("icon_btn")
+        self.torrent_btn.setToolTip("Remote Torrent Downloads")
+        self.torrent_btn.setAccessibleName("Remote Torrent Downloads")
+        self.torrent_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
         toolbar_layout.addWidget(self.refresh_btn)
+        toolbar_layout.addWidget(self.torrent_btn)
         toolbar_layout.addWidget(self.delete_btn)
         toolbar_layout.addWidget(self.settings_btn)
 

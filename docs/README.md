@@ -6,6 +6,7 @@ This index groups FileSling documentation by audience and purpose.
 
 - [Application overview and quick start](../README.md)
 - [Raspberry Pi and Jellyfin setup](user-guides/raspberry-pi-jellyfin.md)
+- [Remote torrent downloads](user-guides/remote-torrent-downloads.md)
 
 ## Development
 
@@ -25,4 +26,4 @@ This index groups FileSling documentation by audience and purpose.
 - [Changelog](project/changelog.md)
 - [Roadmap](project/roadmap.md)
 - [Known issues](project/known-issues.md)
-- [Remote torrent download idea](project/ideas/remote-torrent-download.md)
+- [Remote torrent download implementation notes](project/ideas/remote-torrent-download.md)

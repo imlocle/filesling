@@ -197,7 +197,12 @@ class Settings:
     def _migrate_legacy_secrets(self) -> None:
         """Move legacy plaintext credentials into the platform credential store."""
         changed = False
-        server_fields = ("password", "key_passphrase", "jellyfin_api_key")
+        server_fields = (
+            "password",
+            "key_passphrase",
+            "jellyfin_api_key",
+            "qbittorrent_password",
+        )
         for server_id, server in self.config.servers.items():
             for field in server_fields:
                 value = server.get(field)
@@ -410,11 +415,19 @@ class Settings:
         server.password = self.get_server_secret(sid, "password") or ""
         server.key_passphrase = self.get_server_secret(sid, "key_passphrase") or ""
         server.jellyfin_api_key = self.get_server_secret(sid, "jellyfin_api_key") or ""
+        server.qbittorrent_password = (
+            self.get_server_secret(sid, "qbittorrent_password") or ""
+        )
         return server
 
     def add_server(self, server_id: str, server_config: dict) -> None:
         safe_config = server_config.copy()
-        for field in ("password", "key_passphrase", "jellyfin_api_key"):
+        for field in (
+            "password",
+            "key_passphrase",
+            "jellyfin_api_key",
+            "qbittorrent_password",
+        ):
             if field in safe_config:
                 self.set_server_secret(server_id, field, str(safe_config.pop(field)))
         self.config.servers[server_id] = safe_config
@@ -422,7 +435,12 @@ class Settings:
 
     def delete_server(self, server_id: str) -> None:
         if server_id in self.config.servers:
-            for field in ("password", "key_passphrase", "jellyfin_api_key"):
+            for field in (
+                "password",
+                "key_passphrase",
+                "jellyfin_api_key",
+                "qbittorrent_password",
+            ):
                 account = self._server_secret_account(server_id, field)
                 if has_stored_password(account):
                     delete_password(account)

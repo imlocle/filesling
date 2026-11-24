@@ -14,6 +14,7 @@ graph TB
         BB[BookmarksBar]
         VCM[VideoConvertManager]
         SS[SettingsWindow]
+        TD[TorrentDownloadsDialog]
     end
 
     subgraph Dialogs["Dialogs"]
@@ -34,6 +35,7 @@ graph TB
         FOC[FileOperationsController]
         MTC[MediaToolsController]
         TC[TransferController]
+        TDC[TorrentDownloadController]
     end
 
     subgraph Workers["Background Threads (src/workers/)"]
@@ -48,6 +50,7 @@ graph TB
         JFW[JellyfinRefreshWorker]
         CVW[ConvertWorker]
         QFW[QuickFixWorker]
+        TOW[TorrentOperationWorker]
     end
 
     subgraph Clients["Device Clients (src/clients/)"]
@@ -56,6 +59,7 @@ graph TB
         IOS[IOSClient]
         SFTP[Paramiko SFTPClient]
         SSHCmd[SSH session helper]
+        QBC[QBittorrentClient]
     end
 
     subgraph Services["Service Layer"]
@@ -76,6 +80,7 @@ graph TB
         SI[SleepInhibitorService]
         MB[MenuBarService]
         IS[IMDbService]
+        TDS[TorrentDownloadService]
     end
 
     subgraph Repositories["Persistence Repositories"]
@@ -100,6 +105,9 @@ graph TB
 
     subgraph External["External Systems"]
         SSH[SSH/SFTP Server]
+        QB[qBittorrent Web UI on SSH server]
+        Peers[BitTorrent peers]
+        ServerDisk[Server download folder]
         Android[Android Device USB/WiFi]
         iPhone[iOS Device USB]
         FS[Local Filesystem]
@@ -115,6 +123,7 @@ graph TB
     end
 
     MW --> MWC
+    MW --> TD
     MW --> FE
     MW --> TQ
     MW --> DP
@@ -124,12 +133,21 @@ graph TB
     MWC --> FOC
     MWC --> MTC
     MWC --> TC
+    MWC --> TDC
     FE --> MTC
     MWC --> NS
     CC --> CW
     CC --> CM
     TC --> TW
     TC --> TQS
+    TD --> TDC
+    TDC --> TOW
+    TOW --> TDS
+    TDS --> QBC
+    QBC --> SSH
+    SSH --> QB
+    QB --> Peers
+    QB --> ServerDisk
     DC --> DW
     FE --> DL
     FE --> NFW
@@ -164,6 +182,7 @@ graph TB
     IS --> TMDB
     MWC --> JFW
     JFW --> Jellyfin
+    TDC --> JFW
 
     DC_PROTO <|.. SFTP
     DC_PROTO <|.. ADB
@@ -190,6 +209,41 @@ graph TB
     DL --> ADB
     DL --> IOS
     NFW --> SFTP
+```
+
+## Remote Torrent Download Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Dialog as TorrentDownloadsDialog
+    participant Controller as TorrentDownloadController
+    participant Worker as TorrentOperationWorker
+    participant Service as TorrentDownloadService
+    participant Client as QBittorrentClient
+    participant SSH as Verified SSH transport
+    participant QB as qBittorrent Web UI on the server
+    participant Peers as BitTorrent peers
+    participant Disk as Server download folder
+    participant Jellyfin as Jellyfin HTTP API
+
+    User->>Dialog: Add magnet link or local .torrent file
+    Dialog->>Controller: Add request with optional server folder
+    Controller->>Worker: Start operation on QThread
+    Worker->>Service: Run torrent operation
+    Service->>Client: Build API request
+    Client->>SSH: Open direct-tcpip channel to 127.0.0.1 on configured port
+    SSH->>QB: Login or call Web UI API
+    QB-->>Client: Return torrent status or accept job
+    Client-->>Worker: Return result
+    Worker-->>Controller: Emit result on UI thread
+    Controller-->>Dialog: Update status and job list
+    QB->>Peers: Request torrent pieces
+    Peers-->>QB: Send torrent pieces
+    QB->>Disk: Write downloaded media
+    opt FileSling observes completion and Jellyfin refresh is enabled
+        Controller->>Jellyfin: Request library refresh
+    end
 ```
 
 ## NFO Cache Flow

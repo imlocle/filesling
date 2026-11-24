@@ -18,7 +18,7 @@ Built with Python, PySide6, and Paramiko.
 - **rsync fast path:** Delta transfers for SSH servers when rsync is available
 - **Verified uploads:** SHA-256 checks and staged remote replacement before source files can be moved to Trash
 - **Fast SSH transfers:** Use rclone parallel uploads or rsync when installed, with verified SFTP fallback
-- **Jellyfin integration:** Optionally request a library scan after an upload batch completes
+- **Jellyfin integration:** Optionally scan after upload batches and monitored torrent downloads complete
 - **Remote video conversion:** Convert to H.264, H.265, or VP9 with ffmpeg on the server
 - **Quick Fix:** Fix timestamps, change containers, or choose audio and subtitle tracks to keep without re-encoding. Apply container and timestamp fixes to multiple videos at once.
 - **Media metadata:** Edit NFO sidecar files, batch edit multiple files, infer TV details from common folder names, and keep matching NFO files beside renamed videos
@@ -29,6 +29,8 @@ Built with Python, PySide6, and Paramiko.
 - **Multi-server:** Switch servers quickly with per-server bookmarks and settings
 - **Destination profiles:** Save a connection, destination folder, and duplicate
   handling as a one-click upload target
+- **Remote torrent downloads:** Send magnet links or `.torrent` files to qBittorrent
+  on an SSH server, monitor jobs, pause, resume, move, or remove them
 - **Auto-reconnect:** Detect dropped connections and reconnect in the background with a bounded retry count
 - **Sleep prevention:** Prevent sleep during active transfers where the platform supports it
 - **Menu bar and tray icon:** Hide the window while the app stays available, then reopen it from the Dock, taskbar, or menu bar
@@ -88,6 +90,7 @@ python main.py
 - For iOS: `pip install pymobiledevice3` + device unlocked and trusted
 - For IMDb metadata lookup (optional): a free [OMDb API key](https://www.omdbapi.com/apikey.aspx) and/or [TMDB API key](https://www.themoviedb.org/settings/api), entered in Settings → Files → Metadata Lookup
 - For Jellyfin scans (optional): enter the URL and API key in server settings, then choose the server default or a profile override
+- For remote torrent downloads (optional): run qBittorrent with its Web UI on an SSH server, then enter its Web UI credentials in that server's FileSling settings
 
 SSH connections require a trusted host key. Verify the server fingerprint, then connect once with your system SSH client so it is recorded in `~/.ssh/known_hosts`.
 
@@ -149,7 +152,7 @@ Passwords, SSH key passphrases, and API keys are stored in the operating system 
 
 ### Jellyfin Library Scans
 
-Enter the Jellyfin server URL and API key in the server's settings. Enable **Scan libraries after uploads** for the server default, or set a different scan action on an individual destination profile. FileSling batches queued uploads and sends a library refresh request when the batch finishes. This does not configure library paths or change Jellyfin's library settings.
+Enter the Jellyfin server URL and API key in the server's settings. Enable **Scan after uploads and torrents** for the server default, or set a different scan action on an individual destination profile. FileSling batches queued uploads and sends a library refresh request when the batch finishes. For remote torrents, FileSling requests a scan after it observes a job complete while the downloads window is open. This does not configure library paths or change Jellyfin's library settings.
 
 ### Destination Profiles
 
@@ -158,8 +161,31 @@ targets such as a Jellyfin Movies folder, a VR headset, or an archive. Each prof
 references a saved server or device connection, remembers its remote folder, and can
 ask about duplicate files, skip them, or overwrite them. Credentials stay with the
 saved connection. Uploads remain checksum verified. Profiles can inherit the
-connection's Jellyfin scan setting, always scan after uploads, or disable the scan.
+connection's Jellyfin scan setting, scan after uploads and torrents, or disable the scan.
 Wait for queued uploads to finish before changing destinations.
+
+### Remote Torrent Downloads
+
+FileSling can submit magnet links and local `.torrent` files to qBittorrent running
+on an SSH server. Torrent pieces download directly to the server. FileSling uses
+the existing SSH connection as a tunnel to qBittorrent's local Web UI, so the Web
+UI port does not need to be opened to FileSling over the network. Configure the
+qBittorrent Web UI port, username, password, and optional default download folder
+in the SSH server's settings. The password stays in the operating system credential
+store. Use **Settings** in the downloads window to edit the active server and reload
+credentials after saving. A selected destination profile supplies the initial
+download folder.
+
+Open **Remote Torrent Downloads** from the toolbar or File menu. Jobs continue in
+qBittorrent if FileSling closes. While the downloads window is open, FileSling
+refreshes status and can request a Jellyfin library scan when a job completes, if
+Jellyfin scanning is enabled for that server or destination profile. qBittorrent
+keeps control of downloaded files so seeding can continue. Use **Move Selected**
+to change a torrent's folder through qBittorrent, or choose whether removal keeps
+or deletes its downloaded data.
+Keep the Web UI port blocked from the public internet; SSH tunneling does not
+change qBittorrent's own network listener or firewall rules. See the
+[remote torrent download guide](docs/user-guides/remote-torrent-downloads.md).
 
 ## Keyboard Shortcuts
 

@@ -6,6 +6,15 @@
 
 ---
 
+## Completed in 3.8.0
+
+- [x] Submit magnet links and `.torrent` files to qBittorrent over the SSH connection.
+- [x] View jobs, pause, resume, move data through qBittorrent, and remove jobs with or without data.
+- [x] Use a selected destination profile as the default download folder.
+- [x] Request a Jellyfin scan when FileSling observes a job finish while the torrent window is open.
+
+---
+
 ## Completed in 3.7.2
 
 - [x] Stage SFTP uploads and verify SHA-256 before replacing a destination.

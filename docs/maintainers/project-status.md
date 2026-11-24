@@ -13,6 +13,7 @@ This is a snapshot of the repository configuration and documentation. It records
 - Remote NFO sidecars are prefetched into an in-memory folder cache for detail panel metadata.
 - SSH uploads use staged replacement and SHA-256 verification. Folder uploads include hidden files.
 - Optional per-server Jellyfin refresh requests run after queued uploads finish.
+- qBittorrent jobs can be submitted and managed through an SSH tunnel to the server's local Web UI.
 - SSH host keys are checked against the user's `known_hosts` file. Credentials use the platform credential store when available.
 
 ## Automation configured in this repository
@@ -29,6 +30,7 @@ The workflows describe automation. Check the latest GitHub Actions run before tr
 - The Windows release workflow builds a Windows artifact. The workflow does not run the quality suite on Windows or establish full Windows runtime coverage.
 - `rclone` and `rsync` are optional SSH transfer paths. FileSling verifies output and falls back to the next method if an optimized path is unavailable or fails.
 - Jellyfin refresh requires a reachable Jellyfin server, a valid API key, and a library already configured to watch the uploaded destination.
+- Torrent downloads continue in qBittorrent after FileSling closes. Completion-triggered Jellyfin scans are detected only while the remote downloads window is open.
 - The project does not provide cloud object storage or a hosted database. FileSling connects to storage that the user operates or has access to.
 
 ## Related documentation

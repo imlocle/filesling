@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -77,6 +78,7 @@ class SettingsWindow(QDialog):
                 "password",
                 "key_passphrase",
                 "jellyfin_api_key",
+                "qbittorrent_password",
             ):
                 secret = settings.get_server_secret(server_id, secret_field)
                 if secret:
@@ -193,7 +195,7 @@ class SettingsWindow(QDialog):
                 bool(self.server_config.get("jellyfin_enabled", False))
             )
             row = QHBoxLayout()
-            row.addWidget(QLabel("Scan libraries after uploads"))
+            row.addWidget(QLabel("Scan after uploads and torrents"))
             row.addStretch()
             row.addWidget(self.jellyfin_enabled_checkbox)
             layout.addLayout(row)
@@ -214,11 +216,55 @@ class SettingsWindow(QDialog):
             layout.addWidget(self.jellyfin_api_key_input)
 
             jellyfin_hint = QLabel(
-                "FileSling asks Jellyfin to scan its libraries after uploads finish."
+                "FileSling requests a scan after upload batches and monitored "
+                "torrent downloads complete."
             )
             jellyfin_hint.setObjectName("secondary_label")
             jellyfin_hint.setWordWrap(True)
             layout.addWidget(jellyfin_hint)
+
+            layout.addWidget(QLabel("qBittorrent Remote Downloads"))
+            self.qbittorrent_port_input = QSpinBox()
+            self.qbittorrent_port_input.setRange(1, 65535)
+            self.qbittorrent_port_input.setValue(
+                int(self.server_config.get("qbittorrent_webui_port", 8080))
+            )
+            layout.addWidget(QLabel("Web UI port"))
+            layout.addWidget(self.qbittorrent_port_input)
+
+            self.qbittorrent_username_input = QLineEdit(
+                self.server_config.get("qbittorrent_username", "admin")
+            )
+            self.qbittorrent_username_input.setPlaceholderText("admin")
+            layout.addWidget(QLabel("Web UI username"))
+            layout.addWidget(self.qbittorrent_username_input)
+
+            self.qbittorrent_password_input = QLineEdit(
+                self.server_config.get("qbittorrent_password", "")
+            )
+            self.qbittorrent_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.qbittorrent_password_input.setPlaceholderText(
+                "qBittorrent Web UI password"
+            )
+            layout.addWidget(QLabel("Web UI password"))
+            layout.addWidget(self.qbittorrent_password_input)
+
+            self.qbittorrent_path_input = QLineEdit(
+                self.server_config.get("qbittorrent_download_path", "")
+            )
+            self.qbittorrent_path_input.setPlaceholderText(
+                "Optional default, for example /media/movies"
+            )
+            layout.addWidget(QLabel("Default download folder on the server"))
+            layout.addWidget(self.qbittorrent_path_input)
+
+            torrent_hint = QLabel(
+                "FileSling sends torrent jobs through the verified SSH connection. "
+                "The Web UI password is stored in the OS credential store."
+            )
+            torrent_hint.setObjectName("secondary_label")
+            torrent_hint.setWordWrap(True)
+            layout.addWidget(torrent_hint)
 
             # Per-server: activity history
             self.server_activity_history_checkbox = ToggleSwitch()
@@ -629,6 +675,29 @@ class SettingsWindow(QDialog):
                         self,
                         "Jellyfin Settings Incomplete",
                         "Enter the Jellyfin server URL and API key, or turn off library scans.",
+                    )
+                    return
+
+            if hasattr(self, "qbittorrent_port_input"):
+                config["qbittorrent_webui_port"] = (
+                    self.qbittorrent_port_input.value()
+                )
+                config["qbittorrent_username"] = (
+                    self.qbittorrent_username_input.text().strip()
+                )
+                config["qbittorrent_password"] = (
+                    self.qbittorrent_password_input.text()
+                )
+                config["qbittorrent_download_path"] = (
+                    self.qbittorrent_path_input.text().strip()
+                )
+                if config["qbittorrent_password"] and not config[
+                    "qbittorrent_username"
+                ]:
+                    QMessageBox.warning(
+                        self,
+                        "qBittorrent Settings Incomplete",
+                        "Enter the qBittorrent Web UI username when saving a password.",
                     )
                     return
 

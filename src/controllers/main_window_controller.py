@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QDialog
 
 from src.config.settings import Settings
 from src.controllers.transfer_controller import ManualTransferController
+from src.controllers.torrent_download_controller import TorrentDownloadController
 from src.services.activity_history_service import ActivityHistoryService
 from src.services.connection_manager_service import ConnectionManagerService
 from src.services.sleep_inhibitor_service import SleepInhibitorService
@@ -48,6 +49,12 @@ class MainWindowController:
             self.connection_manager,
             parent=view,
             history_service=self.activity_history,
+        )
+        self.torrent_downloads = TorrentDownloadController(
+            view=view,
+            settings=self.settings,
+            connection_manager=self.connection_manager,
+            request_jellyfin_refresh=self.request_jellyfin_refresh,
         )
 
         from src.controllers.connection_controller import ConnectionController
@@ -203,11 +210,21 @@ class MainWindowController:
                 sound=self.settings.config.notify_sound,
             )
 
-    def _queue_jellyfin_refresh(self) -> None:
+    def _queue_jellyfin_refresh(
+        self,
+        server_id: Optional[str] = None,
+        profile_override: Optional[bool] = None,
+        *,
+        use_active_profile: bool = True,
+    ) -> None:
         """Debounce library scans while a batch of uploads is finishing."""
-        server_id = self.settings.config.current_server_id
+        server_id = server_id or self.settings.config.current_server_id
         server = self.settings.get_server(server_id) or {}
-        override = self._profile_jellyfin_override(server_id)
+        override = (
+            self._profile_jellyfin_override(server_id)
+            if use_active_profile
+            else profile_override
+        )
         if not self._jellyfin_refresh_enabled(server, override):
             return
         self._pending_jellyfin_server_id = server_id
@@ -220,6 +237,16 @@ class MainWindowController:
             return
         self._jellyfin_refresh_pending = False
         self._jellyfin_refresh_timer.start()
+
+    def request_jellyfin_refresh(
+        self, server_id: str, profile_override: Optional[bool]
+    ) -> None:
+        """Request a scan after a remote torrent finishes downloading."""
+        self._queue_jellyfin_refresh(
+            server_id,
+            profile_override,
+            use_active_profile=False,
+        )
 
     def _has_pending_transfers(self) -> bool:
         queue = getattr(self.view, "transfer_queue", None)
@@ -507,6 +534,7 @@ class MainWindowController:
     def shutdown(self) -> None:
         """Clean shutdown of connections."""
         self._sleep_inhibitor.release()
+        self.torrent_downloads.shutdown()
         self.connection_ctrl.shutdown()
         if self._jellyfin_thread and self._jellyfin_thread.isRunning():
             self._jellyfin_thread.quit()

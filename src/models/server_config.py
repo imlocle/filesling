@@ -55,6 +55,12 @@ class ServerConfig:
     jellyfin_url: str = ""
     jellyfin_api_key: str = ""
 
+    # qBittorrent Web UI, reached through the existing SSH connection
+    qbittorrent_webui_port: int = 8080
+    qbittorrent_username: str = "admin"
+    qbittorrent_password: str = ""
+    qbittorrent_download_path: str = ""
+
     # Navigation state
     bookmarks: List[str] = field(default_factory=list)
     default_bookmark: str = ""
@@ -92,6 +98,10 @@ class ServerConfig:
             jellyfin_enabled=bool(data.get("jellyfin_enabled", False)),
             jellyfin_url=data.get("jellyfin_url", ""),
             jellyfin_api_key=data.get("jellyfin_api_key", ""),
+            qbittorrent_webui_port=int(data.get("qbittorrent_webui_port", 8080)),
+            qbittorrent_username=data.get("qbittorrent_username", "admin"),
+            qbittorrent_password=data.get("qbittorrent_password", ""),
+            qbittorrent_download_path=data.get("qbittorrent_download_path", ""),
             bookmarks=list(data.get("bookmarks", [])),
             default_bookmark=data.get("default_bookmark", ""),
         )
@@ -126,6 +136,12 @@ class ServerConfig:
             d["jellyfin_enabled"] = True
         if self.jellyfin_url:
             d["jellyfin_url"] = self.jellyfin_url
+        if self.qbittorrent_webui_port != 8080:
+            d["qbittorrent_webui_port"] = self.qbittorrent_webui_port
+        if self.qbittorrent_username != "admin":
+            d["qbittorrent_username"] = self.qbittorrent_username
+        if self.qbittorrent_download_path:
+            d["qbittorrent_download_path"] = self.qbittorrent_download_path
         if self.bookmarks:
             d["bookmarks"] = self.bookmarks
         if self.default_bookmark:

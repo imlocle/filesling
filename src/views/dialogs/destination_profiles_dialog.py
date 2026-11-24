@@ -63,7 +63,7 @@ class DestinationProfilesDialog(QDialog):
         self.duplicate_combo.addItem("Overwrite existing files", "overwrite")
         self.jellyfin_combo = QComboBox()
         self.jellyfin_combo.addItem("Use connection setting", None)
-        self.jellyfin_combo.addItem("Scan after uploads", True)
+        self.jellyfin_combo.addItem("Scan after uploads and torrents", True)
         self.jellyfin_combo.addItem("Do not scan", False)
         form.addRow("Name", self.name_input)
         form.addRow("Connection", self.server_combo)
